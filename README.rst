@@ -8,9 +8,11 @@ This fork ports the DOS source in ``WOLFSRC`` to 64-bit C on raylib 5.5.
 The game logic and renderer stay as they are.  The DOS platform layer is
 replaced by ``port/``, and only ``port/id_raylib.c`` includes ``raylib.h``.
 ``PORTING.md`` lists every non-portable piece and the stage that replaces it.
-The current build compiles and links the shareware (WL1) configuration.  At
-runtime it opens a window and stops at the first unported routine with
-``not ported yet: <name>`` (exit code 3).
+The shareware (WL1) game is playable: signon, title, menus, E1M1 and the
+other shareware levels, doors, combat, death and restart, save/load and quit.
+Sound plays through raylib (AdLib music and effects, PC speaker and digitized
+sounds); ``-nosound`` / ``WOLF3D_NOSOUND=1`` mute it.  Anything still
+unported stops with ``not ported yet: <name>`` (exit code 3).
 
 Build (Ubuntu 24.04; needs CMake >= 3.16, a C compiler, Python 3 and the X11/GL
 development packages raylib needs: ``libx11-dev libxrandr-dev libxinerama-dev
@@ -34,6 +36,29 @@ cache outside the repository::
 ``WOLF3D_NOTPORTED_HOLD_MS=<ms>`` keeps the window up for that long before
 the not-ported exit (for screenshots).
 
+Config (``CONFIG.WL1``: high scores, controls, view size) and save games
+(``SAVEGAM0.WL1`` ... ``SAVEGAM9.WL1``) are kept in
+``$XDG_CONFIG_HOME/raylib_wolf3d/`` (``~/.config/raylib_wolf3d/`` by default).
+They use this port's own little-endian format; DOS files are not read.
+
+Debug build with ASan/UBSan, and the demo regression check::
+
+    cmake --preset asan && cmake --build --preset asan
+    ctest --preset asan
+    # the demo check alone:
+    xvfb-run -a ./build/raylib_wolf3d -data ~/wolf3d-data/shareware -demotest all -viewsize 19
+
+``-demotest N|all`` plays the built-in demos at full speed and prints the
+final state of each (frames played, a state hash).  The ``demo_sync`` CTest
+compares them with recorded values.  The demos stay in sync only at view size
+19 (see ``tests/demo_sync.cmake``).
+
+GUI tests under Xvfb: ``scripts/xvfb_session.sh`` runs the game on a private
+X server and drives it with ``scripts/xdrive.py`` (real XTest key events,
+screenshots of the game window only), e.g.::
+
+    scripts/xvfb_session.sh "" sleep:3000 key:space sleep:2000 shot:signon.png
+
 Headless core verification
 --------------------------
 
@@ -52,16 +77,14 @@ E1M1 plane CRC32s, wall/sprite/title CRC32s, all ten maps, all graphics/audio
 chunks, every resident sprite at several scales, and cache/purge/shutdown
 cycles. SHA-256 verification stays in ``scripts/fetch_shareware.sh``.
 
-The WOLF-6 Sound Manager now drives the Nuked OPL engine and 7042 Hz VSWAP
+The WOLF-6 Sound Manager drives the Nuked OPL engine and 7042 Hz VSWAP
 samples through a raylib AudioStream. ``-nosound`` / ``WOLF3D_NOSOUND=1``
 disable all audio; ``-nomusic`` / ``WOLF3D_NOMUSIC=1`` disable music only.
-The environment switches are useful while WOLF-7 completes startup: at this
-revision, command-line parsing in ``US_CheckParm`` crashes on unmatched
-arguments, and environment-only startup reaches the unported ``peekb``.
-Audio integration tests and device recordings can run independently of those
-unfinished game paths; see ``audio/README.md``.
-Headless core checks do not establish DOS demo playback synchronization or
-playable screen output. No save-game format migration is included here.
+Audio integration tests and device recordings are described in
+``audio/README.md``.
+
+``demo_sync`` (see above) needs the data and ``xvfb-run``, and skips without
+them.
 
 Original release notes
 ----------------------

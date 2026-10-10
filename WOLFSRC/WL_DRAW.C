@@ -147,6 +147,12 @@ fixed FixedByFrac (fixed a, fixed b)
 
 //==========================================================================
 
+// WOLF-7: a Borland long*long (LXMUL@) keeps the low 32 bits of the product
+static int32_t Mul32 (int32_t a, int32_t b)
+{
+	return (int32_t)((uint32_t)a*(uint32_t)b);
+}
+
 /*
 ========================
 =
@@ -210,7 +216,10 @@ void TransformActor (objtype *ob)
 	  return;
 	}
 
-	ob->viewx = centerx + (int64_t)ny*scale/nx;	// DEBUG: use assembly divide
+	// WOLF-7: 32-bit long multiply stored into a 16-bit int, as on DOS.
+	// GunAttack picks its target by viewx, so a near actor far off to the
+	// side must wrap the same way it did there.
+	ob->viewx = (int16_t)(centerx + Mul32(ny,scale)/nx);
 
 //
 // calculate height (heightnumerator/(nx>>8))
@@ -279,7 +288,7 @@ boolean TransformTile (int tx, int ty, int *dispx, int *dispheight)
 		return false;
 	}
 
-	*dispx = centerx + (int64_t)ny*scale/nx;	// DEBUG: use assembly divide
+	*dispx = (int16_t)(centerx + Mul32(ny,scale)/nx);	// WOLF-7: 16-bit, see TransformActor
 
 //
 // calculate height (heightnumerator/(nx>>8))
@@ -1181,7 +1190,13 @@ memset(spotvis,0,sizeof spotvis);
 	bufferofs -= screenofs;
 	displayofs = bufferofs;
 
-	VL_SetScreen(displayofs,0);
+	if (demotest)
+	{
+		VL_SetCRTC(displayofs);	// WOLF-7: -demotest doesn't wait for the retrace
+		VL_Refresh(false);
+	}
+	else
+		VL_SetScreen(displayofs,0);
 
 	bufferofs += SCREENSIZE;
 	if (bufferofs > PAGE3START)

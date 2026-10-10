@@ -804,6 +804,7 @@ void		NewGame (int difficulty,int episode);
 void 		NewViewSize (int width);
 boolean 	LoadTheGame(int file,int x,int y);
 boolean		SaveTheGame(int file,int x,int y);
+boolean		SaveGameValid(int file);	// WOLF-7
 void 		ShowViewSize (int width);
 void		ShutdownId (void);
 
@@ -906,6 +907,8 @@ extern	int			controlx,controly;		// range from -100 to 100
 extern	boolean		buttonstate[NUMBUTTONS];
 
 extern	boolean		demorecord,demoplayback;
+extern	boolean		demotest;		// WOLF-7: -demotest, play demos without waiting (port/wl_demotest.c)
+void	WL_DemoTest (void);
 extern	char		far *demoptr, far *lastdemoptr;
 extern	memptr		demobuffer;
 

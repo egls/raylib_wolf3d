@@ -462,7 +462,7 @@ void PollControls (void)
 //
 	if (demoplayback)
 	{
-		while (TimeCount<lasttimecount+DEMOTICS)
+		while (TimeCount<lasttimecount+DEMOTICS && !demotest)
 		;
 		TimeCount = lasttimecount + DEMOTICS;
 		lasttimecount += DEMOTICS;
@@ -499,8 +499,8 @@ void PollControls (void)
 			buttonbits >>= 1;
 		}
 
-		controlx = *demoptr++;
-		controly = *demoptr++;
+		controlx = (signed char)*demoptr++;	// WOLF-19: signed deltas; plain char is unsigned on ARM
+		controly = (signed char)*demoptr++;
 
 		if (demoptr == lastdemoptr)
 			playstate = ex_completed;		// demo is done

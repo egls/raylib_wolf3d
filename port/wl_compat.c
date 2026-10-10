@@ -73,14 +73,22 @@ char *ultoa (unsigned long value, char *string, int radix)
  * findfirst/findnext: DOS wildcard search in the current directory (no path
  * components in the patterns the game uses).  Matching is case-insensitive
  * like DOS.  Only regular files are reported.
+ *
+ * WOLF-7: no directory handle is kept between calls (callers such as
+ * CheckForEpisodes only test for existence and never finish the search,
+ * which leaked the DIR).  findnext rescans and returns the match after the
+ * ones already reported.
  */
 int findnext (struct ffblk *ffblk)
 {
-	struct dirent *de;
+	struct dirent	*de;
+	DIR				*dir;
+	long			seen = 0;
 
-	if (!ffblk->ff_dir)
+	dir = opendir(".");
+	if (!dir)
 		return -1;
-	while ((de = readdir((DIR *)ffblk->ff_dir)) != NULL)
+	while ((de = readdir(dir)) != NULL)
 	{
 		struct stat st;
 
@@ -88,14 +96,17 @@ int findnext (struct ffblk *ffblk)
 			continue;
 		if (stat(de->d_name, &st) || !S_ISREG(st.st_mode))
 			continue;
+		if (seen++ < ffblk->ff_found)
+			continue;
 		snprintf(ffblk->ff_name, sizeof(ffblk->ff_name), "%s", de->d_name);
 		ffblk->ff_attrib = FA_ARCH;
 		ffblk->ff_fsize = (long)st.st_size;
 		ffblk->ff_ftime = ffblk->ff_fdate = 0;
+		ffblk->ff_found++;
+		closedir(dir);
 		return 0;
 	}
-	closedir((DIR *)ffblk->ff_dir);
-	ffblk->ff_dir = NULL;
+	closedir(dir);
 	errno = ENOENT;
 	return -1;
 }
@@ -105,7 +116,6 @@ int findfirst (const char *pathname, struct ffblk *ffblk, int attrib)
 	(void)attrib;
 	memset(ffblk, 0, sizeof(*ffblk));
 	snprintf(ffblk->ff_pattern, sizeof(ffblk->ff_pattern), "%s", pathname);
-	ffblk->ff_dir = opendir(".");
 	return findnext(ffblk);
 }
 
@@ -175,7 +185,14 @@ void clrscr (void)			{ NOTPORTED("clrscr"); }
 
 void disable (void)					{ NOTPORTED("disable"); }
 void enable (void)					{ NOTPORTED("enable"); }
-void geninterrupt (int intr_num)	{ (void)intr_num; NOTPORTED("geninterrupt"); }
+void geninterrupt (int intr_num)
+{
+	// WOLF-7: int 10h with AX=3 (back to text mode before printing a quit
+	// message) has nothing to do here; the window simply closes later.
+	if (intr_num == 0x10 && _AX == 3)
+		return;
+	NOTPORTED("geninterrupt");
+}
 
 WL_IsrPtr getvect (int intr_num)
 {

@@ -1,5 +1,7 @@
 # Porting inventory
 
+The WOLF-7 section (first playable) is at the end of this file.
+
 The inventory below records the WOLF-2 foundation. The WOLF-4 update immediately below supersedes its S2-core stub entries.
 
 This file lists everything in `WOLFSRC/` that does not run on a 64-bit OS as written, what WOLF-2 did about it, and which stage replaces it.
@@ -229,7 +231,7 @@ Palette: `VL_SetPalette/GetPalette/SetColor/FillPalette/FadeIn/FadeOut` keep the
 | Waiting on input | `IN_SpinWait()` | Every `while (Keyboard[..]);`, `while (!LastScan);` and `while (TimeCount < n);` loop in `ID_IN`, `WL_MENU`, `WL_TEXT`, `WL_INTER`, `WL_DEBUG` now calls it. New code that spins on those variables must too. |
 | Mouse | `IN_MouseCall` (the `Mouse(x)` macro) | Emulates int 33h functions 0, 3, 4, 11 on `RL_MouseDelta/Buttons`; the cursor is captured (hidden, locked) only inside `PlayLoop`. |
 | Joystick | `IN_GetJoyAbs`, `IN_JoyButtons` | Gamepad 0: left stick/d-pad as the analog stick (1000 +- 1000 counts), A/right trigger = button 0, B/X = button 1. |
-| Closing the window | `IN_PumpEvents` | Calls `exit(0)`. TODO (S2-core): route through `Quit("")` once its DOS text-screen exit is ported. |
+| Closing the window | `IN_PumpEvents` | Calls `Quit(NULL)` (saves the config, like the menu's Quit) since WOLF-7. |
 
 ### Not done here
 
@@ -241,3 +243,89 @@ Palette: `VL_SetPalette/GetPalette/SetColor/FillPalette/FadeIn/FadeOut` keep the
 - `raylib_wolf3d -data DIR -videotest signon|title|fade|latch|fizzle|keys|timing` runs `port/wl_videotest.c`: it shows the linked-in signon screen, the title picture decoded straight from `VGAGRAPH.WL1`, a palette fade, latch/bar/line drawing, `FizzleFade`, prints key events, or measures `VL_WaitVBL` and `TimeCount` against the clock.
 - `ctest` runs `tests/rl_keys_test.c`: `port/id_raylib.c` against a scripted fake raylib (held keys, sub-poll taps, extended keys, Alt+Enter), no display needed.
 - GCC 14+ makes incompatible-pointer-type, int-conversion and implicit-declaration errors; the game sources are built with `-Wno-error=` for those three until S2-core clears the warnings.
+
+## First playable (WOLF-7)
+
+### Sound
+
+`port/sd_silent.c`, the temporary no-sound Sound Manager used while WOLF-6 was
+open, is gone: `WOLFSRC/ID_SD.C` (WOLF-6) is built again.  Known coupling to
+keep in mind: `UpdateFace` (WL_AGENT.C) skips its `US_RndT()` calls while
+`GETGATLINGSND` plays, so sound timing can move the random sequence after a
+chaingun pickup (none of the four demos picks one up).
+
+### Crash and correctness fixes found by running the game (ASan/UBSan)
+
+| Where | Problem | Fix |
+|---|---|---|
+| `ID_US_1.C` `ParmStrings`, `ParmStrings2` | not nil-terminated; `US_CheckParm` read past them | nil added; `US_CheckParm` stops at the end of an all-symbol argument |
+| `ID_US_1.C` `US_Print`, `US_CPrint` | wrote `'\0'` into the string argument; callers pass literals (read-only now) | lines are copied to a local buffer |
+| `ID_US_1.C` `US_LineInput` | `pushf/cli` guard (not ported); overlapping `strcpy` | guard removed (events only arrive in `IN_PumpEvents`), `memmove` |
+| `WL_MAIN.C` `FinishSignon` | `peekb(0xa000,0)` | `vl_vram[0]` |
+| `port/wl_compat.c` `geninterrupt` | int 10h AX=3 (text mode before a quit message) aborted | ignored |
+| `ID_VH.C` `VH_UpdateScreen`, `ID_VL.C` `VL_FadeIn` | 2D arrays indexed flat (UBSan bounds) | flat pointers |
+| `WL_STATE.C` `CheckLine` | `(long)delta<<8` with negative delta (UB) | `*256` |
+| `WL_DRAW.C` `TransformActor`, `TransformTile` | `viewx` widened to 64 bits by WOLF-4 | 32-bit wrapping multiply, stored as 16-bit like DOS `int` (`GunAttack` targets by `viewx`) |
+| `WL_MENU.C` `Confirm` and other loops that poll `Keyboard[]` between `VW_UpdateScreen` calls | hung: the DOS keyboard ISR filled `Keyboard[]` on its own | `VH_UpdateScreen` pumps input; a key pressed and released between two polls keeps its break until the next pump, so polling loops see it |
+
+### Config and save games
+
+`port/wl_persist.[ch]`: files live in `$XDG_CONFIG_HOME/raylib_wolf3d/`
+(`~/.config/raylib_wolf3d/`), are written field by field, little-endian,
+with fixed sizes, and start with a magic and version (`RLW3DCFG`, `RLW3DSAV`,
+version 1).
+
+- **Config** (`ReadConfig`/`WriteConfig`, WL_MAIN.C): high scores, sound
+  modes, input settings, scan codes, view size.  An invalid file is ignored
+  (defaults), with a message on stderr.
+- **Save games** (`SaveTheGame`/`LoadTheGame`, WL_MAIN.C): the 32-byte name
+  written by the menu, then the game state, level ratios, `tilemap`,
+  `actorat`, area tables, the actor list, statics, doors and pushwall, and an
+  FNV-1a checksum.  Pointers are stored as indices: actor states into the
+  table `wl_states[]` (generated from WL_AGENT.C/WL_ACT2.C by
+  `scripts/gen_states.py` at build time, keeping their `#if` guards; append
+  new states only), `actorat` actors by objlist slot (remapped to the slots
+  the loaded actors get), `statobj.visspot` recomputed from the tile.
+  Before anything is applied, `SaveLayoutValid` walks the whole body into
+  throwaway variables: exact length, checksum, and range checks on every
+  value that later indexes an array or picks a map, state or sprite (map and
+  episode, weapons and frames, health, actor count/class/state/dir/tile/area,
+  `actorat` slots, door numbers in `tilemap`, statics, doors, pushwall).  An
+  invalid file is not listed in the load menu, and `LoadTheGame` rejects it
+  with the original "corrupted" message without changing the game (the DOS
+  version loaded it anyway and docked the player).
+- Config scan codes must be `0..NumCodes-1` and mouse/joystick button
+  mappings `bt_nobutton..NUMBUTTONS-1`, or the file is ignored.
+- Tests: `-savetest` (save/load round trip of the state after demo 0 must
+  give the same state hash; eight damaged saves with valid checksums must be
+  rejected without changing the game) and malformed `CONFIG.WL1` files, both
+  run by CTest `persist_check` (`tests/persist_check.py`).
+
+### Demo regression check
+
+`-demotest N|all [-viewsize N]` (`port/wl_demotest.c`) plays demos without
+waiting for the 70 Hz clock (`PollControls`, and `ThreeDRefresh` skips its
+retrace wait) and prints frames played, the end state and a hash of the game
+state, actors, doors and tilemap.  id recorded each demo until the player
+died, so a demo in sync uses all its input (`left=0`); exit 1 otherwise.
+CTest `demo_sync` (`tests/demo_sync.cmake`) checks the recorded values.
+
+All four shareware demos stay in sync at **view size 19**.  At the default
+view size 15, demo 0 desyncs at frame 956: `GunAttack` only considers actors
+within `shootdelta = viewwidth/10` pixels of `centerx`, and a guard that is
+inside that window at width 240 is outside it at 304.  This is how the
+original behaves too; the game's default stays 15.  The view size was found
+by a frame-by-frame state comparison against Wolf4SDL built locally at
+320x200 (not part of the repo); the other differences it showed were
+Wolf4SDL's own changes (it marks the player's tile visible and grabs items
+nearer than `MINDIST`) and changed nothing in the outcome.
+
+`findfirst`/`findnext` (`port/wl_compat.c`) no longer keep a directory
+handle between calls: `CheckForEpisodes` only tests for existence and
+leaked it (found by LeakSanitizer in the `asan` preset).
+
+### Still not ported
+
+- The shareware order/end text screen on quit (`Quit` exits directly).
+- `WL_DEBUG.C` debug keys that touch VGA memory (`MK_FP(0xa000,...)`) or
+  `bioskey`; virtual-reality helmet input (`peek`, int 60h).
