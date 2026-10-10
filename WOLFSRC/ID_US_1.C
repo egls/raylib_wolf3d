@@ -121,7 +121,10 @@ static	WindowRec	wr;
 	VW_UpdateScreen();
 	IN_ClearKeysDown();
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	sti	// Let the keyboard interrupts come through
+#endif
 
 	while (true)
 	{
@@ -604,15 +607,21 @@ US_LineInput(int x,int y,char *buf,char *def,boolean escok,
 		if (cursorvis)
 			USL_XORICursor(x,y,s,cursor);
 
+	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 	asm	pushf
 	asm	cli
+#endif
 
 		sc = LastScan;
 		LastScan = sc_None;
 		c = LastASCII;
 		LastASCII = key_None;
 
+	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 	asm	popf
+#endif
 
 		switch (sc)
 		{

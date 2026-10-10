@@ -27,8 +27,8 @@
 //--------
 
 #define	XMS_INT			0x2f
-#define	XMS_CALL(v)		_AH = (v);\
-						asm call [DWORD PTR XMSDriver]
+// WOLF-2: was _AH = (v); asm call [DWORD PTR XMSDriver]
+#define	XMS_CALL(v)		PORT_ASM()
 
 #define	XMS_VERSION		0x00
 

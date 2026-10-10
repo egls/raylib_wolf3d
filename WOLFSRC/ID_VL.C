@@ -1,8 +1,5 @@
 // ID_VL.C
 
-#include <dos.h>
-#include <alloc.h>
-#include <mem.h>
 #include <string.h>
 #include "ID_HEAD.H"
 #include "ID_VL.H"
@@ -36,6 +33,8 @@ void VL_SetCRTC (int crtc);
 void VL_SetScreen (int crtc, int pelpan);
 void VL_WaitVBL (int vbls);
 
+int US_CheckParm (char *parm,char **strings);	// WOLF-2: was implicitly declared (ID_US.H not included)
+
 //===========================================================================
 
 
@@ -53,7 +52,10 @@ void	VL_Startup (void)
 	if ( !MS_CheckParm ("HIDDENCARD") && VL_VideoID () != 5)
 		MS_Quit ("You need a VGA graphics card to run this!");
 
+	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 	asm	cld;				// all string instructions assume forward
+#endif
 }
 
 #endif
@@ -72,7 +74,10 @@ void	VL_Startup (void)
 {
 	int i,videocard;
 
+	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 	asm	cld;
+#endif
 
 	videocard = VL_VideoID ();
 	for (i = 1;i < _argc;i++)
@@ -114,8 +119,11 @@ void	VL_Shutdown (void)
 
 void	VL_SetVGAPlaneMode (void)
 {
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	ax,0x13
 asm	int	0x10
+#endif
 	VL_DePlaneVGA ();
 	VGAMAPMASK(15);
 	VL_SetLineWidth (40);
@@ -132,8 +140,11 @@ asm	int	0x10
 
 void	VL_SetTextMode (void)
 {
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	ax,3
 asm	int	0x10
+#endif
 }
 
 //===========================================================================
@@ -150,6 +161,8 @@ asm	int	0x10
 
 void VL_ClearVideo (byte color)
 {
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	dx,GC_INDEX
 asm	mov	al,GC_MODE
 asm	out	dx,al
@@ -169,6 +182,7 @@ asm	mov	ah,al
 asm	mov	cx,0x8000			// 0x8000 words, clearing 8 video bytes/word
 asm	xor	di,di
 asm	rep	stosw
+#endif
 }
 
 
@@ -376,6 +390,8 @@ void VL_SetPalette (byte far *palette)
 //	for (i=0;i<768;i++)
 //		outportb(PEL_DATA,*palette++);
 
+	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 	asm	mov	dx,PEL_WRITE_ADR
 	asm	mov	al,0
 	asm	out	dx,al
@@ -408,6 +424,7 @@ setloop:
 done:
 	asm	mov	ax,ss
 	asm	mov	ds,ax
+#endif
 
 }
 
@@ -761,6 +778,8 @@ void VL_MemToLatch (byte far *source, int width, int height, unsigned dest)
 		VGAMAPMASK(mask);
 		mask <<= 1;
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	cx,count
 asm mov ax,SCREENSEG
 asm mov es,ax
@@ -769,6 +788,7 @@ asm	lds	si,[source]
 asm	rep movsb
 asm mov	ax,ss
 asm	mov	ds,ax
+#endif
 
 		source+= count;
 	}
@@ -863,6 +883,8 @@ void VL_LatchToScreen (unsigned source, int width, int height, int x, int y)
 	VGAWRITEMODE(1);
 	VGAMAPMASK(15);
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	di,[y]				// dest = bufferofs+ylookup[y]+(x>>2)
 asm	shl	di,1
 asm	mov	di,[WORD PTR ylookup+di]
@@ -889,6 +911,7 @@ asm	jnz	drawline
 
 asm	mov	ax,ss
 asm	mov	ds,ax
+#endif
 
 	VGAWRITEMODE(0);
 }
@@ -911,6 +934,8 @@ void VL_ScreenToScreen (unsigned source, unsigned dest,int width, int height)
 	VGAWRITEMODE(1);
 	VGAMAPMASK(15);
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	si,[source]
 asm	mov	di,[dest]
 asm	mov	ax,[width]
@@ -931,6 +956,7 @@ asm	jnz	drawline
 
 asm	mov	ax,ss
 asm	mov	ds,ax
+#endif
 
 	VGAWRITEMODE(0);
 }
@@ -1016,6 +1042,8 @@ void VL_DrawLatch8String (char *str, unsigned tile8ptr, int printx, int printy)
 	{
 		src = tile8ptr + (*str<<4);		// each character is 16 latch bytes
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	si,[src]
 asm	mov	di,[dest]
 asm	mov	dx,[linewidth]
@@ -1050,6 +1078,7 @@ asm	add	di,dx
 
 asm	mov	ax,ss
 asm	mov	ds,ax
+#endif
 
 		str++;
 		printx += 8;

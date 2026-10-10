@@ -63,6 +63,7 @@ extern	int	px,py;
 void VW_InitDoubleBuffer (void);
 int	 VW_MarkUpdateBlock (int x1, int y1, int x2, int y2);
 void VW_UpdateScreen (void);
+void VH_UpdateScreen (void);	// WOLF-2: was implicitly declared (ID_VH_A.ASM)
 
 //
 // mode independant routines

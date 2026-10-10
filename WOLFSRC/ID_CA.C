@@ -171,7 +171,7 @@ long GRFILEPOS(int c)
 void CA_OpenDebug (void)
 {
 	unlink ("DEBUG.TXT");
-	debughandle = open("DEBUG.TXT", O_CREAT | O_WRONLY | O_TEXT);
+	debughandle = open("DEBUG.TXT", O_CREAT | O_WRONLY | O_TEXT, S_IREAD | S_IWRITE);
 }
 
 void CA_CloseDebug (void)
@@ -215,6 +215,8 @@ boolean CA_FarRead (int handle, byte far *dest, long length)
 	if (length>0xffffl)
 		Quit ("CA_FarRead doesn't support 64K reads yet!");
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm		push	ds
 asm		mov	bx,[handle]
 asm		mov	cx,[WORD PTR length]
@@ -224,11 +226,15 @@ asm		mov	ah,0x3f				// READ w/handle
 asm		int	21h
 asm		pop	ds
 asm		jnc	good
+#endif
 	errno = _AX;
 	return	false;
 good:
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm		cmp	ax,[WORD PTR length]
 asm		je	done
+#endif
 	errno = EINVFMT;			// user manager knows this is bad read
 	return	false;
 done:
@@ -251,6 +257,8 @@ boolean CA_FarWrite (int handle, byte far *source, long length)
 	if (length>0xffffl)
 		Quit ("CA_FarWrite doesn't support 64K reads yet!");
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm		push	ds
 asm		mov	bx,[handle]
 asm		mov	cx,[WORD PTR length]
@@ -260,11 +268,15 @@ asm		mov	ah,0x40			// WRITE w/handle
 asm		int	21h
 asm		pop	ds
 asm		jnc	good
+#endif
 	errno = _AX;
 	return	false;
 good:
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm		cmp	ax,[WORD PTR length]
 asm		je	done
+#endif
 	errno = ENOMEM;				// user manager knows this is bad write
 	return	false;
 
@@ -434,9 +446,12 @@ void CAL_HuffExpand (byte huge *source, byte huge *dest,
   if (screenhack)
   {
 	mapmask = 1;
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	dx,SC_INDEX
 asm	mov	ax,SC_MAPMASK + 256
 asm	out	dx,ax
+#endif
 	length >>= 2;
   }
 
@@ -459,6 +474,8 @@ asm	out	dx,ax
 // expand less than 64k of data
 //--------------------------
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm mov	bx,[headptr]
 
 asm	mov	si,[sourceoff]
@@ -520,6 +537,7 @@ asm	mov	ax,[endoff]
 asm	jmp	expandshort
 
 notscreen:;
+#endif
 	}
 	else
 	{
@@ -530,6 +548,8 @@ notscreen:;
 
   length--;
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm mov	bx,[headptr]
 asm	mov	cl,1
 
@@ -584,11 +604,15 @@ asm	sub	[WORD PTR ss:length],1
 asm	jnc	expand
 asm  	dec	[WORD PTR ss:length+2]
 asm	jns	expand		// when length = ffff ffff, done
+#endif
 
 	}
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	ax,ss
 asm	mov	ds,ax
+#endif
 
 }
 
@@ -625,13 +649,15 @@ void CAL_CarmackExpand (unsigned far *source, unsigned far *dest, unsigned lengt
 			count = ch&0xff;
 			if (!count)
 			{				// have to insert a word containing the tag byte
-				ch |= *((unsigned char far *)inptr)++;
+				ch |= *(unsigned char far *)inptr;	// WOLF-2: was cast-as-lvalue ++
+				inptr = (unsigned far *)((unsigned char far *)inptr + 1);
 				*outptr++ = ch;
 				length--;
 			}
 			else
 			{
-				offset = *((unsigned char far *)inptr)++;
+				offset = *(unsigned char far *)inptr;	// WOLF-2: was cast-as-lvalue ++
+				inptr = (unsigned far *)((unsigned char far *)inptr + 1);
 				copyptr = outptr - offset;
 				length -= count;
 				while (count--)
@@ -643,7 +669,8 @@ void CAL_CarmackExpand (unsigned far *source, unsigned far *dest, unsigned lengt
 			count = ch&0xff;
 			if (!count)
 			{				// have to insert a word containing the tag byte
-				ch |= *((unsigned char far *)inptr)++;
+				ch |= *(unsigned char far *)inptr;	// WOLF-2: was cast-as-lvalue ++
+				inptr = (unsigned far *)((unsigned char far *)inptr + 1);
 				*outptr++ = ch;
 				length --;
 			}
@@ -782,6 +809,8 @@ void CA_RLEWexpand (unsigned huge *source, unsigned huge *dest,long length,
 // NOTE: A repeat count that produces 0xfff0 bytes can blow this!
 //
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	bx,rlewtag
 asm	mov	si,sourceoff
 asm	mov	di,destoff
@@ -836,6 +865,7 @@ asm	jb	expand
 
 asm	mov	ax,ss
 asm	mov	ds,ax
+#endif
 
 }
 
@@ -890,7 +920,7 @@ void CAL_SetupGrFile (void)
 //
 // load the data offsets from ???head.ext
 //
-	MM_GetPtr (&(memptr)grstarts,(NUMCHUNKS+1)*FILEPOSSIZE);
+	MM_GetPtr ((memptr *)&grstarts,(NUMCHUNKS+1)*FILEPOSSIZE);
 
 	strcpy(fname,gheadname);
 	strcat(fname,extension);
@@ -920,7 +950,7 @@ void CAL_SetupGrFile (void)
 //
 // load the pic and sprite headers into the arrays in the data segment
 //
-	MM_GetPtr(&(memptr)pictable,NUMPICS*sizeof(pictabletype));
+	MM_GetPtr((memptr *)&pictable,NUMPICS*sizeof(pictabletype));
 	CAL_GetGrChunkLength(STRUCTPIC);		// position file pointer
 	MM_GetPtr(&compseg,chunkcomplen);
 	CA_FarRead (grhandle,compseg,chunkcomplen);
@@ -958,7 +988,7 @@ void CAL_SetupMapFile (void)
 		CA_CannotOpen(fname);
 
 	length = filelength(handle);
-	MM_GetPtr (&(memptr)tinf,length);
+	MM_GetPtr ((memptr *)&tinf,length);
 	CA_FarRead(handle, tinf, length);
 	close(handle);
 #else
@@ -995,8 +1025,8 @@ void CAL_SetupMapFile (void)
 		if (pos<0)						// $FFFFFFFF start is a sparse map
 			continue;
 
-		MM_GetPtr(&(memptr)mapheaderseg[i],sizeof(maptype));
-		MM_SetLock(&(memptr)mapheaderseg[i],true);
+		MM_GetPtr((memptr *)&mapheaderseg[i],sizeof(maptype));
+		MM_SetLock((memptr *)&mapheaderseg[i],true);
 		lseek(maphandle,pos,SEEK_SET);
 		CA_FarRead (maphandle,(memptr)mapheaderseg[i],sizeof(maptype));
 	}
@@ -1006,8 +1036,8 @@ void CAL_SetupMapFile (void)
 //
 	for (i=0;i<MAPPLANES;i++)
 	{
-		MM_GetPtr (&(memptr)mapsegs[i],64*64*2);
-		MM_SetLock (&(memptr)mapsegs[i],true);
+		MM_GetPtr ((memptr *)&mapsegs[i],64*64*2);
+		MM_SetLock ((memptr *)&mapsegs[i],true);
 	}
 }
 
@@ -1041,7 +1071,7 @@ void CAL_SetupAudioFile (void)
 		CA_CannotOpen(fname);
 
 	length = filelength(handle);
-	MM_GetPtr (&(memptr)audiostarts,length);
+	MM_GetPtr ((memptr *)&audiostarts,length);
 	CA_FarRead(handle, (byte far *)audiostarts, length);
 	close(handle);
 #else
@@ -1084,7 +1114,7 @@ void CA_Startup (void)
 {
 #ifdef PROFILE
 	unlink ("PROFILE.TXT");
-	profilehandle = open("PROFILE.TXT", O_CREAT | O_WRONLY | O_TEXT);
+	profilehandle = open("PROFILE.TXT", O_CREAT | O_WRONLY | O_TEXT, S_IREAD | S_IWRITE);
 #endif
 
 	CAL_SetupMapFile ();
@@ -1142,7 +1172,7 @@ void CA_CacheAudioChunk (int chunk)
 
 	if (audiosegs[chunk])
 	{
-		MM_SetPurge (&(memptr)audiosegs[chunk],0);
+		MM_SetPurge ((memptr *)&audiosegs[chunk],0);
 		return;							// allready in memory
 	}
 
@@ -1157,7 +1187,7 @@ void CA_CacheAudioChunk (int chunk)
 
 #ifndef AUDIOHEADERLINKED
 
-	MM_GetPtr (&(memptr)audiosegs[chunk],compressed);
+	MM_GetPtr ((memptr *)&audiosegs[chunk],compressed);
 	if (mmerror)
 		return;
 
@@ -1182,7 +1212,7 @@ void CA_CacheAudioChunk (int chunk)
 
 	expanded = *(long far *)source;
 	source += 4;			// skip over length
-	MM_GetPtr (&(memptr)audiosegs[chunk],expanded);
+	MM_GetPtr ((memptr *)&audiosegs[chunk],expanded);
 	if (mmerror)
 		goto done;
 	CAL_HuffExpand (source,audiosegs[chunk],expanded,audiohuffman,false);
@@ -1223,7 +1253,7 @@ void CA_LoadAllSounds (void)
 
 	for (i=0;i<NUMSOUNDS;i++,start++)
 		if (audiosegs[start])
-			MM_SetPurge (&(memptr)audiosegs[start],3);		// make purgable
+			MM_SetPurge ((memptr *)&audiosegs[start],3);		// make purgable
 
 cachein:
 
@@ -1449,7 +1479,7 @@ void CA_CacheMap (int mapnum)
 		pos = mapheaderseg[mapnum]->planestart[plane];
 		compressed = mapheaderseg[mapnum]->planelength[plane];
 
-		dest = &(memptr)mapsegs[plane];
+		dest = (memptr *)&mapsegs[plane];
 
 		lseek(maphandle,pos,SEEK_SET);
 		if (compressed<=BUFFERSIZE)
@@ -1512,7 +1542,7 @@ void CA_UpLevel (void)
 
 	for (i=0;i<NUMCHUNKS;i++)
 		if (grsegs[i])
-			MM_SetPurge (&(memptr)grsegs[i],3);
+			MM_SetPurge ((memptr *)&grsegs[i],3);
 	ca_levelbit<<=1;
 	ca_levelnum++;
 }
@@ -1603,7 +1633,7 @@ void CA_SetGrPurge (void)
 
 	for (i=0;i<NUMCHUNKS;i++)
 		if (grsegs[i])
-			MM_SetPurge (&(memptr)grsegs[i],3);
+			MM_SetPurge ((memptr *)&grsegs[i],3);
 }
 
 
@@ -1628,7 +1658,7 @@ void CA_SetAllPurge (void)
 //
 	for (i=0;i<NUMSNDCHUNKS;i++)
 		if (audiosegs[i])
-			MM_SetPurge (&(memptr)audiosegs[i],3);
+			MM_SetPurge ((memptr *)&audiosegs[i],3);
 
 //
 // free graphics

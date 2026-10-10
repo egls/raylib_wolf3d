@@ -1,7 +1,6 @@
 // WL_DRAW.C
 
 #include "WL_DEF.H"
-#include <DOS.H>
 #pragma hdrstop
 
 //#define DEBUGWALLS
@@ -143,6 +142,8 @@ fixed FixedByFrac (fixed a, fixed b)
 //
 // setup
 //
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	si,[WORD PTR b+2]	// sign of result = sign of fraction
 
 asm	mov	ax,[WORD PTR a]
@@ -177,6 +178,7 @@ asm	neg	ax
 asm	sbb	dx,0
 
 ansok:;
+#endif
 
 }
 
@@ -252,11 +254,14 @@ void TransformActor (objtype *ob)
 //
 // calculate height (heightnumerator/(nx>>8))
 //
+	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 	asm	mov	ax,[WORD PTR heightnumerator]
 	asm	mov	dx,[WORD PTR heightnumerator+2]
 	asm	idiv	[WORD PTR nx+1]			// nx>>8
 	asm	mov	[WORD PTR temp],ax
 	asm	mov	[WORD PTR temp+2],dx
+#endif
 
 	ob->viewheight = temp;
 }
@@ -325,11 +330,14 @@ boolean TransformTile (int tx, int ty, int *dispx, int *dispheight)
 //
 // calculate height (heightnumerator/(nx>>8))
 //
+	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 	asm	mov	ax,[WORD PTR heightnumerator]
 	asm	mov	dx,[WORD PTR heightnumerator+2]
 	asm	idiv	[WORD PTR nx+1]			// nx>>8
 	asm	mov	[WORD PTR temp],ax
 	asm	mov	[WORD PTR temp+2],dx
+#endif
 
 	*dispheight = temp;
 
@@ -377,9 +385,12 @@ int	CalcHeight (void)
 	if (nx<mindist)
 		nx=mindist;			// don't let divide overflow
 
+	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 	asm	mov	ax,[WORD PTR heightnumerator]
 	asm	mov	dx,[WORD PTR heightnumerator+2]
 	asm	idiv	[WORD PTR nx+1]			// nx>>8
+#endif
 }
 
 
@@ -399,6 +410,8 @@ unsigned	postwidth;
 
 void	near ScalePost (void)		// VGA version
 {
+	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 	asm	mov	ax,SCREENSEG
 	asm	mov	es,ax
 
@@ -455,6 +468,7 @@ heightok:
 nomore:
 	asm	mov	ax,ss
 	asm	mov	ds,ax
+#endif
 }
 
 void  FarScalePost (void)				// just so other files can call
@@ -500,7 +514,7 @@ void HitVertWall (void)
 		else
 		{
 			ScalePost ();
-			(unsigned)postsource = texture;
+			SET_FP_OFF(postsource, texture);
 			postwidth = 1;
 			postx = pixx;
 		}
@@ -529,8 +543,8 @@ void HitVertWall (void)
 		else
 			wallpic = vertwall[tilehit];
 
-		*( ((unsigned *)&postsource)+1) = (unsigned)PM_GetPage(wallpic);
-		(unsigned)postsource = texture;
+		SET_FP_SEG(postsource, PM_GetPage(wallpic));
+		SET_FP_OFF(postsource, texture);
 
 	}
 }
@@ -572,7 +586,7 @@ void HitHorizWall (void)
 		else
 		{
 			ScalePost ();
-			(unsigned)postsource = texture;
+			SET_FP_OFF(postsource, texture);
 			postwidth = 1;
 			postx = pixx;
 		}
@@ -601,8 +615,8 @@ void HitHorizWall (void)
 		else
 			wallpic = horizwall[tilehit];
 
-		*( ((unsigned *)&postsource)+1) = (unsigned)PM_GetPage(wallpic);
-		(unsigned)postsource = texture;
+		SET_FP_SEG(postsource, PM_GetPage(wallpic));
+		SET_FP_OFF(postsource, texture);
 	}
 
 }
@@ -639,7 +653,7 @@ void HitHorizDoor (void)
 		else
 		{
 			ScalePost ();
-			(unsigned)postsource = texture;
+			SET_FP_OFF(postsource, texture);
 			postwidth = 1;
 			postx = pixx;
 		}
@@ -670,8 +684,8 @@ void HitHorizDoor (void)
 			break;
 		}
 
-		*( ((unsigned *)&postsource)+1) = (unsigned)PM_GetPage(doorpage);
-		(unsigned)postsource = texture;
+		SET_FP_SEG(postsource, PM_GetPage(doorpage));
+		SET_FP_OFF(postsource, texture);
 	}
 }
 
@@ -707,7 +721,7 @@ void HitVertDoor (void)
 		else
 		{
 			ScalePost ();
-			(unsigned)postsource = texture;
+			SET_FP_OFF(postsource, texture);
 			postwidth = 1;
 			postx = pixx;
 		}
@@ -738,8 +752,8 @@ void HitVertDoor (void)
 			break;
 		}
 
-		*( ((unsigned *)&postsource)+1) = (unsigned)PM_GetPage(doorpage+1);
-		(unsigned)postsource = texture;
+		SET_FP_SEG(postsource, PM_GetPage(doorpage+1));
+		SET_FP_OFF(postsource, texture);
 	}
 }
 
@@ -786,7 +800,7 @@ void HitHorizPWall (void)
 		else
 		{
 			ScalePost ();
-			(unsigned)postsource = texture;
+			SET_FP_OFF(postsource, texture);
 			postwidth = 1;
 			postx = pixx;
 		}
@@ -803,8 +817,8 @@ void HitHorizPWall (void)
 
 		wallpic = horizwall[tilehit&63];
 
-		*( ((unsigned *)&postsource)+1) = (unsigned)PM_GetPage(wallpic);
-		(unsigned)postsource = texture;
+		SET_FP_SEG(postsource, PM_GetPage(wallpic));
+		SET_FP_OFF(postsource, texture);
 	}
 
 }
@@ -850,7 +864,7 @@ void HitVertPWall (void)
 		else
 		{
 			ScalePost ();
-			(unsigned)postsource = texture;
+			SET_FP_OFF(postsource, texture);
 			postwidth = 1;
 			postx = pixx;
 		}
@@ -867,8 +881,8 @@ void HitVertPWall (void)
 
 		wallpic = vertwall[tilehit&63];
 
-		*( ((unsigned *)&postsource)+1) = (unsigned)PM_GetPage(wallpic);
-		(unsigned)postsource = texture;
+		SET_FP_SEG(postsource, PM_GetPage(wallpic));
+		SET_FP_OFF(postsource, texture);
 	}
 
 }
@@ -894,6 +908,8 @@ void ClearScreen (void)
   //
   // clear the screen
   //
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	dx,GC_INDEX
 asm	mov	ax,GC_MODE + 256*2		// read mode 0, write mode 2
 asm	out	dx,ax
@@ -938,6 +954,7 @@ asm	mov	ax,GC_MODE + 256*10		// read mode 1, write mode 2
 asm	out	dx,ax
 asm	mov	al,GC_BITMASK
 asm	out	dx,al
+#endif
 
 }
 #endif
@@ -974,6 +991,8 @@ void VGAClearScreen (void)
   //
   // clear the screen
   //
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	dx,SC_INDEX
 asm	mov	ax,SC_MAPMASK+15*256	// write through all planes
 asm	out	dx,ax
@@ -1009,6 +1028,7 @@ asm	rep	stosw
 asm	add	di,dx
 asm	dec	bh
 asm	jnz	bottomloop
+#endif
 }
 
 //==========================================================================
@@ -1343,12 +1363,15 @@ void	ThreeDRefresh (void)
 //
 // clear out the traced array
 //
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	ax,ds
 asm	mov	es,ax
 asm	mov	di,OFFSET spotvis
 asm	xor	ax,ax
 asm	mov	cx,2048							// 64*64 / 2
 asm	rep stosw
+#endif
 
 	bufferofs += screenofs;
 
@@ -1380,6 +1403,8 @@ asm	rep stosw
 	bufferofs -= screenofs;
 	displayofs = bufferofs;
 
+	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 	asm	cli
 	asm	mov	cx,[displayofs]
 	asm	mov	dx,3d4h		// CRTC address register
@@ -1389,6 +1414,7 @@ asm	rep stosw
 	asm	mov	al,ch
 	asm	out	dx,al   	// set the high byte
 	asm	sti
+#endif
 
 	bufferofs += SCREENSIZE;
 	if (bufferofs > PAGE3START)

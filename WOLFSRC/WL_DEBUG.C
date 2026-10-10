@@ -2,7 +2,6 @@
 
 #include "WL_DEF.H"
 #pragma hdrstop
-#include <BIOS.H>
 
 /*
 =============================================================================
@@ -184,8 +183,11 @@ void PicturePause (void)
 	}
 #endif
 
+	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 	asm	mov	ax,0x13
 	asm	int	0x10
+#endif
 
 	dest = MK_FP(0xa000,0);
 	_fmemcpy (dest,buffer,64000);
@@ -639,7 +641,7 @@ void OverheadRefresh (void)
 				break;
 #endif
 			case actoratview:
-				tile = (unsigned)actorat[x][y];
+				tile = (unsigned)(uintptr_t)actorat[x][y];
 				break;
 			}
 

@@ -30,7 +30,6 @@
 
 #pragma hdrstop		// Wierdo thing with MUSE
 
-#include <dos.h>
 
 #ifdef	_MUSE_      // Will be defined in ID_Types.h
 #include "ID_SD.h"
@@ -180,8 +179,11 @@ static void
 SDL_SetTimer0(word speed)
 {
 #ifndef TPROF	// If using Borland's profiling, don't screw with the timer
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	pushf
 asm	cli
+#endif
 
 	outportb(0x43,0x36);				// Change timer 0
 	outportb(0x40,speed);
@@ -192,7 +194,10 @@ asm	cli
 	else
 		TimerDivisor = speed;
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	popf
+#endif
 #else
 	TimerDivisor = 0x10000;
 #endif
@@ -264,8 +269,11 @@ SDL_SBStopSample(void)
 {
 	byte	is;
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	pushf
 asm	cli
+#endif
 
 	if (sbSamplePlaying)
 	{
@@ -282,7 +290,10 @@ asm	cli
 		outportb(0x21,is);
 	}
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	popf
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -313,8 +324,11 @@ SDL_SBPlaySeg(volatile byte huge *data,longword length)
 	uselen--;
 
 	// Program the DMA controller
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	pushf
 asm	cli
+#endif
 	outportb(0x0a,sbDMA | 4);					// Mask off DMA on channel sbDMA
 	outportb(0x0c,0);							// Clear byte ptr flip-flop to lower byte
 	outportb(0x0b,0x49);						// Set transfer mode for D/A conv
@@ -332,7 +346,10 @@ asm	cli
 	sbOut(sbWriteData,(byte)uselen);
 	sbWriteDelay();
 	sbOut(sbWriteData,(byte)(uselen >> 8));
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	popf
+#endif
 
 	return(uselen + 1);
 }
@@ -386,8 +403,11 @@ SDL_SBPlaySample(byte huge *data,longword len)
 
 	SDL_SBStopSample();
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	pushf
 asm	cli
+#endif
 
 	used = SDL_SBPlaySeg(data,len);
 	if (len <= used)
@@ -407,7 +427,10 @@ asm	cli
 
 	sbSamplePlaying = true;
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	popf
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -429,13 +452,19 @@ SDL_PositionSBP(int leftpos,int rightpos)
 	rightpos = 15 - rightpos;
 	v = ((leftpos & 0x0f) << 4) | (rightpos & 0x0f);
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	pushf
 asm	cli
+#endif
 
 	sbOut(sbpMixerAddr,sbpmVoiceVol);
 	sbOut(sbpMixerData,v);
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	popf
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -452,6 +481,8 @@ SDL_CheckSB(int port)
 	sbLocation = port << 4;		// Initialize stuff for later use
 
 	sbOut(sbReset,true);		// Reset the SoundBlaster DSP
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	dx,0x388				// Wait >4usec
 asm	in	al, dx
 asm	in	al, dx
@@ -462,13 +493,17 @@ asm	in	al, dx
 asm	in	al, dx
 asm	in	al, dx
 asm	in	al, dx
+#endif
 
 	sbOut(sbReset,false);		// Turn off sb DSP reset
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	dx,0x388				// Wait >100usec
 asm	mov	cx,100
 usecloop:
 asm	in	al,dx
 asm	loop usecloop
+#endif
 
 	for (i = 0;i < 100;i++)
 	{
@@ -636,12 +671,18 @@ static void
 #endif
 SDL_SSStopSample(void)
 {
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	pushf
 asm	cli
+#endif
 
-	(long)ssSample = 0;
+	ssSample = 0;
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	popf
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -657,18 +698,23 @@ SDL_SSService(void)
 
 	while (ssSample)
 	{
+	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 	asm	mov		dx,[ssStatus]	// Check to see if FIFO is currently empty
 	asm	in		al,dx
 	asm	test	al,0x40
 	asm	jnz		done			// Nope - don't push any more data out
+#endif
 
 		v = *ssSample++;
 		if (!(--ssLengthLeft))
 		{
-			(long)ssSample = 0;
+			ssSample = 0;
 			SDL_DigitizedDone();
 		}
 
+	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 	asm	mov		dx,[ssData]		// Pump the value out
 	asm	mov		al,[v]
 	asm	out		dx,al
@@ -685,6 +731,7 @@ SDL_SSService(void)
 	asm	pop		ax
 	asm	push	ax
 	asm	pop		ax
+#endif
 	}
 done:;
 }
@@ -701,13 +748,19 @@ static void
 #endif
 SDL_SSPlaySample(byte huge *data,longword len)
 {
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	pushf
 asm	cli
+#endif
 
 	ssLengthLeft = len;
 	ssSample = (volatile byte far *)data;
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	popf
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -766,6 +819,8 @@ SDL_CheckSS(void)
 	while (TimeCount < lasttime + 4)
 		;
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov		dx,[ssStatus]	// Check to see if FIFO is currently empty
 asm	in		al,dx
 asm	test	al,0x40
@@ -796,6 +851,7 @@ asm	mov		dx,[ssStatus]	// Is FIFO overflowed now?
 asm	in		al,dx
 asm	test	al,0x40
 asm	jz		checkdone		// Nope, still not - Sound Source not here
+#endif
 
 	present = true;			// Yes - it's here!
 
@@ -829,15 +885,21 @@ static void
 #endif
 SDL_PCPlaySample(byte huge *data,longword len)
 {
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	pushf
 asm	cli
+#endif
 
 	SDL_IndicatePC(true);
 
 	pcLengthLeft = len;
 	pcSound = (volatile byte far *)data;
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	popf
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -852,18 +914,24 @@ static void
 #endif
 SDL_PCStopSample(void)
 {
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	pushf
 asm	cli
+#endif
 
-	(long)pcSound = 0;
+	pcSound = 0;
 
 	SDL_IndicatePC(false);
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	in	al,0x61		  	// Turn the speaker off
 asm	and	al,0xfd			// ~2
 asm	out	0x61,al
 
 asm	popf
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -878,14 +946,20 @@ static void
 #endif
 SDL_PCPlaySound(PCSound far *sound)
 {
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	pushf
 asm	cli
+#endif
 
 	pcLastSample = -1;
 	pcLengthLeft = sound->common.length;
 	pcSound = sound->data;
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	popf
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -900,16 +974,22 @@ static void
 #endif
 SDL_PCStopSound(void)
 {
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	pushf
 asm	cli
+#endif
 
-	(long)pcSound = 0;
+	pcSound = 0;
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	in	al,0x61		  	// Turn the speaker off
 asm	and	al,0xfd			// ~2
 asm	out	0x61,al
 
 asm	popf
+#endif
 }
 
 #if 0
@@ -929,13 +1009,18 @@ SDL_PCService(void)
 		s = *pcSound++;
 		if (s != pcLastSample)
 		{
+		PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 		asm	pushf
 		asm	cli
+#endif
 
 			pcLastSample = s;
 			if (s)					// We have a frequency!
 			{
 				t = pcSoundLookup[s];
+			PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 			asm	mov	bx,[t]
 
 			asm	mov	al,0xb6			// Write to channel 2 (speaker) timer
@@ -948,15 +1033,22 @@ SDL_PCService(void)
 			asm	in	al,0x61			// Turn the speaker & gate on
 			asm	or	al,3
 			asm	out	0x61,al
+#endif
 			}
 			else					// Time for some silence
 			{
+			PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 			asm	in	al,0x61		  	// Turn the speaker & gate off
 			asm	and	al,0xfc			// ~3
 			asm	out	0x61,al
+#endif
 			}
 
+		PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 		asm	popf
+#endif
 		}
 
 		if (!(--pcLengthLeft))
@@ -976,16 +1068,22 @@ SDL_PCService(void)
 static void
 SDL_ShutPC(void)
 {
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	pushf
 asm	cli
+#endif
 
 	pcSound = 0;
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	in	al,0x61		  	// Turn the speaker & gate off
 asm	and	al,0xfc			// ~3
 asm	out	0x61,al
 
 asm	popf
+#endif
 }
 
 //
@@ -997,6 +1095,8 @@ SDL_LoadDigiSegment(word page)
 	memptr	addr;
 
 #if 0	// for debugging
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	dx,STATUS_REGISTER_1
 asm	in	al,dx
 asm	mov	dx,ATR_INDEX
@@ -1005,11 +1105,14 @@ asm	out	dx,al
 asm	mov	al,10	// bright green
 asm	out	dx,al
 #endif
+#endif
 
 	addr = PM_GetSoundPage(page);
 	PM_SetPageLock(PMSoundStart + page,pml_Locked);
 
 #if 0	// for debugging
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	dx,STATUS_REGISTER_1
 asm	in	al,dx
 asm	mov	dx,ATR_INDEX
@@ -1019,6 +1122,7 @@ asm	mov	al,3	// blue
 asm	out	dx,al
 asm	mov	al,0x20	// normal
 asm	out	dx,al
+#endif
 #endif
 
 	return(addr);
@@ -1046,8 +1150,11 @@ SD_StopDigitized(void)
 {
 	int	i;
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	pushf
 asm	cli
+#endif
 
 	DigiLeft = 0;
 	DigiNextAddr = nil;
@@ -1072,7 +1179,10 @@ asm	cli
 		break;
 	}
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	popf
+#endif
 
 	for (i = DigiLastStart;i < DigiLastEnd;i++)
 		PM_SetPageLock(i + PMSoundStart,pml_Unlocked);
@@ -1271,6 +1381,8 @@ SDL_SetupDigi(void)
 void
 alOut(byte n,byte b)
 {
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	pushf
 asm	cli
 
@@ -1328,6 +1440,7 @@ asm	in	al,dx
 asm	in	al,dx
 asm	in	al,dx
 asm	in	al,dx
+#endif
 }
 
 #if 0
@@ -1388,13 +1501,19 @@ static void
 #endif
 SDL_ALStopSound(void)
 {
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	pushf
 asm	cli
+#endif
 
-	(long)alSound = 0;
+	alSound = 0;
 	alOut(alFreqH + 0,0);
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	popf
+#endif
 }
 
 static void
@@ -1437,8 +1556,11 @@ SDL_ALPlaySound(AdLibSound far *sound)
 
 	SDL_ALStopSound();
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	pushf
 asm	cli
+#endif
 
 	alLengthLeft = sound->common.length;
 	data = sound->data;
@@ -1450,14 +1572,20 @@ asm	cli
 
 	if (!(inst->mSus | inst->cSus))
 	{
+	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 	asm	popf
+#endif
 		Quit("SDL_ALPlaySound() - Bad instrument");
 	}
 
 	SDL_AlSetFXInst(&alZeroInst);	// DEBUG
 	SDL_AlSetFXInst(inst);
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	popf
+#endif
 }
 
 #if 0
@@ -1485,7 +1613,7 @@ SDL_ALSoundService(void)
 
 		if (!(--alLengthLeft))
 		{
-			(long)alSound = 0;
+			alSound = 0;
 			alOut(alFreqH + 0,0);
 			SDL_SoundFinished();
 		}
@@ -1507,9 +1635,12 @@ SDL_ALService(void)
 	{
 		w = *sqHackPtr++;
 		sqHackTime = alTimeCount + *sqHackPtr++;
+	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 	asm	mov	dx,[w]
 	asm	mov	[a],dl
 	asm	mov	[v],dh
+#endif
 		alOut(a,v);
 		sqHackLen -= 4;
 	}
@@ -1531,15 +1662,21 @@ SDL_ALService(void)
 static void
 SDL_ShutAL(void)
 {
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	pushf
 asm	cli
+#endif
 
 	alOut(alEffects,0);
 	alOut(alFreqH + 0,0);
 	SDL_AlSetFXInst(&alZeroInst);
 	alSound = 0;
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	popf
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -1552,14 +1689,20 @@ SDL_CleanAL(void)
 {
 	int	i;
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	pushf
 asm	cli
+#endif
 
 	alOut(alEffects,0);
 	for (i = 1;i < 0xf5;i++)
 		alOut(i,0);
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	popf
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////
@@ -1595,11 +1738,14 @@ SDL_DetectAdLib(void)
 #if 0
 	SDL_Delay(TimerDelay100);
 #else
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	dx,0x388
 asm	mov	cx,100
 usecloop:
 asm	in	al,dx
 asm	loop usecloop
+#endif
 #endif
 
 	status2 = readstat();
@@ -1633,6 +1779,8 @@ SDL_t0Service(void)
 static	word	count = 1;
 
 #if 1	// for debugging
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	dx,STATUS_REGISTER_1
 asm	in	al,dx
 asm	mov	dx,ATR_INDEX
@@ -1640,6 +1788,7 @@ asm	mov	al,ATR_OVERSCAN
 asm	out	dx,al
 asm	mov	al,4	// red
 asm	out	dx,al
+#endif
 #endif
 
 	HackCount++;
@@ -1690,17 +1839,25 @@ asm	out	dx,al
 		}
 	}
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	ax,[WORD PTR TimerCount]
 asm	add	ax,[WORD PTR TimerDivisor]
 asm	mov	[WORD PTR TimerCount],ax
 asm	jnc	myack
+#endif
 	t0OldService();			// If we overflow a word, time to call old int handler
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	jmp	olddone
 myack:;
+#endif
 	outportb(0x20,0x20);	// Ack the interrupt
 olddone:;
 
 #if 1	// for debugging
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	dx,STATUS_REGISTER_1
 asm	in	al,dx
 asm	mov	dx,ATR_INDEX
@@ -1710,6 +1867,7 @@ asm	mov	al,3	// blue
 asm	out	dx,al
 asm	mov	al,0x20	// normal
 asm	out	dx,al
+#endif
 #endif
 }
 #endif
@@ -2076,14 +2234,20 @@ SD_Shutdown(void)
 	if (SoundSourcePresent)
 		SDL_ShutSS();
 
+	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 	asm	pushf
 	asm	cli
+#endif
 
 	SDL_SetTimer0(0);
 
 	setvect(8,t0OldService);
 
+	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 	asm	popf
+#endif
 
 	SD_Started = false;
 }
@@ -2157,14 +2321,23 @@ SD_PlaySound(soundnames sound)
 		}
 		else
 		{
+		PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 		asm	pushf
 		asm	cli
+#endif
 			if (DigiPriority && !DigiNumber)
 			{
+			PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 			asm	popf
+#endif
 				Quit("SD_PlaySound: Priority without a sound");
 			}
+		PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 		asm	popf
+#endif
 
 			if (s->priority < DigiPriority)
 				return(false);
@@ -2309,8 +2482,11 @@ void
 SD_StartMusic(MusicGroup far *music)
 {
 	SD_MusicOff();
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	pushf
 asm	cli
+#endif
 
 	if (MusicMode == smm_AdLib)
 	{
@@ -2321,7 +2497,10 @@ asm	cli
 		SD_MusicOn();
 	}
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	popf
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////

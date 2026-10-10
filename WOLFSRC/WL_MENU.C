@@ -4,7 +4,7 @@
 // by John Romero (C) 1992 Id Software, Inc.
 //
 ////////////////////////////////////////////////////////////////////
-#include "wl_def.h"
+#include "WL_DEF.H"	// WOLF-2: case-sensitive file systems
 #pragma hdrstop
 
 //
@@ -476,7 +476,7 @@ void US_ControlPanel(byte scancode)
 					if (SoundMode != sdm_Off)
 						for (i=0;i<NUMSOUNDS;i++,start++)
 							if (audiosegs[start])
-								MM_SetPurge (&(memptr)audiosegs[start],3);		// make purgable
+								MM_SetPurge ((memptr *)&audiosegs[start],3);		// make purgable
 				}
 				#endif
 
@@ -3781,7 +3781,7 @@ void StartCPMusic(int song)
 		mmerror = false;
 	else
 	{
-		MM_SetLock(&((memptr)audiosegs[STARTMUSIC + chunk]),true);
+		MM_SetLock((memptr *)&audiosegs[STARTMUSIC + chunk],true);
 		SD_StartMusic((MusicGroup far *)audiosegs[STARTMUSIC + chunk]);
 	}
 }

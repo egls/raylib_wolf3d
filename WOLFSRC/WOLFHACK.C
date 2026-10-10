@@ -10,6 +10,7 @@ fixed	stepscale[MAXVIEWHEIGHT/2];
 fixed	basedist[MAXVIEWHEIGHT/2];
 
 extern	char	far	planepics[8192];	// 4k of ceiling, 4k of floor
+void MapRow (void);	// WOLF-2: was implicitly declared (WHACK_A.ASM)
 
 int		halfheight = 0;
 

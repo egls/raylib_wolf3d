@@ -1,6 +1,5 @@
 // WL_MAIN.C
 
-#include <conio.h>
 #include "WL_DEF.H"
 #pragma hdrstop
 
@@ -1237,7 +1236,7 @@ void InitGame (void)
 {
 int temp,i;
 temp = viewsize;
-	profilehandle = open("SCALERS.TXT", O_CREAT | O_WRONLY | O_TEXT);
+	profilehandle = open("SCALERS.TXT", O_CREAT | O_WRONLY | O_TEXT, S_IREAD | S_IWRITE);
 for (i=1;i<20;i++)
 	NewViewSize(i);
 viewsize = temp;
@@ -1583,10 +1582,11 @@ void    DemoLoop (void)
 
 char    *nosprtxt[] = {"nospr",nil};
 
-void main (void)
+int main (int argc, char *argv[])	// WOLF-2: was void main (void)
 {
 	int     i;
 
+	WL_PlatformStartup (argc, argv);	// WOLF-2: _argv, data dir, window
 
 #ifdef BETA
 	//
@@ -1612,5 +1612,6 @@ void main (void)
 	DemoLoop();
 
 	Quit("Demo loop exited???");
+	return 0;
 }
 

@@ -75,7 +75,7 @@ void SetupScaling (int maxscaleheight)
 	for (i=1;i<MAXSCALEHEIGHT;i++)
 	{
 		if (scaledirectory[i])
-			MM_FreePtr (&(memptr)scaledirectory[i]);
+			MM_FreePtr ((memptr *)&scaledirectory[i]);
 		if (i>=stepbytwo)
 			i += 2;
 	}
@@ -87,15 +87,15 @@ void SetupScaling (int maxscaleheight)
 // build the compiled scalers
 //
 	stepbytwo = viewheight/2;	// save space by double stepping
-	MM_GetPtr (&(memptr)work,20000);
+	MM_GetPtr ((memptr *)&work,20000);
 
 	for (i=1;i<=maxscaleheight;i++)
 	{
-		BuildCompScale (i*2,&(memptr)scaledirectory[i]);
+		BuildCompScale (i*2,(memptr *)&scaledirectory[i]);
 		if (i>=stepbytwo)
 			i+= 2;
 	}
-	MM_FreePtr (&(memptr)work);
+	MM_FreePtr ((memptr *)&work);
 
 //
 // compact memory and lock down scalers
@@ -103,7 +103,7 @@ void SetupScaling (int maxscaleheight)
 	MM_SortMem ();
 	for (i=1;i<=maxscaleheight;i++)
 	{
-		MM_SetLock (&(memptr)scaledirectory[i],true);
+		MM_SetLock ((memptr *)&scaledirectory[i],true);
 		fullscalefarcall[i] = (unsigned)scaledirectory[i];
 		fullscalefarcall[i] <<=16;
 		fullscalefarcall[i] += scaledirectory[i]->codeofs[0];
@@ -210,7 +210,8 @@ unsigned BuildCompScale (int height, memptr *finalspot)
 			*code++ = 0x26;
 			*code++ = 0x88;
 			*code++ = 0x85;
-			*((unsigned far *)code)++ = startpix*SCREENBWIDE;
+			NOTPORTED("BuildCompScale: x86 code generation");	// WOLF-2, was:
+//			*((unsigned far *)code)++ = startpix*SCREENBWIDE;
 		}
 
 	}
@@ -248,6 +249,8 @@ byte	mask1,mask2,mask3;
 
 void near ScaleLine (void)
 {
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	cx,WORD PTR [linescale+2]
 asm	mov	es,cx						// segment of scaler
 
@@ -306,12 +309,15 @@ asm	jmp	scalesingle					// do the next segment
 linedone:
 asm	mov	ax,ss
 asm	mov	ds,ax
+#endif
 return;
 
 //
 // two byte scaling
 //
 twobyte:
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	ss:[mask2],al
 asm	mov	al,BYTE PTR ss:[mapmasks1-1+bx]	// -1 because pixwidth of 1 is first
 asm	mov	ss:[mask1],al
@@ -389,6 +395,7 @@ asm	dec	di
 asm	mov	es,WORD PTR ss:[linescale+2] // segment of scaler
 asm	mov	BYTE PTR es:[bx],cl			// unpatch the RETF
 asm	jmp	scaletriple					// do the next segment
+#endif
 
 
 }
@@ -436,7 +443,7 @@ void ScaleShape (int xcenter, int shapenum, unsigned height)
 	comptable = scaledirectory[scale];
 
 	*(((unsigned *)&linescale)+1)=(unsigned)comptable;	// seg of far call
-	*(((unsigned *)&linecmds)+1)=(unsigned)shape;		// seg of shape
+	SET_FP_SEG(linecmds, shape);		// seg of shape
 
 //
 // scale to the left (from pixel 31 to shape->leftpix)
@@ -448,7 +455,7 @@ void ScaleShape (int xcenter, int shapenum, unsigned height)
 
 	while ( --srcx >=stopx && slinex>0)
 	{
-		(unsigned)linecmds = *cmdptr--;
+		SET_FP_OFF(linecmds, *cmdptr--);
 		if ( !(slinewidth = comptable->width[srcx]) )
 			continue;
 
@@ -531,7 +538,7 @@ void ScaleShape (int xcenter, int shapenum, unsigned height)
 
 	while ( ++srcx <= stopx && (slinex+=slinewidth)<viewwidth)
 	{
-		(unsigned)linecmds = *cmdptr++;
+		SET_FP_OFF(linecmds, *cmdptr++);
 		if ( !(slinewidth = comptable->width[srcx]) )
 			continue;
 
@@ -638,7 +645,7 @@ void SimpleScaleShape (int xcenter, int shapenum, unsigned height)
 	comptable = scaledirectory[scale];
 
 	*(((unsigned *)&linescale)+1)=(unsigned)comptable;	// seg of far call
-	*(((unsigned *)&linecmds)+1)=(unsigned)shape;		// seg of shape
+	SET_FP_SEG(linecmds, shape);		// seg of shape
 
 //
 // scale to the left (from pixel 31 to shape->leftpix)
@@ -650,7 +657,7 @@ void SimpleScaleShape (int xcenter, int shapenum, unsigned height)
 
 	while ( --srcx >=stopx )
 	{
-		(unsigned)linecmds = *cmdptr--;
+		SET_FP_OFF(linecmds, *cmdptr--);
 		if ( !(slinewidth = comptable->width[srcx]) )
 			continue;
 
@@ -678,7 +685,7 @@ void SimpleScaleShape (int xcenter, int shapenum, unsigned height)
 
 	while ( ++srcx <= stopx )
 	{
-		(unsigned)linecmds = *cmdptr++;
+		SET_FP_OFF(linecmds, *cmdptr++);
 		if ( !(slinewidth = comptable->width[srcx]) )
 			continue;
 

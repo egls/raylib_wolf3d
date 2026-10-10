@@ -226,6 +226,7 @@ extern LRstruct LevelRatios[];
 
 void Write (int x,int y,char *string);
 void NonShareware(void);
+void FreeMusic (void);	// WOLF-2: was implicitly declared
 int GetYorN(int x,int y,int pic);
 
 

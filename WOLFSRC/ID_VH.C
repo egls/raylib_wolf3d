@@ -58,6 +58,8 @@ void VW_DrawPropString (char far *string)
 		{
 			VGAMAPMASK(mask);
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	ah,[BYTE PTR fontcolor]
 asm	mov	bx,[step]
 asm	mov	cx,[height]
@@ -77,6 +79,7 @@ asm	add	di,dx
 asm	loop	vertloop
 asm	mov	ax,ss
 asm	mov	ds,ax
+#endif
 
 			source++;
 			px++;
@@ -114,6 +117,8 @@ void VW_DrawColorPropString (char far *string)
 		{
 			VGAMAPMASK(mask);
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	ah,[BYTE PTR fontcolor]
 asm	mov	bx,[step]
 asm	mov	cx,[height]
@@ -140,6 +145,7 @@ asm rcl cx,1
 asm	loop	vertloop
 asm	mov	ax,ss
 asm	mov	ds,ax
+#endif
 
 			source++;
 			px++;
@@ -180,7 +186,7 @@ void VL_MungePic (byte far *source, unsigned width, unsigned height)
 //
 // copy the pic to a temp buffer
 //
-	MM_GetPtr (&(memptr)temp,size);
+	MM_GetPtr ((memptr *)&temp,size);
 	_fmemcpy (temp,source,size);
 
 //
@@ -200,7 +206,7 @@ void VL_MungePic (byte far *source, unsigned width, unsigned height)
 		}
 	}
 
-	MM_FreePtr (&(memptr)temp);
+	MM_FreePtr ((memptr *)&temp);
 }
 
 void VWL_MeasureString (char far *string, word *width, word *height
@@ -490,13 +496,18 @@ boolean FizzleFade (unsigned source, unsigned dest,
 		if (abortable && IN_CheckAck () )
 			return true;
 
+		PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 		asm	mov	es,[screenseg]
+#endif
 
 		for (p=0;p<pixperframe;p++)
 		{
 			//
 			// seperate random value into x/y pair
 			//
+			PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 			asm	mov	ax,[WORD PTR rndval]
 			asm	mov	dx,[WORD PTR rndval+2]
 			asm	mov	bx,ax
@@ -517,6 +528,7 @@ boolean FizzleFade (unsigned source, unsigned dest,
 noxor:
 			asm	mov	[WORD PTR rndval],ax
 			asm	mov	[WORD PTR rndval+2],dx
+#endif
 
 			if (x>width || y>height)
 				continue;
@@ -530,10 +542,13 @@ noxor:
 			mask = maskb[mask];
 			VGAMAPMASK(mask);
 
+			PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 			asm	mov	di,[drawofs]
 			asm	mov	al,[es:di]
 			asm add	di,[pagedelta]
 			asm	mov	[es:di],al
+#endif
 
 			if (rndval == 1)		// entire sequence has been completed
 				return false;
