@@ -462,7 +462,7 @@ void PollControls (void)
 //
 	if (demoplayback)
 	{
-		while (TimeCount<lasttimecount+DEMOTICS)
+		while (TimeCount<lasttimecount+DEMOTICS && !demotest)
 		;
 		TimeCount = lasttimecount + DEMOTICS;
 		lasttimecount += DEMOTICS;

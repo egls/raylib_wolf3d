@@ -921,17 +921,58 @@ static	int	posx,posy;		// the driver's virtual cursor position
 
 void IN_PumpEvents (void)
 {
-	int	scan,ext,down;
+	// WOLF-7: a key pressed and released between two polls arrives as a
+	// make and a break together.  Loops that poll Keyboard[] (Confirm, ...)
+	// would never see it down, so its break waits for the next pump.
+	static	struct { int scan,ext; } deferred[16];
+	static	int		numdeferred;
+			int		scan,ext,down,i,n,made[16][2],nummade = 0;
+
+	for (i=0;i<numdeferred;i++)
+	{
+		if (deferred[i].ext)
+			INL_KeyService(0xe0);
+		INL_KeyService(deferred[i].scan | 0x80);
+	}
+	numdeferred = 0;
 
 	RL_PumpEvents();
 	while (RL_GetKeyEvent(&scan,&ext,&down))
 	{
+		if (!down)
+		{
+			for (n=0;n<nummade;n++)
+				if (made[n][0] == scan && made[n][1] == ext)
+					break;
+			if (n < nummade && numdeferred < 16)
+			{
+				deferred[numdeferred].scan = scan;
+				deferred[numdeferred].ext = ext;
+				numdeferred++;
+				continue;
+			}
+		}
+		else if (nummade < 16)
+		{
+			made[nummade][0] = scan;
+			made[nummade][1] = ext;
+			nummade++;
+		}
 		if (ext)
 			INL_KeyService(0xe0);
 		INL_KeyService(down? scan : scan | 0x80);
 	}
 	if (RL_QuitRequested())
-		exit(0);		// WOLF-5: should go through Quit("") once its text screen is ported
+	{
+		static boolean quitting;	// WOLF-7: closing the window quits like the menu (saves the config)
+
+		if (!quitting)
+		{
+			quitting = true;
+			Quit (NULL);
+		}
+		exit(0);
+	}
 	VL_Refresh(false);	// busy loops are how the original kept the screen alive
 }
 

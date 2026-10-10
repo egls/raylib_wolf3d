@@ -90,7 +90,18 @@ set(WOLF3D_PORT_SOURCES
   port/wl_platform.c
   port/asm_stubs.c
   port/wl_data.c
-  port/wl_raycast.c)
+  port/wl_raycast.c
+  port/wl_demotest.c
+  port/wl_persist.c)
+
+# TEMPORARY (WOLF-7): ID_SD.C still stops at its DOS sound hardware code until
+# WOLF-6 lands.  port/sd_silent.c is a no-sound Sound Manager built instead of
+# it so the game can run.  Remove this block when WOLF-6 is merged.
+option(WOLF3D_SILENT_SD "Build port/sd_silent.c instead of WOLFSRC/ID_SD.C" ON)
+if(WOLF3D_SILENT_SD)
+  list(REMOVE_ITEM WOLF3D_GAME_SOURCES WOLFSRC/ID_SD.C)
+  list(APPEND WOLF3D_PORT_SOURCES port/sd_silent.c)
+endif()
 
 set(WOLF3D_WARNINGS -Wall -fsigned-char)
 # The id code defines globals in headers (e.g. menuitems in WL_MENU.H) and
@@ -127,7 +138,19 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
   set_property(SOURCE ${WOLF3D_GAME_SOURCES} APPEND PROPERTY COMPILE_OPTIONS -x c)
 endif()
 
-add_executable(raylib_wolf3d ${WOLF3D_GAME_SOURCES} ${WOLF3D_PORT_SOURCES} ${WOLF3D_OBJDATA})
+# Table of every actor state, so save games can store states as indices.
+set(WOLF3D_STATES ${WOLF3D_GEN_DIR}/wl_states.c)
+add_custom_command(
+  OUTPUT ${WOLF3D_STATES}
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${WOLF3D_GEN_DIR}
+  COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_states.py > ${WOLF3D_STATES}
+  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_states.py
+          ${CMAKE_CURRENT_SOURCE_DIR}/WOLFSRC/WL_AGENT.C
+          ${CMAKE_CURRENT_SOURCE_DIR}/WOLFSRC/WL_ACT2.C
+  COMMENT "Generating the actor state table"
+  VERBATIM)
+
+add_executable(raylib_wolf3d ${WOLF3D_GAME_SOURCES} ${WOLF3D_PORT_SOURCES} ${WOLF3D_OBJDATA} ${WOLF3D_STATES})
 target_include_directories(raylib_wolf3d PRIVATE port WOLFSRC)
 find_package(Threads REQUIRED)
 target_link_libraries(raylib_wolf3d PRIVATE wolf3d_raylib Threads::Threads m)
@@ -135,6 +158,13 @@ target_link_libraries(raylib_wolf3d PRIVATE wolf3d_raylib Threads::Threads m)
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(raylib_wolf3d PRIVATE ${WOLF3D_WARNINGS} ${WOLF3D_GAME_FLAGS})
   target_compile_options(wolf3d_raylib PRIVATE ${WOLF3D_WARNINGS})
+endif()
+
+# ASan/UBSan for the game itself (the "asan" preset turns this on).
+option(WOLF3D_SANITIZERS "Build raylib_wolf3d with ASan/UBSan" OFF)
+if(WOLF3D_SANITIZERS AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(raylib_wolf3d PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+  target_link_options(raylib_wolf3d PRIVATE -fsanitize=address,undefined)
 endif()
 
 if(WOLF3D_WITH_AUDIO)
@@ -162,6 +192,14 @@ if(BUILD_TESTING)
   add_test(NAME core_wl1_data COMMAND wolf_core_data_test "${WOLF3D_TEST_DATA}")
   set_tests_properties(core_wl1_data PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 30)
   add_test(NAME core_codecs COMMAND wolf_codec_test)
+
+  # The four shareware demos, at full speed under Xvfb, against recorded
+  # final-state hashes (WOLF-7).  Skips without WL1 data or xvfb-run.
+  add_test(NAME demo_sync COMMAND ${CMAKE_COMMAND}
+    -DGAME=$<TARGET_FILE:raylib_wolf3d> -DDATA=${WOLF3D_TEST_DATA}
+    -DWORK=${CMAKE_CURRENT_BINARY_DIR}/demo_sync
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/demo_sync.cmake)
+  set_tests_properties(demo_sync PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED" TIMEOUT 300)
 
   # ---------------------------------------------------------------------------
   # Tests (ctest): the raylib keyboard translation against a fake raylib, no display needed.

@@ -175,7 +175,14 @@ void clrscr (void)			{ NOTPORTED("clrscr"); }
 
 void disable (void)					{ NOTPORTED("disable"); }
 void enable (void)					{ NOTPORTED("enable"); }
-void geninterrupt (int intr_num)	{ (void)intr_num; NOTPORTED("geninterrupt"); }
+void geninterrupt (int intr_num)
+{
+	// WOLF-7: int 10h with AX=3 (back to text mode before printing a quit
+	// message) has nothing to do here; the window simply closes later.
+	if (intr_num == 0x10 && _AX == 3)
+		return;
+	NOTPORTED("geninterrupt");
+}
 
 WL_IsrPtr getvect (int intr_num)
 {
