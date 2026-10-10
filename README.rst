@@ -34,6 +34,29 @@ cache outside the repository::
 ``WOLF3D_NOTPORTED_HOLD_MS=<ms>`` keeps the window up for that long before
 the not-ported exit (for screenshots).
 
+Headless core verification
+--------------------------
+
+The native memory/page/cache managers, codecs, raycaster, and looping scalers
+can be tested without a monitor or audio device::
+
+    scripts/fetch_shareware.sh --check-only
+    cmake -B build -DWOLF3D_CORE_SANITIZERS=ON
+    cmake --build build -j2
+    ctest --test-dir build --output-on-failure
+
+``core_codecs`` and ``core_renderer`` run without data. ``core_wl1_data``
+skips with code 77 when the external directory is absent; set
+``-DWOLF3D_TEST_DATA=/path/to/shareware`` to override its location. It checks
+E1M1 plane CRC32s, wall/sprite/title CRC32s, all ten maps, all graphics/audio
+chunks, every resident sprite at several scales, and cache/purge/shutdown
+cycles. SHA-256 verification stays in ``scripts/fetch_shareware.sh``.
+
+The integrated WOLF-5 video/input backend runs; normal startup reaches the
+remaining WOLF-6 audio adapter ``SDL_SetDS`` and exits with code 3.
+Headless core checks do not establish DOS demo playback synchronization or
+playable screen output. No save-game format migration is included here.
+
 Original release notes
 ----------------------
 

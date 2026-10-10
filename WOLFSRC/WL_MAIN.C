@@ -57,7 +57,7 @@ int             viewheight;
 int             centerx;
 int             shootdelta;                     // pixels away from centerx a target can be
 fixed           scale,maxslope;
-long            heightnumerator;
+int32_t         heightnumerator;
 int                     minheightdiv;
 
 
@@ -725,8 +725,6 @@ void SetupWalls (void)
 
 void SignonScreen (void)                        // VGA version
 {
-	unsigned        segstart,seglength;
-
 	VL_SetVGAPlaneMode ();
 	VL_TestPaletteSet ();
 	VL_SetPalette (&gamepal);
@@ -739,17 +737,7 @@ void SignonScreen (void)                        // VGA version
 		VW_SetScreen(0,0);
 	}
 
-//
-// reclaim the memory from the linked in signon screen
-//
-	segstart = FP_SEG(&introscn);
-	seglength = 64000/16;
-	if (FP_OFF(&introscn))
-	{
-		segstart++;
-		seglength--;
-	}
-	MML_UseSpace (segstart,seglength);
+/* Linked-in data has static storage; it is not allocator-owned. */
 }
 
 
@@ -1164,23 +1152,6 @@ void InitGame (void)
 	US_Startup ();
 
 
-#ifndef SPEAR
-	if (mminfo.mainmem < 235000L)
-#else
-	if (mminfo.mainmem < 257000L && !MS_CheckParm("debugmode"))
-#endif
-	{
-		memptr screen;
-
-		CA_CacheGrChunk (ERRORSCREEN);
-		screen = grsegs[ERRORSCREEN];
-		ShutdownId();
-		movedata ((unsigned)screen,7+7*160,0xb800,0,17*160);
-		gotoxy (1,23);
-		exit(1);
-	}
-
-
 //
 // build some tables
 //
@@ -1344,53 +1315,12 @@ void NewViewSize (int width)
 
 void Quit (char *error)
 {
-	unsigned        finscreen;
-	memptr	screen;
-
-	if (virtualreality)
-		geninterrupt(0x61);
-
-	ClearMemory ();
-	if (!*error)
-	{
-	 #ifndef JAPAN
-	 CA_CacheGrChunk (ORDERSCREEN);
-	 screen = grsegs[ORDERSCREEN];
-	 #endif
-	 WriteConfig ();
-	}
-	else
-	{
-	 CA_CacheGrChunk (ERRORSCREEN);
-	 screen = grsegs[ERRORSCREEN];
-	}
-
-	ShutdownId ();
-
-	if (error && *error)
-	{
-	  movedata ((unsigned)screen,7,0xb800,0,7*160);
-	  gotoxy (10,4);
-	  puts(error);
-	  gotoxy (1,8);
-	  exit(1);
-	}
-	else
-	if (!error || !(*error))
-	{
-		clrscr();
-		#ifndef JAPAN
-		movedata ((unsigned)screen,7,0xb800,0,4000);
-		gotoxy(1,24);
-		#endif
-//asm	mov	bh,0
-//asm	mov	dh,23	// row
-//asm	mov	dl,0	// collumn
-//asm	mov ah,2
-//asm	int	0x10
-	}
-
-	exit(0);
+    /* Print before teardown: CA startup errors must never recurse into CA. */
+    int status=error && *error ? 1 : 0;
+    if(status) fprintf(stderr,"raylib_wolf3d: %s\n",error);
+    if(!status) WriteConfig();
+    ShutdownId();
+    exit(status);
 }
 
 //===========================================================================

@@ -1,21 +1,10 @@
-/*
- * asm_stubs.c - C stand-ins for the TASM modules of WOLFSRC/WOLF3D.PRJ.
- *
- * WOLF-2 only needs the program to link.  Every routine keeps the signature
- * its C callers use and aborts with "not ported yet"; the real translations
- * land in Stage 2 (see PORTING.md).  Data tables defined in the .ASM files
- * are carried over verbatim because they are data, not code.
- *
- *   ID_US_A.ASM  US_InitRndT US_RndT rndtable
- *   ID_SD_A.ASM  SDL_SetDS SDL_IndicatePC SDL_t0{Extreme,Fast,Slow}AsmService
- *   WL_DR_A.ASM  AsmRefresh (with near helpers xpartialbyystep/ypartialbyxstep)
- *   WHACK_A.ASM  MapRow planepics
- *   WL_ASM.ASM   CheckIs386 jabhack2 (Patch386 in WL_MAIN.C)
- *   H_LDIV.ASM   Borland 32-bit long divide helpers: native on 64-bit, dropped
- *   C0.ASM       Borland startup code: replaced by the C runtime + main()
- */
+/* Remaining audio assembly adapters belong to WOLF-6.
+ * Core RNG is native C below; ray tracing lives in wl_raycast.c,
+ * MapRow in WOLFHACK.C, and video adapters in ID_VL.C/ID_VH.C. */
 
 #include "ID_HEADS.H"
+#include <time.h>
+static unsigned rndindex;
 
 /* ---- ID_VL_A.ASM, ID_VH_A.ASM -------------------------------------------
  * Translated in WOLFSRC/ID_VL.C and ID_VH.C (WOLF-5).
@@ -45,13 +34,13 @@ byte rndtable[256] =
 
 void US_InitRndT (boolean randomize)
 {
-	(void)randomize;
-	NOTPORTED("US_InitRndT");
+	rndindex = randomize ? (unsigned)time(NULL)&255 : 0;
 }
 
 int US_RndT (void)
 {
-	NOTPORTED("US_RndT");
+	rndindex=(rndindex+1)&255;
+    return rndtable[rndindex];
 }
 
 /* ---- ID_SD_A.ASM ------------------------------------------------------- */
@@ -84,28 +73,20 @@ void SDL_t0SlowAsmService (void)
 
 /* ---- WL_DR_A.ASM ------------------------------------------------------- */
 
-void AsmRefresh (void)
-{
-	NOTPORTED("AsmRefresh");
-}
+
 
 /* ---- WL_ASM.ASM -------------------------------------------------------- */
 
 int CheckIs386 (void)
 {
-	NOTPORTED("CheckIs386");
+	return 0; /* native C division; no executable patching */
 }
 
 void jabhack2 (void)
 {
-	NOTPORTED("jabhack2");
+	/* Native compiler emits integer division. */
 }
 
 /* ---- WHACK_A.ASM ------------------------------------------------------- */
 
 char planepics[8192];		// 4k of ceiling, 4k of floor
-
-void MapRow (void)
-{
-	NOTPORTED("MapRow");
-}

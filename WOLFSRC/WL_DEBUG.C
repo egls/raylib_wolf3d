@@ -270,7 +270,7 @@ static	char	buf[10];
 
 		US_Print("\n Address: ");
 		addr = PM_GetPageAddress(i);
-		sprintf(buf,"0x%04x",(word)addr);
+		snprintf(buf,sizeof buf,"%p",addr);
 		US_Print(buf);
 
 		if (addr)
@@ -283,7 +283,7 @@ static	char	buf[10];
 				bufferofs += 32*SCREENWIDTH;
 				postx = 128;
 				postwidth = 1;
-				postsource = ((long)((unsigned)addr))<<16;
+				postsource = addr;
 				for (x=0;x<64;x++,postx++,postsource+=64)
 				{
 					wallheight[postx] = 256;

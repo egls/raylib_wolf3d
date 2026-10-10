@@ -971,7 +971,7 @@ void LevelCompleted (void)
 =================
 */
 
-boolean PreloadUpdate(unsigned current, unsigned total)
+boolean PreloadUpdate(word current, word total)
 {
 	unsigned w = WindowW - 10;
 

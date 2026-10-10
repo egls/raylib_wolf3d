@@ -36,8 +36,11 @@ jobs:
 
       - name: Build
         run: |
-          cmake --build build --target wolf3d_raylib raylib_wolf3d 2>&1 | tee build.log
+          cmake --build build 2>&1 | tee build.log
           echo "Game warnings: $(grep -E '/(WOLFSRC|port)/.*warning:' build.log | wc -l)"
+
+      - name: Headless core tests (data test skips without WL1)
+        run: ctest --test-dir build --output-on-failure --no-tests=error
 
       - name: Smoke test (no game data)
         run: |
@@ -48,7 +51,7 @@ jobs:
           echo "exit code: $rc"
           test "$rc" = 2
           # Empty placeholder files get past the data check, open the window
-          # under Xvfb and must stop with a clean "not ported yet" (exit 3).
+          # under Xvfb and must be rejected by the VSWAP loader (exit 1).
           mkdir -p "$RUNNER_TEMP/fake"
           for f in AUDIOHED AUDIOT GAMEMAPS MAPHEAD VGADICT VGAGRAPH VGAHEAD VSWAP; do
             : > "$RUNNER_TEMP/fake/$f.WL1"
@@ -60,5 +63,5 @@ jobs:
           set -e
           cat run.txt
           echo "exit code: $rc"
-          test "$rc" = 3
-          grep -q 'not ported yet' run.txt
+          test "$rc" = 1
+          grep -q 'VSWAP: short read' run.txt

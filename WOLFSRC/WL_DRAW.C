@@ -1,6 +1,7 @@
 // WL_DRAW.C
 
 #include "WL_DEF.H"
+#include "wl_data.h"
 #pragma hdrstop
 
 //#define DEBUGWALLS
@@ -48,7 +49,7 @@ fixed	mindist		= MINDIST;
 // math tables
 //
 int			pixelangle[MAXVIEWWIDTH];
-long		far finetangent[FINEANGLES/4];
+int32_t	far finetangent[FINEANGLES/4];
 fixed 		far sintable[ANGLES+ANGLES/4],far *costable = sintable+(ANGLES/4);
 
 //
@@ -95,8 +96,8 @@ unsigned	pixx;
 
 int		xtile,ytile;
 int		xtilestep,ytilestep;
-long	xintercept,yintercept;
-long	xstep,ystep;
+int32_t xintercept,yintercept;
+int32_t xstep,ystep;
 
 int		horizwall[MAXWALLTILES],vertwall[MAXWALLTILES];
 
@@ -139,47 +140,7 @@ void AsmRefresh (void);			// in WL_DR_A.ASM
 
 fixed FixedByFrac (fixed a, fixed b)
 {
-//
-// setup
-//
-PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-asm	mov	si,[WORD PTR b+2]	// sign of result = sign of fraction
-
-asm	mov	ax,[WORD PTR a]
-asm	mov	cx,[WORD PTR a+2]
-
-asm	or	cx,cx
-asm	jns	aok:				// negative?
-asm	neg	cx
-asm	neg	ax
-asm	sbb	cx,0
-asm	xor	si,0x8000			// toggle sign of result
-aok:
-
-//
-// multiply  cx:ax by bx
-//
-asm	mov	bx,[WORD PTR b]
-asm	mul	bx					// fraction*fraction
-asm	mov	di,dx				// di is low word of result
-asm	mov	ax,cx				//
-asm	mul	bx					// units*fraction
-asm add	ax,di
-asm	adc	dx,0
-
-//
-// put result dx:ax in 2's complement
-//
-asm	test	si,0x8000		// is the result negative?
-asm	jz	ansok:
-asm	neg	dx
-asm	neg	ax
-asm	sbb	dx,0
-
-ansok:;
-#endif
-
+    return WL_FixedByFrac(a,b);
 }
 
 #pragma warn +rvl
@@ -249,19 +210,12 @@ void TransformActor (objtype *ob)
 	  return;
 	}
 
-	ob->viewx = centerx + ny*scale/nx;	// DEBUG: use assembly divide
+	ob->viewx = centerx + (int64_t)ny*scale/nx;	// DEBUG: use assembly divide
 
 //
 // calculate height (heightnumerator/(nx>>8))
 //
-	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-	asm	mov	ax,[WORD PTR heightnumerator]
-	asm	mov	dx,[WORD PTR heightnumerator+2]
-	asm	idiv	[WORD PTR nx+1]			// nx>>8
-	asm	mov	[WORD PTR temp],ax
-	asm	mov	[WORD PTR temp+2],dx
-#endif
+    temp = heightnumerator/(nx>>8);
 
 	ob->viewheight = temp;
 }
@@ -325,19 +279,12 @@ boolean TransformTile (int tx, int ty, int *dispx, int *dispheight)
 		return false;
 	}
 
-	*dispx = centerx + ny*scale/nx;	// DEBUG: use assembly divide
+	*dispx = centerx + (int64_t)ny*scale/nx;	// DEBUG: use assembly divide
 
 //
 // calculate height (heightnumerator/(nx>>8))
 //
-	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-	asm	mov	ax,[WORD PTR heightnumerator]
-	asm	mov	dx,[WORD PTR heightnumerator+2]
-	asm	idiv	[WORD PTR nx+1]			// nx>>8
-	asm	mov	[WORD PTR temp],ax
-	asm	mov	[WORD PTR temp+2],dx
-#endif
+    temp = heightnumerator/(nx>>8);
 
 	*dispheight = temp;
 
@@ -366,31 +313,9 @@ boolean TransformTile (int tx, int ty, int *dispx, int *dispheight)
 
 int	CalcHeight (void)
 {
-	int	transheight;
-	int ratio;
-	fixed gxt,gyt,nx,ny;
-	long	gx,gy;
-
-	gx = xintercept-viewx;
-	gxt = FixedByFrac(gx,viewcos);
-
-	gy = yintercept-viewy;
-	gyt = FixedByFrac(gy,viewsin);
-
-	nx = gxt-gyt;
-
-  //
-  // calculate perspective ratio (heightnumerator/(nx>>8))
-  //
-	if (nx<mindist)
-		nx=mindist;			// don't let divide overflow
-
-	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-	asm	mov	ax,[WORD PTR heightnumerator]
-	asm	mov	dx,[WORD PTR heightnumerator+2]
-	asm	idiv	[WORD PTR nx+1]			// nx>>8
-#endif
+    fixed nx=FixedByFrac(xintercept-viewx,viewcos)-FixedByFrac(yintercept-viewy,viewsin);
+    if(nx<mindist) nx=mindist;
+    return heightnumerator/(nx>>8);
 }
 
 
@@ -404,71 +329,16 @@ int	CalcHeight (void)
 ===================
 */
 
-long		postsource;
+const byte *postsource;
+static const byte *postpage;
+static unsigned postoffset;
+void WL_ScaleWallColumn(unsigned,unsigned,unsigned,const byte *);
 unsigned	postx;
 unsigned	postwidth;
 
 void	near ScalePost (void)		// VGA version
 {
-	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-	asm	mov	ax,SCREENSEG
-	asm	mov	es,ax
-
-	asm	mov	bx,[postx]
-	asm	shl	bx,1
-	asm	mov	bp,WORD PTR [wallheight+bx]		// fractional height (low 3 bits frac)
-	asm	and	bp,0xfff8				// bp = heightscaler*4
-	asm	shr	bp,1
-	asm	cmp	bp,[maxscaleshl2]
-	asm	jle	heightok
-	asm	mov	bp,[maxscaleshl2]
-heightok:
-	asm	add	bp,OFFSET fullscalefarcall
-	//
-	// scale a byte wide strip of wall
-	//
-	asm	mov	bx,[postx]
-	asm	mov	di,bx
-	asm	shr	di,2						// X in bytes
-	asm	add	di,[bufferofs]
-
-	asm	and	bx,3
-	asm	shl	bx,3						// bx = pixel*8+pixwidth
-	asm	add	bx,[postwidth]
-
-	asm	mov	al,BYTE PTR [mapmasks1-1+bx]	// -1 because no widths of 0
-	asm	mov	dx,SC_INDEX+1
-	asm	out	dx,al						// set bit mask register
-	asm	lds	si,DWORD PTR [postsource]
-	asm	call DWORD PTR [bp]				// scale the line of pixels
-
-	asm	mov	al,BYTE PTR [ss:mapmasks2-1+bx]   // -1 because no widths of 0
-	asm	or	al,al
-	asm	jz	nomore
-
-	//
-	// draw a second byte for vertical strips that cross two bytes
-	//
-	asm	inc	di
-	asm	out	dx,al						// set bit mask register
-	asm	call DWORD PTR [bp]				// scale the line of pixels
-
-	asm	mov	al,BYTE PTR [ss:mapmasks3-1+bx]	// -1 because no widths of 0
-	asm	or	al,al
-	asm	jz	nomore
-	//
-	// draw a third byte for vertical strips that cross three bytes
-	//
-	asm	inc	di
-	asm	out	dx,al						// set bit mask register
-	asm	call DWORD PTR [bp]				// scale the line of pixels
-
-
-nomore:
-	asm	mov	ax,ss
-	asm	mov	ds,ax
-#endif
+    WL_ScaleWallColumn(postx,postwidth,wallheight[postx],postsource);
 }
 
 void  FarScalePost (void)				// just so other files can call
@@ -504,7 +374,7 @@ void HitVertWall (void)
 	if (lastside==1 && lastintercept == xtile && lasttilehit == tilehit)
 	{
 		// in the same wall type as last time, so check for optimized draw
-		if (texture == (unsigned)postsource)
+		if (texture == postoffset)
 		{
 		// wide scale
 			postwidth++;
@@ -514,7 +384,7 @@ void HitVertWall (void)
 		else
 		{
 			ScalePost ();
-			SET_FP_OFF(postsource, texture);
+			postoffset=texture; postsource=postpage+texture;
 			postwidth = 1;
 			postx = pixx;
 		}
@@ -543,8 +413,8 @@ void HitVertWall (void)
 		else
 			wallpic = vertwall[tilehit];
 
-		SET_FP_SEG(postsource, PM_GetPage(wallpic));
-		SET_FP_OFF(postsource, texture);
+		postpage = PM_GetPage(wallpic);
+		postoffset=texture; postsource=postpage+texture;
 
 	}
 }
@@ -576,7 +446,7 @@ void HitHorizWall (void)
 	if (lastside==0 && lastintercept == ytile && lasttilehit == tilehit)
 	{
 		// in the same wall type as last time, so check for optimized draw
-		if (texture == (unsigned)postsource)
+		if (texture == postoffset)
 		{
 		// wide scale
 			postwidth++;
@@ -586,7 +456,7 @@ void HitHorizWall (void)
 		else
 		{
 			ScalePost ();
-			SET_FP_OFF(postsource, texture);
+			postoffset=texture; postsource=postpage+texture;
 			postwidth = 1;
 			postx = pixx;
 		}
@@ -615,8 +485,8 @@ void HitHorizWall (void)
 		else
 			wallpic = horizwall[tilehit];
 
-		SET_FP_SEG(postsource, PM_GetPage(wallpic));
-		SET_FP_OFF(postsource, texture);
+		postpage = PM_GetPage(wallpic);
+		postoffset=texture; postsource=postpage+texture;
 	}
 
 }
@@ -633,17 +503,17 @@ void HitHorizWall (void)
 
 void HitHorizDoor (void)
 {
-	unsigned	texture,doorpage,doornum;
+	unsigned texture,doorpage=DOORWALL,doornum;
 
 	doornum = tilehit&0x7f;
 	texture = ( (xintercept-doorposition[doornum]) >> 4) &0xfc0;
 
 	wallheight[pixx] = CalcHeight();
 
-	if (lasttilehit == tilehit)
+	if (lastside != -1 && lasttilehit == tilehit)
 	{
 	// in the same door as last time, so check for optimized draw
-		if (texture == (unsigned)postsource)
+		if (texture == postoffset)
 		{
 		// wide scale
 			postwidth++;
@@ -653,7 +523,7 @@ void HitHorizDoor (void)
 		else
 		{
 			ScalePost ();
-			SET_FP_OFF(postsource, texture);
+			postoffset=texture; postsource=postpage+texture;
 			postwidth = 1;
 			postx = pixx;
 		}
@@ -684,8 +554,8 @@ void HitHorizDoor (void)
 			break;
 		}
 
-		SET_FP_SEG(postsource, PM_GetPage(doorpage));
-		SET_FP_OFF(postsource, texture);
+		postpage = PM_GetPage(doorpage);
+		postoffset=texture; postsource=postpage+texture;
 	}
 }
 
@@ -701,17 +571,17 @@ void HitHorizDoor (void)
 
 void HitVertDoor (void)
 {
-	unsigned	texture,doorpage,doornum;
+	unsigned texture,doorpage=DOORWALL,doornum;
 
 	doornum = tilehit&0x7f;
 	texture = ( (yintercept-doorposition[doornum]) >> 4) &0xfc0;
 
 	wallheight[pixx] = CalcHeight();
 
-	if (lasttilehit == tilehit)
+	if (lastside != -1 && lasttilehit == tilehit)
 	{
 	// in the same door as last time, so check for optimized draw
-		if (texture == (unsigned)postsource)
+		if (texture == postoffset)
 		{
 		// wide scale
 			postwidth++;
@@ -721,7 +591,7 @@ void HitVertDoor (void)
 		else
 		{
 			ScalePost ();
-			SET_FP_OFF(postsource, texture);
+			postoffset=texture; postsource=postpage+texture;
 			postwidth = 1;
 			postx = pixx;
 		}
@@ -752,8 +622,8 @@ void HitVertDoor (void)
 			break;
 		}
 
-		SET_FP_SEG(postsource, PM_GetPage(doorpage+1));
-		SET_FP_OFF(postsource, texture);
+		postpage = PM_GetPage(doorpage+1);
+		postoffset=texture; postsource=postpage+texture;
 	}
 }
 
@@ -787,10 +657,10 @@ void HitHorizPWall (void)
 
 	wallheight[pixx] = CalcHeight();
 
-	if (lasttilehit == tilehit)
+	if (lastside == 3 && lasttilehit == tilehit)
 	{
 		// in the same wall type as last time, so check for optimized draw
-		if (texture == (unsigned)postsource)
+		if (texture == postoffset)
 		{
 		// wide scale
 			postwidth++;
@@ -800,7 +670,7 @@ void HitHorizPWall (void)
 		else
 		{
 			ScalePost ();
-			SET_FP_OFF(postsource, texture);
+			postoffset=texture; postsource=postpage+texture;
 			postwidth = 1;
 			postx = pixx;
 		}
@@ -811,14 +681,15 @@ void HitHorizPWall (void)
 		if (lastside != -1)				// if not the first scaled post
 			ScalePost ();
 
+		lastside = 3;
 		lasttilehit = tilehit;
 		postx = pixx;
 		postwidth = 1;
 
 		wallpic = horizwall[tilehit&63];
 
-		SET_FP_SEG(postsource, PM_GetPage(wallpic));
-		SET_FP_OFF(postsource, texture);
+		postpage = PM_GetPage(wallpic);
+		postoffset=texture; postsource=postpage+texture;
 	}
 
 }
@@ -851,10 +722,10 @@ void HitVertPWall (void)
 
 	wallheight[pixx] = CalcHeight();
 
-	if (lasttilehit == tilehit)
+	if (lastside == 3 && lasttilehit == tilehit)
 	{
 		// in the same wall type as last time, so check for optimized draw
-		if (texture == (unsigned)postsource)
+		if (texture == postoffset)
 		{
 		// wide scale
 			postwidth++;
@@ -864,7 +735,7 @@ void HitVertPWall (void)
 		else
 		{
 			ScalePost ();
-			SET_FP_OFF(postsource, texture);
+			postoffset=texture; postsource=postpage+texture;
 			postwidth = 1;
 			postx = pixx;
 		}
@@ -875,14 +746,15 @@ void HitVertPWall (void)
 		if (lastside != -1)				// if not the first scaled post
 			ScalePost ();
 
+		lastside = 4;
 		lasttilehit = tilehit;
 		postx = pixx;
 		postwidth = 1;
 
 		wallpic = vertwall[tilehit&63];
 
-		SET_FP_SEG(postsource, PM_GetPage(wallpic));
-		SET_FP_OFF(postsource, texture);
+		postpage = PM_GetPage(wallpic);
+		postoffset=texture; postsource=postpage+texture;
 	}
 
 }
@@ -908,53 +780,7 @@ void ClearScreen (void)
   //
   // clear the screen
   //
-PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-asm	mov	dx,GC_INDEX
-asm	mov	ax,GC_MODE + 256*2		// read mode 0, write mode 2
-asm	out	dx,ax
-asm	mov	ax,GC_BITMASK + 255*256
-asm	out	dx,ax
-
-asm	mov	dx,40
-asm	mov	ax,[viewwidth]
-asm	shr	ax,3
-asm	sub	dx,ax					// dx = 40-viewwidth/8
-
-asm	mov	bx,[viewwidth]
-asm	shr	bx,4					// bl = viewwidth/16
-asm	mov	bh,BYTE PTR [viewheight]
-asm	shr	bh,1					// half height
-
-asm	mov	ax,[ceiling]
-asm	mov	es,[screenseg]
-asm	mov	di,[bufferofs]
-
-toploop:
-asm	mov	cl,bl
-asm	rep	stosw
-asm	add	di,dx
-asm	dec	bh
-asm	jnz	toploop
-
-asm	mov	bh,BYTE PTR [viewheight]
-asm	shr	bh,1					// half height
-asm	mov	ax,[floor]
-
-bottomloop:
-asm	mov	cl,bl
-asm	rep	stosw
-asm	add	di,dx
-asm	dec	bh
-asm	jnz	bottomloop
-
-
-asm	mov	dx,GC_INDEX
-asm	mov	ax,GC_MODE + 256*10		// read mode 1, write mode 2
-asm	out	dx,ax
-asm	mov	al,GC_BITMASK
-asm	out	dx,al
-#endif
+VL_SetScreen(displayofs,0);
 
 }
 #endif
@@ -986,49 +812,9 @@ unsigned vgaCeiling[]=
 
 void VGAClearScreen (void)
 {
- unsigned ceiling=vgaCeiling[gamestate.episode*10+mapon];
-
-  //
-  // clear the screen
-  //
-PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-asm	mov	dx,SC_INDEX
-asm	mov	ax,SC_MAPMASK+15*256	// write through all planes
-asm	out	dx,ax
-
-asm	mov	dx,80
-asm	mov	ax,[viewwidth]
-asm	shr	ax,2
-asm	sub	dx,ax					// dx = 40-viewwidth/2
-
-asm	mov	bx,[viewwidth]
-asm	shr	bx,3					// bl = viewwidth/8
-asm	mov	bh,BYTE PTR [viewheight]
-asm	shr	bh,1					// half height
-
-asm	mov	es,[screenseg]
-asm	mov	di,[bufferofs]
-asm	mov	ax,[ceiling]
-
-toploop:
-asm	mov	cl,bl
-asm	rep	stosw
-asm	add	di,dx
-asm	dec	bh
-asm	jnz	toploop
-
-asm	mov	bh,BYTE PTR [viewheight]
-asm	shr	bh,1					// half height
-asm	mov	ax,0x1919
-
-bottomloop:
-asm	mov	cl,bl
-asm	rep	stosw
-asm	add	di,dx
-asm	dec	bh
-asm	jnz	bottomloop
-#endif
+    unsigned ceiling=vgaCeiling[gamestate.episode*10+mapon]&255;
+    int y;
+    for(y=0;y<viewheight;y++) VL_Hlin(0,y,viewwidth,y<viewheight/2?ceiling:0x19);
 }
 
 //==========================================================================
@@ -1358,20 +1144,12 @@ void	ThreeDRefresh (void)
 	int tracedir;
 
 // this wouldn't need to be done except for my debugger/video wierdness
-	outportb (SC_INDEX,SC_MAPMASK);
+	/* Drawing uses the backend pixel API. */
 
 //
 // clear out the traced array
 //
-PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-asm	mov	ax,ds
-asm	mov	es,ax
-asm	mov	di,OFFSET spotvis
-asm	xor	ax,ax
-asm	mov	cx,2048							// 64*64 / 2
-asm	rep stosw
-#endif
+memset(spotvis,0,sizeof spotvis);
 
 	bufferofs += screenofs;
 
@@ -1403,18 +1181,7 @@ asm	rep stosw
 	bufferofs -= screenofs;
 	displayofs = bufferofs;
 
-	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-	asm	cli
-	asm	mov	cx,[displayofs]
-	asm	mov	dx,3d4h		// CRTC address register
-	asm	mov	al,0ch		// start address high register
-	asm	out	dx,al
-	asm	inc	dx
-	asm	mov	al,ch
-	asm	out	dx,al   	// set the high byte
-	asm	sti
-#endif
+	VL_SetScreen(displayofs,0);
 
 	bufferofs += SCREENSIZE;
 	if (bufferofs > PAGE3START)

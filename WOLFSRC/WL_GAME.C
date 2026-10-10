@@ -222,7 +222,7 @@ void ScanInfoPlane (void)
 {
 	unsigned	x,y,i,j;
 	int			tile;
-	unsigned	far	*start;
+	word	far	*start;
 
 	start = mapsegs[1];
 	for (y=0;y<mapheight;y++)
@@ -625,7 +625,7 @@ void ScanInfoPlane (void)
 void SetupGameLevel (void)
 {
 	int	x,y,i;
-	unsigned	far *map,tile,spot;
+	word	far *map,tile,spot;
 
 
 	if (!loadedgame)
@@ -734,7 +734,7 @@ void SetupGameLevel (void)
 			if (tile == AMBUSHTILE)
 			{
 				tilemap[x][y] = 0;
-				if ( (unsigned)(uintptr_t)actorat[x][y] == AMBUSHTILE)
+				if ( (uintptr_t)actorat[x][y] == AMBUSHTILE)
 					actorat[x][y] = NULL;
 
 				if (*map >= AREATILE)
@@ -1351,7 +1351,7 @@ startplayloop:
 				#ifndef JAPAN
 				_fstrcpy(MainMenu[viewscores].string,STR_VS);
 				#endif
-				MainMenu[viewscores].routine = CP_ViewScores;
+				MainMenu[viewscores].routine = CP_ViewScoresMenu;
 				#pragma warn +sus
 
 				return;
@@ -1373,7 +1373,7 @@ startplayloop:
 				#ifndef JAPAN
 				_fstrcpy(MainMenu[viewscores].string,STR_VS);
 				#endif
-				MainMenu[viewscores].routine = CP_ViewScores;
+				MainMenu[viewscores].routine = CP_ViewScoresMenu;
 				#pragma warn +sus
 
 				return;
@@ -1445,7 +1445,7 @@ startplayloop:
 			#ifndef JAPAN
 			_fstrcpy(MainMenu[viewscores].string,STR_VS);
 			#endif
-			MainMenu[viewscores].routine = CP_ViewScores;
+			MainMenu[viewscores].routine = CP_ViewScoresMenu;
 			#pragma warn +sus
 
 			return;
@@ -1469,7 +1469,7 @@ startplayloop:
 			#ifndef JAPAN
 			_fstrcpy(MainMenu[viewscores].string,STR_VS);
 			#endif
-			MainMenu[viewscores].routine = CP_ViewScores;
+			MainMenu[viewscores].routine = CP_ViewScoresMenu;
 			#pragma warn +sus
 
 			return;

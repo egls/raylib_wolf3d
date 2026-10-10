@@ -697,7 +697,7 @@ typedef enum	{
 } weapontype;
 
 
-typedef enum	{
+enum	{
 	gd_baby,
 	gd_easy,
 	gd_medium,
@@ -780,14 +780,14 @@ extern	int		mouseadjustment;
 // math tables
 //
 extern	int			pixelangle[MAXVIEWWIDTH];
-extern	long		far finetangent[FINEANGLES/4];
+extern	int32_t	far finetangent[FINEANGLES/4];
 extern	fixed 		far sintable[],far *costable;
 
 //
 // derived constants
 //
 extern	fixed 	scale,maxslope;
-extern	long	heightnumerator;
+extern	int32_t heightnumerator;
 extern	int		minheightdiv;
 
 extern	char	configname[13];
@@ -979,14 +979,14 @@ extern	fixed	mindist;
 // math tables
 //
 extern	int			pixelangle[MAXVIEWWIDTH];
-extern	long		far finetangent[FINEANGLES/4];
+extern	int32_t	far finetangent[FINEANGLES/4];
 extern	fixed 		far sintable[],far *costable;
 
 //
 // derived constants
 //
 extern	fixed 	scale;
-extern	long	heightnumerator;	// WOLF-2: mindist is declared above as fixed
+extern	int32_t heightnumerator;	// WOLF-2: mindist is declared above as fixed
 
 //
 // refresh variables
@@ -995,7 +995,7 @@ extern	fixed	viewx,viewy;			// the focal point
 extern	int		viewangle;
 extern	fixed	viewsin,viewcos;
 
-extern	long		postsource;
+extern	const byte *postsource;
 extern	unsigned	postx;
 extern	unsigned	postwidth;
 
@@ -1059,33 +1059,9 @@ boolean	CheckSight (objtype *ob);
 */
 
 
-#define COMPSCALECODESTART	(65*4)		// offset to start of code in comp scaler
-
-typedef struct
-{
-	unsigned	codeofs[65];
-	unsigned	width[65];
-	byte		code[];
-}	t_compscale;
-
-typedef struct
-{
-	unsigned	leftpix,rightpix;
-	unsigned	dataofs[64];
-// table data after dataofs[rightpix-leftpix+1]
-}	t_compshape;
-
-
-extern	t_compscale _seg *scaledirectory[MAXSCALEHEIGHT+1];
-extern	long			fullscalefarcall[MAXSCALEHEIGHT+1];
-
-extern	byte		bitmasks1[8][8];
-extern	byte		bitmasks2[8][8];
-extern	unsigned	wordmasks[8][8];
-
-extern	byte		mapmasks1[4][8];
-extern	byte		mapmasks2[4][8];
-extern	byte		mapmasks3[4][8];
+/* Sprite pages are byte streams decoded by WL_SCALE.C. Compiled executable
+ * scalers and segment-call tables no longer exist. */
+void WL_ScaleWallColumn(unsigned x,unsigned width,unsigned height,const byte *source);
 
 extern	int			maxscale,maxscaleshl2;
 

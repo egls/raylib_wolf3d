@@ -88,7 +88,9 @@ set(WOLF3D_PORT_SOURCES
   port/wl_videotest.c
   port/wl_compat.c
   port/wl_platform.c
-  port/asm_stubs.c)
+  port/asm_stubs.c
+  port/wl_data.c
+  port/wl_raycast.c)
 
 set(WOLF3D_WARNINGS -Wall -fsigned-char)
 # The id code defines globals in headers (e.g. menuitems in WL_MENU.H) and
@@ -140,15 +142,44 @@ if(WOLF3D_WITH_AUDIO)
   target_link_libraries(raylib_wolf3d PRIVATE wolf_audio)
 endif()
 
-# ---------------------------------------------------------------------------
-# Tests (ctest): the raylib keyboard translation against a fake raylib, no display needed.
-# ---------------------------------------------------------------------------
-enable_testing()
-add_executable(rl_keys_test tests/rl_keys_test.c port/id_raylib.c)
-target_include_directories(rl_keys_test PRIVATE port
-  $<TARGET_PROPERTY:raylib,INTERFACE_INCLUDE_DIRECTORIES>)
-target_link_libraries(rl_keys_test PRIVATE m)
-if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-  target_compile_options(rl_keys_test PRIVATE -Wall)
+include(CTest)
+if(BUILD_TESTING)
+  add_executable(wolf_core_data_test tests/core_data_test.c
+    WOLFSRC/ID_MM.C WOLFSRC/ID_PM.C WOLFSRC/ID_CA.C WOLFSRC/WL_SCALE.C port/wl_data.c)
+  target_include_directories(wolf_core_data_test PRIVATE port WOLFSRC)
+  target_compile_options(wolf_core_data_test PRIVATE -Wall -Wextra -fsigned-char -fcommon)
+  add_executable(wolf_codec_test tests/codec_test.c port/wl_data.c)
+  target_include_directories(wolf_codec_test PRIVATE port)
+  target_compile_options(wolf_codec_test PRIVATE -Wall -Wextra -fsigned-char)
+  add_executable(wolf_render_test tests/render_test.c WOLFSRC/WL_DRAW.C WOLFSRC/WL_STATE.C
+    WOLFSRC/WL_SCALE.C WOLFSRC/WOLFHACK.C WOLFSRC/ID_MM.C port/wl_raycast.c port/wl_data.c port/asm_stubs.c)
+  target_include_directories(wolf_render_test PRIVATE port WOLFSRC)
+  target_compile_options(wolf_render_test PRIVATE ${WOLF3D_WARNINGS} ${WOLF3D_GAME_FLAGS} -ffunction-sections -fdata-sections)
+  target_link_options(wolf_render_test PRIVATE -Wl,--gc-sections)
+  target_link_libraries(wolf_render_test PRIVATE m)
+  add_test(NAME core_renderer COMMAND wolf_render_test)
+  set(WOLF3D_TEST_DATA "$ENV{HOME}/wolf3d-data/shareware" CACHE PATH "External WL1 data for core tests")
+  add_test(NAME core_wl1_data COMMAND wolf_core_data_test "${WOLF3D_TEST_DATA}")
+  set_tests_properties(core_wl1_data PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 30)
+  add_test(NAME core_codecs COMMAND wolf_codec_test)
+
+  # ---------------------------------------------------------------------------
+  # Tests (ctest): the raylib keyboard translation against a fake raylib, no display needed.
+  # ---------------------------------------------------------------------------
+  add_executable(rl_keys_test tests/rl_keys_test.c port/id_raylib.c)
+  target_include_directories(rl_keys_test PRIVATE port
+    $<TARGET_PROPERTY:raylib,INTERFACE_INCLUDE_DIRECTORIES>)
+  target_link_libraries(rl_keys_test PRIVATE m)
+  if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(rl_keys_test PRIVATE -Wall)
+  endif()
+  add_test(NAME rl_keys_test COMMAND rl_keys_test)
+
+  option(WOLF3D_CORE_SANITIZERS "Use ASan/UBSan on headless core tests" OFF)
+  if(WOLF3D_CORE_SANITIZERS AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    foreach(t wolf_core_data_test wolf_codec_test wolf_render_test rl_keys_test)
+      target_compile_options(${t} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+      target_link_options(${t} PRIVATE -fsanitize=address,undefined)
+    endforeach()
+  endif()
 endif()
-add_test(NAME rl_keys_test COMMAND rl_keys_test)
