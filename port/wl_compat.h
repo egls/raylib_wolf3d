@@ -119,8 +119,8 @@ struct ffblk
 	unsigned	ff_fdate;
 	long		ff_fsize;
 	char		ff_name[256];
-	/* WOLF-2: portable search state */
-	void		*ff_dir;
+	/* WOLF-2: portable search state (WOLF-7: no open handle) */
+	long		ff_found;		// matches already reported
 	char		ff_pattern[256];
 };
 

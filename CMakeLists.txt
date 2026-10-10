@@ -91,9 +91,28 @@ set(WOLF3D_PORT_SOURCES
   port/asm_stubs.c
   port/wl_data.c
   port/wl_raycast.c
-  port/wl_save.c)
+  port/wl_demotest.c
+  port/wl_persist.c)
 
-set(WOLF3D_WARNINGS -Wall -fsigned-char)
+# TEMPORARY (WOLF-7): ID_SD.C still stops at its DOS sound hardware code until
+# WOLF-6 lands.  port/sd_silent.c is a no-sound Sound Manager built instead of
+# it so the game can run.  Remove this block when WOLF-6 is merged.
+option(WOLF3D_SILENT_SD "Build port/sd_silent.c instead of WOLFSRC/ID_SD.C" ON)
+if(WOLF3D_SILENT_SD)
+  list(REMOVE_ITEM WOLF3D_GAME_SOURCES WOLFSRC/ID_SD.C)
+  list(APPEND WOLF3D_PORT_SOURCES port/sd_silent.c)
+endif()
+
+# Borland C's char was signed, so the build pins -fsigned-char (plain char is
+# unsigned on ARM).  WOLF3D_UNSIGNED_CHAR builds with -funsigned-char instead,
+# to check that the code no longer depends on it (WOLF-19).
+option(WOLF3D_UNSIGNED_CHAR "Build with -funsigned-char (portability check)" OFF)
+if(WOLF3D_UNSIGNED_CHAR)
+  set(WOLF3D_CHAR_FLAG -funsigned-char)
+else()
+  set(WOLF3D_CHAR_FLAG -fsigned-char)
+endif()
+set(WOLF3D_WARNINGS -Wall ${WOLF3D_CHAR_FLAG})
 # The id code defines globals in headers (e.g. menuitems in WL_MENU.H) and
 # relied on the DOS linker merging them; keep that behaviour.
 set(WOLF3D_GAME_FLAGS -fcommon)
@@ -128,7 +147,19 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
   set_property(SOURCE ${WOLF3D_GAME_SOURCES} APPEND PROPERTY COMPILE_OPTIONS -x c)
 endif()
 
-add_executable(raylib_wolf3d ${WOLF3D_GAME_SOURCES} ${WOLF3D_PORT_SOURCES} ${WOLF3D_OBJDATA})
+# Table of every actor state, so save games can store states as indices.
+set(WOLF3D_STATES ${WOLF3D_GEN_DIR}/wl_states.c)
+add_custom_command(
+  OUTPUT ${WOLF3D_STATES}
+  COMMAND ${CMAKE_COMMAND} -E make_directory ${WOLF3D_GEN_DIR}
+  COMMAND Python3::Interpreter ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_states.py > ${WOLF3D_STATES}
+  DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_states.py
+          ${CMAKE_CURRENT_SOURCE_DIR}/WOLFSRC/WL_AGENT.C
+          ${CMAKE_CURRENT_SOURCE_DIR}/WOLFSRC/WL_ACT2.C
+  COMMENT "Generating the actor state table"
+  VERBATIM)
+
+add_executable(raylib_wolf3d ${WOLF3D_GAME_SOURCES} ${WOLF3D_PORT_SOURCES} ${WOLF3D_OBJDATA} ${WOLF3D_STATES})
 target_include_directories(raylib_wolf3d PRIVATE port WOLFSRC)
 find_package(Threads REQUIRED)
 target_link_libraries(raylib_wolf3d PRIVATE wolf3d_raylib Threads::Threads m)
@@ -136,6 +167,13 @@ target_link_libraries(raylib_wolf3d PRIVATE wolf3d_raylib Threads::Threads m)
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(raylib_wolf3d PRIVATE ${WOLF3D_WARNINGS} ${WOLF3D_GAME_FLAGS})
   target_compile_options(wolf3d_raylib PRIVATE ${WOLF3D_WARNINGS})
+endif()
+
+# ASan/UBSan for the game itself (the "asan" preset turns this on).
+option(WOLF3D_SANITIZERS "Build raylib_wolf3d with ASan/UBSan" OFF)
+if(WOLF3D_SANITIZERS AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(raylib_wolf3d PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+  target_link_options(raylib_wolf3d PRIVATE -fsanitize=address,undefined)
 endif()
 
 if(WOLF3D_WITH_AUDIO)
@@ -148,10 +186,10 @@ if(BUILD_TESTING)
   add_executable(wolf_core_data_test tests/core_data_test.c
     WOLFSRC/ID_MM.C WOLFSRC/ID_PM.C WOLFSRC/ID_CA.C WOLFSRC/WL_SCALE.C port/wl_data.c)
   target_include_directories(wolf_core_data_test PRIVATE port WOLFSRC)
-  target_compile_options(wolf_core_data_test PRIVATE -Wall -Wextra -fsigned-char -fcommon)
+  target_compile_options(wolf_core_data_test PRIVATE -Wall -Wextra ${WOLF3D_CHAR_FLAG} -fcommon)
   add_executable(wolf_codec_test tests/codec_test.c port/wl_data.c)
   target_include_directories(wolf_codec_test PRIVATE port)
-  target_compile_options(wolf_codec_test PRIVATE -Wall -Wextra -fsigned-char)
+  target_compile_options(wolf_codec_test PRIVATE -Wall -Wextra ${WOLF3D_CHAR_FLAG})
   add_executable(wolf_render_test tests/render_test.c WOLFSRC/WL_DRAW.C WOLFSRC/WL_STATE.C
     WOLFSRC/WL_SCALE.C WOLFSRC/WOLFHACK.C WOLFSRC/ID_MM.C port/wl_raycast.c port/wl_data.c port/asm_stubs.c)
   target_include_directories(wolf_render_test PRIVATE port WOLFSRC)
@@ -163,6 +201,20 @@ if(BUILD_TESTING)
   add_test(NAME core_wl1_data COMMAND wolf_core_data_test "${WOLF3D_TEST_DATA}")
   set_tests_properties(core_wl1_data PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 30)
   add_test(NAME core_codecs COMMAND wolf_codec_test)
+
+  # The four shareware demos, at full speed under Xvfb, against recorded
+  # final-state hashes (WOLF-7).  Skips without WL1 data or xvfb-run.
+  add_test(NAME demo_sync COMMAND ${CMAKE_COMMAND}
+    -DGAME=$<TARGET_FILE:raylib_wolf3d> -DDATA=${WOLF3D_TEST_DATA}
+    -DWORK=${CMAKE_CURRENT_BINARY_DIR}/demo_sync
+    -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/demo_sync.cmake)
+  set_tests_properties(demo_sync PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED" TIMEOUT 300)
+
+  # Config and save game formats: -savetest plus malformed CONFIG.WL1 files.
+  add_test(NAME persist_check COMMAND Python3::Interpreter -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/persist_check.py
+    $<TARGET_FILE:raylib_wolf3d> ${WOLF3D_TEST_DATA} ${CMAKE_CURRENT_BINARY_DIR}/persist_check)
+  set_tests_properties(persist_check PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED" TIMEOUT 600)
 
   # ---------------------------------------------------------------------------
   # Tests (ctest): the raylib keyboard translation against a fake raylib, no display needed.
@@ -176,19 +228,9 @@ if(BUILD_TESTING)
   endif()
   add_test(NAME rl_keys_test COMMAND rl_keys_test)
 
-  # ---------------------------------------------------------------------------
-  # Tests (ctest): XDG config/save serialization and roundtrip
-  # ---------------------------------------------------------------------------
-  add_executable(wolf_save_test tests/save_test.c port/wl_save.c)
-  target_include_directories(wolf_save_test PRIVATE port WOLFSRC)
-  if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-    target_compile_options(wolf_save_test PRIVATE -Wall -fsigned-char -fcommon)
-  endif()
-  add_test(NAME core_save COMMAND wolf_save_test)
-
   option(WOLF3D_CORE_SANITIZERS "Use ASan/UBSan on headless core tests" OFF)
   if(WOLF3D_CORE_SANITIZERS AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-    foreach(t wolf_core_data_test wolf_codec_test wolf_render_test rl_keys_test wolf_save_test)
+    foreach(t wolf_core_data_test wolf_codec_test wolf_render_test rl_keys_test)
       target_compile_options(${t} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
       target_link_options(${t} PRIVATE -fsanitize=address,undefined)
     endforeach()

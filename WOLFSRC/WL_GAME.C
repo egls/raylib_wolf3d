@@ -943,7 +943,8 @@ void FinishDemoRecord (void)
 	length = demoptr - (char far *)demobuffer;
 
 	demoptr = ((char far *)demobuffer)+1;
-	*(unsigned far *)demoptr = length;
+	demoptr[0] = length & 0xff;		// WOLF-19: was *(unsigned far *)demoptr = length,
+	demoptr[1] = (length >> 8) & 0xff;	// a misaligned 4-byte store that clobbered byte 4
 
 	CenterWindow(24,3);
 	PrintY+=6;

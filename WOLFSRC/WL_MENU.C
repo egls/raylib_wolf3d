@@ -4,8 +4,8 @@
 // by John Romero (C) 1992 Id Software, Inc.
 //
 ////////////////////////////////////////////////////////////////////
-#include "WL_DEF.H"	// WOLF-2: case-sensitive file systems
-#include "wl_save.h"
+#include "WL_DEF.H"
+#include "wl_persist.h"	// WOLF-7: WL_UserFile	// WOLF-2: case-sensitive file systems
 #pragma hdrstop
 
 //
@@ -300,7 +300,7 @@ int EpisodeSelect[6]={1};
 
 
 int SaveGamesAvail[10],StartGame,SoundStatus=1,pickquick;
-char SaveGameNames[10][32],SaveName[256]="SAVEGAM?.";
+char SaveGameNames[10][32],SaveName[13]="SAVEGAM?.";
 
 
 ////////////////////////////////////////////////////////////////////
@@ -1386,8 +1386,10 @@ void DrawLSAction(int which)
 int CP_LoadGame(int quick)
 {
 	int handle,which,exit=0;
-	char name[512];
+	char name[13];
 
+
+	strcpy(name,SaveName);
 
 	//
 	// QUICKLOAD?
@@ -1398,30 +1400,30 @@ int CP_LoadGame(int quick)
 
 		if (SaveGamesAvail[which])
 		{
-			WL_GetSaveFilePath(which, name, sizeof(name));
-			handle=open(name,O_RDONLY | O_BINARY);
-			if (handle != -1)
+			name[7]=which+'0';
+			handle=open(WL_UserFile(name),O_RDONLY | O_BINARY);	// WOLF-7: user dir
+			if (handle == -1)
+				return 0;
+			lseek(handle,32,SEEK_SET);
+			loadedgame=true;
+			if (!LoadTheGame(handle,0,0))	// WOLF-7: a bad file changes nothing
 			{
-				lseek(handle,32,SEEK_SET);
-				loadedgame=true;
-				boolean ok = LoadTheGame(handle,0,0);
 				loadedgame=false;
 				close(handle);
-
-				if (!ok)
-					return 0;
-
-				DrawFace ();
-				DrawHealth ();
-				DrawLives ();
-				DrawLevel ();
-				DrawAmmo ();
-				DrawKeys ();
-				DrawWeapon ();
-				DrawScore ();
-				return 1;
+				return 0;
 			}
-			return 0;
+			loadedgame=false;
+			close(handle);
+
+			DrawFace ();
+			DrawHealth ();
+			DrawLives ();
+			DrawLevel ();
+			DrawAmmo ();
+			DrawKeys ();
+			DrawWeapon ();
+			DrawScore ();
+			return 1;
 		}
 	}
 
@@ -1439,50 +1441,40 @@ int CP_LoadGame(int quick)
 		if (which>=0 && SaveGamesAvail[which])
 		{
 			ShootSnd();
-			WL_GetSaveFilePath(which, name, sizeof(name));
+			name[7]=which+'0';
 
-			handle=open(name,O_RDONLY | O_BINARY);
-			if (handle != -1)
+			handle=open(WL_UserFile(name),O_RDONLY | O_BINARY);	// WOLF-7: user dir
+			if (handle == -1)
+				continue;
+			lseek(handle,32,SEEK_SET);
+
+			DrawLSAction(0);
+			loadedgame=true;
+
+			if (!LoadTheGame(handle,LSA_X+8,LSA_Y+5))	// WOLF-7: a bad file changes nothing
 			{
-				lseek(handle,32,SEEK_SET);
-
-				DrawLSAction(0);
-				loadedgame=true;
-
-				boolean ok = LoadTheGame(handle,LSA_X+8,LSA_Y+5);
+				loadedgame=false;
 				close(handle);
-
-				if (!ok)
-				{
-					loadedgame=false;
-					SD_PlaySound(NOWAYSND);
-					DrawLoadSaveScreen(0);
-					continue;
-				}
-
-				StartGame=1;
-				ShootSnd();
-				//
-				// CHANGE "READ THIS!" TO NORMAL COLOR
-				//
-
-				#ifndef SPEAR
-				#ifndef GOODTIMES
-				MainMenu[readthis].active=1;
-				#endif
-				#endif
-
-				exit=1;
-				break;
-			}
-			else
-			{
-				SD_PlaySound(NOWAYSND);
 				DrawLoadSaveScreen(0);
 				continue;
 			}
-		}
+			close(handle);
 
+			StartGame=1;
+			ShootSnd();
+			//
+			// CHANGE "READ THIS!" TO NORMAL COLOR
+			//
+
+			#ifndef SPEAR
+			#ifndef GOODTIMES
+			MainMenu[readthis].active=1;
+			#endif
+			#endif
+
+			exit=1;
+			break;
+		}
 
 	} while(which>=0);
 
@@ -1574,8 +1566,11 @@ void PrintLSEntry(int w,int color)
 int CP_SaveGame(int quick)
 {
 	int handle,which,exit=0;
-	char name[512],input[32];
+	unsigned nwritten;
+	char name[13],input[32];
 
+
+	strcpy(name,SaveName);
 
 	//
 	// QUICKSAVE?
@@ -1586,37 +1581,19 @@ int CP_SaveGame(int quick)
 
 		if (SaveGamesAvail[which])
 		{
-			WL_GetSaveFilePath(which, name, sizeof(name));
-			char dir[512];
-			snprintf(dir, sizeof(dir), "%s", name);
-			char *slash = strrchr(dir, '/');
-			if (slash) { *slash = '\0'; WL_EnsureDir(dir); }
-
-			char tmpname[sizeof(name) + 8];
-			snprintf(tmpname, sizeof(tmpname), "%s.tmp", name);
-
-			handle=open(tmpname, O_WRONLY | O_CREAT | O_TRUNC | O_BINARY, 0644);
-			if (handle != -1)
-			{
-				strcpy(input,&SaveGameNames[which][0]);
-				char input32[32];
-				memset(input32, 0, sizeof(input32));
-				size_t inlen = strlen(input);
-				if (inlen > 31) inlen = 31;
-				memcpy(input32, input, inlen);
-				ssize_t wr = write(handle, input32, 32);
-				lseek(handle,32,SEEK_SET);
-				boolean ok = (wr == 32) && SaveTheGame(handle,0,0);
-				close(handle);
-
-				if (ok && rename(tmpname, name) == 0)
-				{
-					return 1;
-				}
-				unlink(tmpname);
+			name[7]=which+'0';
+			handle=open(WL_UserFile(name),O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,0644);	// WOLF-7
+			if (handle == -1)
 				return 0;
-			}
-			return 0;
+
+			strcpy(input,&SaveGameNames[which][0]);
+
+			write(handle,input,32);
+			lseek(handle,32,SEEK_SET);
+			SaveTheGame(handle,0,0);
+			close(handle);
+
+			return 1;
 		}
 	}
 
@@ -1656,7 +1633,7 @@ int CP_SaveGame(int quick)
 			ShootSnd();
 
 			strcpy(input,&SaveGameNames[which][0]);
-			WL_GetSaveFilePath(which, name, sizeof(name));
+			name[7]=which+'0';
 
 			fontnumber=0;
 			if (!SaveGamesAvail[which])
@@ -1665,51 +1642,28 @@ int CP_SaveGame(int quick)
 
 			if (US_LineInput(LSM_X+LSItems.indent+2,LSM_Y+which*13+1,input,input,true,31,LSM_W-LSItems.indent-30))
 			{
-				char dir[512];
-				snprintf(dir, sizeof(dir), "%s", name);
-				char *slash = strrchr(dir, '/');
-				if (slash) { *slash = '\0'; WL_EnsureDir(dir); }
+				SaveGamesAvail[which]=1;
+				strcpy(&SaveGameNames[which][0],input);
 
-				char tmpname[sizeof(name) + 8];
-				snprintf(tmpname, sizeof(tmpname), "%s.tmp", name);
-
-				handle=open(tmpname, O_WRONLY | O_CREAT | O_TRUNC | O_BINARY, 0644);
-				if (handle != -1)
+				handle=open(WL_UserFile(name),O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,0644);	// WOLF-7
+				if (handle == -1)
 				{
-					char input32[32];
-					memset(input32, 0, sizeof(input32));
-					size_t inlen = strlen(input);
-					if (inlen > 31) inlen = 31;
-					memcpy(input32, input, inlen);
-					ssize_t wr = write(handle, input32, 32);
-					lseek(handle,32,SEEK_SET);
-
-					DrawLSAction(1);
-					boolean ok = (wr == 32) && SaveTheGame(handle,LSA_X+8,LSA_Y+5);
-
-					close(handle);
-
-					if (ok && rename(tmpname, name) == 0)
-					{
-						SaveGamesAvail[which]=1;
-						strcpy(&SaveGameNames[which][0],input);
-						ShootSnd();
-						exit=1;
-					}
-					else
-					{
-						unlink(tmpname);
-						SD_PlaySound(NOWAYSND);
-						DrawLoadSaveScreen(1);
-						continue;
-					}
-				}
-				else
-				{
-					SD_PlaySound(NOWAYSND);
+					Message(STR_NOSPACE1"\n"STR_NOSPACE2);
+					IN_ClearKeysDown();
+					IN_Ack();
 					DrawLoadSaveScreen(1);
 					continue;
 				}
+				write(handle,input,32);
+				lseek(handle,32,SEEK_SET);
+
+				DrawLSAction(1);
+				SaveTheGame(handle,LSA_X+8,LSA_Y+5);
+
+				close(handle);
+
+				ShootSnd();
+				exit=1;
 			}
 			else
 			{
@@ -3138,22 +3092,27 @@ void SetupControlPanel(void)
 	else
 		MainMenu[savegame].active=1;
 
-	for (which = 0; which < 10; which++)
+	//
+	// SEE WHICH SAVE GAME FILES ARE AVAILABLE & READ STRING IN
+	//
+	// WOLF-7: saves live in the user dir; list the ones in this port's format
+	strcpy(name,SaveName);
+	for (which=0;which<10;which++)
 	{
-		char savename[512];
-		WL_GetSaveFilePath(which, savename, sizeof(savename));
-		int handle = open(savename, O_RDONLY | O_BINARY);
-		if (handle != -1)
+		int handle;
+		char temp[32];
+
+		name[7]=which+'0';
+		handle=open(WL_UserFile(name),O_RDONLY | O_BINARY);
+		if (handle == -1)
+			continue;
+		if (read(handle,temp,32) == 32 && SaveGameValid(handle))
 		{
-			char temp[32];
-			if (read(handle, temp, 32) == 32)
-			{
-				SaveGamesAvail[which] = 1;
-				temp[31] = '\0';
-				strcpy(&SaveGameNames[which][0], temp);
-			}
-			close(handle);
+			temp[31]=0;
+			SaveGamesAvail[which]=1;
+			strcpy(&SaveGameNames[which][0],temp);
 		}
+		close(handle);
 	}
 
 	//

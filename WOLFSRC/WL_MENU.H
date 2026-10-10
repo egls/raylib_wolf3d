@@ -190,7 +190,7 @@ void CheckForEpisodes(void);
 // VARIABLES
 //
 extern int SaveGamesAvail[10],StartGame,SoundStatus;
-extern char SaveGameNames[10][32],SaveName[256];
+extern char SaveGameNames[10][32],SaveName[13];
 
 enum {MOUSE,JOYSTICK,KEYBOARDBTNS,KEYBOARDMOVE};	// FOR INPUT TYPES
 
