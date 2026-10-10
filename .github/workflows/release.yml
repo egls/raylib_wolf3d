@@ -1,0 +1,139 @@
+name: release
+
+# A pushed v* tag builds the Ubuntu x86_64 tarball and .deb and attaches them
+# to a DRAFT GitHub release; a maintainer reviews and publishes it by hand.
+# Pull requests that touch the packaging run the same build as a dry run
+# (artifacts only, no release).  No game data is ever packaged.
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - scripts/package.sh
+      - scripts/fetch_shareware.sh
+      - README.rst
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build python3 xvfb xauth dpkg-dev \
+            libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
+            libgl1-mesa-dev libasound2-dev
+
+      - name: Version
+        id: version
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            version="${GITHUB_REF_NAME#v}"
+          else
+            version="0.0.0~git$(git rev-parse --short HEAD)"
+          fi
+          # Debian versions must start with a digit.
+          echo "$version" | grep -Eq '^[0-9][0-9A-Za-z.+~-]*$' || { echo "bad version: $version"; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Version: $version"
+          uname -m
+          cc --version | head -1
+          cmake --version | head -1
+
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Tests (data test skips without WL1)
+        run: ctest --test-dir build --output-on-failure --no-tests=error
+
+      - name: Package
+        run: scripts/package.sh -B build -o dist --deb "${{ steps.version.outputs.version }}"
+
+      - name: Check packages
+        run: |
+          set -x
+          tar tzvf dist/*.tar.gz
+          dpkg-deb -I dist/*.deb
+          dpkg-deb -c dist/*.deb
+          if tar tzf dist/*.tar.gz | grep -Ei '\.(wl[0-9]|sod|sd[0-9m])$'; then exit 1; fi
+          if dpkg-deb -c dist/*.deb | grep -Ei '\.(wl[0-9]|sod|sd[0-9m])$'; then exit 1; fi
+          # The unpacked tarball must run and report missing data (exit 2).
+          mkdir unpacked && tar xzf dist/*.tar.gz -C unpacked
+          set +e
+          unpacked/*/raylib_wolf3d -data "$RUNNER_TEMP/nodata"; rc=$?
+          set -e
+          test "$rc" = 2
+          unpacked/*/scripts/fetch_shareware.sh --help
+          # The .deb must install with its dependencies and run the same way.
+          sudo apt-get install -y ./dist/*.deb
+          set +e
+          WOLF3D_DATA="$RUNNER_TEMP/nodata" /usr/games/raylib_wolf3d; rc=$?
+          set -e
+          test "$rc" = 2
+
+      - name: Release notes
+        run: |
+          v="${{ steps.version.outputs.version }}"
+          {
+            echo "raylib_wolf3d $v for Ubuntu 24.04 x86_64."
+            echo
+            echo "This release contains no game data. After installing, download and"
+            echo "verify the free Wolfenstein 3D v1.4 shareware episode:"
+            echo
+            echo '```sh'
+            echo "scripts/fetch_shareware.sh                      # tarball"
+            echo "/usr/share/raylib-wolf3d/scripts/fetch_shareware.sh   # .deb"
+            echo '```'
+            echo
+            echo "See README.rst (Releases, Licenses) for details."
+            echo
+            echo "Built from $(git rev-parse HEAD)."
+            echo
+            echo '```text'
+            cat dist/SHA256SUMS
+            echo '```'
+          } > dist/RELEASE_NOTES.md
+          cat dist/RELEASE_NOTES.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: raylib_wolf3d-${{ steps.version.outputs.version }}-ubuntu-24.04
+          path: dist/
+          if-no-files-found: error
+
+  draft-release:
+    if: github.ref_type == 'tag'
+    needs: package
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls -l dist
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+            --draft --verify-tag --title "raylib_wolf3d $GITHUB_REF_NAME" \
+            --notes-file dist/RELEASE_NOTES.md \
+            dist/*.tar.gz dist/*.deb dist/SHA256SUMS

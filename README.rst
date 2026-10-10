@@ -16,10 +16,15 @@ other shareware levels, doors, combat, death and restart, save/load and quit.
 Sound is silent until WOLF-6 lands (``port/sd_silent.c``).  Anything still
 unported stops with ``not ported yet: <name>`` (exit code 3).
 
-Build (Ubuntu 24.04; needs CMake >= 3.16, a C compiler, Python 3 and the X11/GL
-development packages raylib needs: ``libx11-dev libxrandr-dev libxinerama-dev
-libxcursor-dev libxi-dev libgl1-mesa-dev libasound2-dev``)::
+Only the shareware episode (Wolfenstein 3D v1.4, ``*.WL1``) is supported.
+The registered (``*.WL6``) and Spear of Destiny (``*.SOD``) data are not.
 
+Build (Ubuntu 24.04; needs CMake >= 3.16, a C compiler, Python 3 and the X11/GL
+development packages raylib needs)::
+
+    sudo apt-get install cmake ninja-build python3 curl unzip \
+        libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
+        libgl1-mesa-dev libasound2-dev
     cmake -B build
     cmake --build build -j2
 
@@ -28,12 +33,20 @@ raylib 5.5 is found.  ``-DWOLF3D_ALL_WARNINGS=ON`` shows the full ``-Wall``
 output for the original sources.
 
 Game data: only the freely distributable shareware v1.4 files (``*.WL1``) are
-supported.  They are never committed.  Fetch and verify them (SHA-256) into a
-cache outside the repository::
+supported.  They are never committed and no release package contains them.
+``scripts/fetch_shareware.sh`` downloads the shareware archive, checks its
+SHA-256 and the SHA-256 of each of the eight ``*.WL1`` files, and copies them
+into a cache outside the repository (``curl``, ``unzip`` and ``sha256sum``
+are needed)::
 
     scripts/fetch_shareware.sh              # -> ~/wolf3d-data/shareware
+    scripts/fetch_shareware.sh --check-only # verify an existing copy
     ./build/raylib_wolf3d -data ~/wolf3d-data/shareware
     # or: WOLF3D_DATA=~/wolf3d-data/shareware ./build/raylib_wolf3d
+
+The expected checksums are listed at the top of the script.  If you already
+own the shareware files, copy them into a directory and run
+``scripts/fetch_shareware.sh --check-only DIR`` to verify them.
 
 ``WOLF3D_NOTPORTED_HOLD_MS=<ms>`` keeps the window up for that long before
 the not-ported exit (for screenshots).
@@ -60,6 +73,141 @@ X server and drives it with ``scripts/xdrive.py`` (real XTest key events,
 screenshots of the game window only), e.g.::
 
     scripts/xvfb_session.sh "" sleep:3000 key:space sleep:2000 shot:signon.png
+
+Controls
+--------
+
+These are the original defaults.  Movement and button keys can be changed
+in the Control menu (F6).
+
+=========================  =======================================================
+Key                        Action
+=========================  =======================================================
+Arrow keys                 Move forward/back, turn left/right
+Ctrl                       Fire
+Alt + Left/Right           Strafe
+Right Shift                Run
+Space                      Open doors, push walls, use switches
+1 2 3 4                    Knife, pistol, machine gun, chain gun
+Esc                        Menu
+F1                         Help
+F2 / F3                    Save / load game
+F4 / F5 / F6               Sound, view size, control menus
+F7 / F8 / F9 / F10         End game, quick save, quick load, quit
+Alt + Enter                Toggle fullscreen (this port; never reaches the game)
+=========================  =======================================================
+
+The mouse works as in the original (move/turn and buttons).  The original
+Pause key is not mapped by this port yet.
+
+Command-line options
+--------------------
+
+Port options:
+
+``-data DIR``
+    Directory with the ``*.WL1`` files.  Without it the ``WOLF3D_DATA``
+    environment variable is used, then the current directory.  Missing data
+    exits with code 2.
+
+``-videotest signon|title|fade|keys|timing``
+    Developer harness: exercise one part of the video/input backend and
+    exit (see ``port/wl_videotest.c``).
+
+``-demotest N|all`` [``-viewsize N``]
+    Play built-in demo N (0-3) or all four at full speed, print the final
+    state of each and exit (1 if a demo desynced).  ``-viewsize N`` (4-19)
+    overrides the configured view size; the recorded hashes need 19.  See
+    ``port/wl_demotest.c``.
+
+``-savetest``
+    Check the save game format (save/load round trip, damaged files) and
+    exit.  Used by the ``persist_check`` test.
+
+Original options (``US_CheckParm`` ignores case and a leading ``-`` or ``/``):
+
+``nowait``
+    Skip the "press a key" pause on the signon screen.
+
+``tedlevel N`` [``baby`` | ``easy`` | ``normal`` | ``hard``]
+    Start map N directly at the given difficulty (the level editor launch).
+
+``nomouse``, ``nojoys``
+    Do not use the mouse or joysticks.
+
+``goobers``
+    In a game, Left Shift + Alt + Backspace then turns on the Tab + key debug
+    commands (Tab+G god mode, Tab+W warp, ...).  Holding Tab while the demo
+    loop starts the control panel records a demo instead.
+
+Releases
+--------
+
+Pushing a ``v*`` tag (e.g. ``v1.0.0``) runs ``.github/workflows/release.yml``
+on Ubuntu 24.04 x86_64.  It builds, runs the tests, packages, checks the
+packages and attaches them to a **draft** GitHub release, which a maintainer
+reviews and publishes by hand:
+
+``raylib_wolf3d-VERSION-linux-x86_64.tar.gz``
+    The stripped binary, ``scripts/fetch_shareware.sh`` and ``doc/`` (this
+    README, ``SOURCE.txt`` with the commit and rebuild steps, ``licenses/``).
+    Unpack it, run ``scripts/fetch_shareware.sh``, then
+    ``./raylib_wolf3d -data ~/wolf3d-data/shareware``.
+
+``raylib-wolf3d_VERSION_amd64.deb``
+    Installs ``/usr/games/raylib_wolf3d`` (a launcher that defaults
+    ``WOLF3D_DATA`` to ``~/wolf3d-data/shareware``) and
+    ``/usr/share/raylib-wolf3d/scripts/fetch_shareware.sh``.  Install with
+    ``sudo apt install ./raylib-wolf3d_VERSION_amd64.deb``.
+
+``SHA256SUMS``
+    Checksums of both packages.
+
+Pull requests that change the packaging run the same workflow as a dry run
+(the packages are uploaded as a workflow artifact, no release is made).  The
+same packages can be built locally::
+
+    cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build build
+    scripts/package.sh -B build -o dist --deb 0.0.0~local
+
+Packaging needs ``dpkg-dev`` for ``--deb``.  Archive timestamps come from the
+commit, so the same commit and toolchain give the same files.
+
+Game data is not bundled.  The archive ``fetch_shareware.sh`` downloads is a
+third-party repackaging (it also contains DOS and Wolf4SDL executables) and
+carries none of the original shareware distribution terms (``VENDOR.DOC``,
+``LICENSE``).  The 1992 shareware terms, as far as they are documented,
+allow copying the shareware only as the complete, unmodified original
+distribution; a release with just the ``*.WL1`` files would not be that.  So
+users fetch the data themselves.
+
+Licenses
+--------
+
+Different parts of this repository are under different licenses.  A built
+binary combines them, so check all of them before redistributing one.
+
+* ``WOLFSRC/`` (the original game source): id Software's *Limited Use
+  Software License Agreement*, ``WOLFSRC/README/LICENSE.DOC`` (quoted below).
+  It allows non-commercial, educational use and forbids selling or otherwise
+  commercially exploiting the software.  Wolfenstein 3D is a trademark of its
+  owner; this project is not affiliated with id Software or ZeniMax.
+* ``port/``, ``scripts/``, ``tests/``, ``CMakeLists.txt`` and the packaging:
+  new code written for this port.  It has no license file of its own and is
+  distributed together with the game source.
+* ``audio/`` (WOLF-3): GPL-2.0-or-later, ``audio/LICENSE``.  ``audio/vendor/``
+  is Nuked OPL3 1.8, Copyright (C) 2013-2020 Nuke.YKT, LGPL-2.1-or-later,
+  ``audio/vendor/LICENSE``.  See ``audio/README.md`` for provenance.  When a
+  binary links them, provide the corresponding source (the release notes name
+  the commit) so the library can be modified and the program rebuilt.
+* raylib 5.5 (fetched at build time, statically linked): zlib/libpng
+  license, Copyright (c) 2013-2024 Ramon Santamaria.  Its license text ships
+  in every package under ``doc/licenses/``.
+* Game data (``*.WL1``): copyright id Software, not in this repository and
+  not in any package.
+
+Release packages include ``doc/licenses/`` with the id license, the raylib
+license and, when the audio engine is linked in, the GPL and LGPL texts.
 
 Headless core verification
 --------------------------
