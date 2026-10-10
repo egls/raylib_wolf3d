@@ -59,42 +59,53 @@ CP_iteminfo
 	NewItems={NM_X,NM_Y,4,2,24};
 
 #pragma warn -sus
+/* Menu callbacks have one int argument; direct-call APIs retain theirs. */
+void CP_NewGameMenu(int item) { (void)item; CP_NewGame(); }
+void CP_SoundMenu(int item) { (void)item; CP_Sound(); }
+void CP_ControlMenu(int item) { (void)item; CP_Control(); }
+void CP_ChangeViewMenu(int item) { (void)item; CP_ChangeView(); }
+void CP_ReadThisMenu(int item) { (void)item; CP_ReadThis(); }
+void CP_ViewScoresMenu(int item) { (void)item; CP_ViewScores(); }
+static void MouseSensitivityMenu(int item) { (void)item; MouseSensitivity(); }
+void CustomControlsMenu(int item) { (void)item; CustomControls(); }
+static void CP_LoadGameMenu(int quick) { (void)CP_LoadGame(quick); }
+static void CP_SaveGameMenu(int quick) { (void)CP_SaveGame(quick); }
 CP_itemtype far
 MainMenu[]=
 {
 #ifdef JAPAN
-	{1,"",CP_NewGame},
-	{1,"",CP_Sound},
-	{1,"",CP_Control},
-	{1,"",CP_LoadGame},
-	{0,"",CP_SaveGame},
-	{1,"",CP_ChangeView},
-	{2,"",CP_ReadThis},
-	{1,"",CP_ViewScores},
+	{1,"",CP_NewGameMenu},
+	{1,"",CP_SoundMenu},
+	{1,"",CP_ControlMenu},
+	{1,"",CP_LoadGameMenu},
+	{0,"",CP_SaveGameMenu},
+	{1,"",CP_ChangeViewMenu},
+	{2,"",CP_ReadThisMenu},
+	{1,"",CP_ViewScoresMenu},
 	{1,"",0},
 	{1,"",0}
 #else
 
-	{1,STR_NG,CP_NewGame},
-	{1,STR_SD,CP_Sound},
-	{1,STR_CL,CP_Control},
-	{1,STR_LG,CP_LoadGame},
-	{0,STR_SG,CP_SaveGame},
-	{1,STR_CV,CP_ChangeView},
+	{1,STR_NG,CP_NewGameMenu},
+	{1,STR_SD,CP_SoundMenu},
+	{1,STR_CL,CP_ControlMenu},
+	{1,STR_LG,CP_LoadGameMenu},
+	{0,STR_SG,CP_SaveGameMenu},
+	{1,STR_CV,CP_ChangeViewMenu},
 
 #ifndef GOODTIMES
 #ifndef SPEAR
 
 	#ifdef SPANISH
-	{2,"Ve esto!",CP_ReadThis},
+	{2,"Ve esto!",CP_ReadThisMenu},
 	#else
-	{2,"Read This!",CP_ReadThis},
+	{2,"Read This!",CP_ReadThisMenu},
 	#endif
 
 #endif
 #endif
 
-	{1,STR_VS,CP_ViewScores},
+	{1,STR_VS,CP_ViewScoresMenu},
 	{1,STR_BD,0},
 	{1,STR_QT,0}
 #endif
@@ -138,15 +149,15 @@ far CtlMenu[]=
 	{0,"",0},
 	{0,"",0},
 	{0,"",0},
-	{0,"",MouseSensitivity},
-	{1,"",CustomControls}
+	{0,"",MouseSensitivityMenu},
+	{1,"",CustomControlsMenu}
 #else
 	{0,STR_MOUSEEN,0},
 	{0,STR_JOYEN,0},
 	{0,STR_PORT2,0},
 	{0,STR_GAMEPAD,0},
-	{0,STR_SENS,MouseSensitivity},
-	{1,STR_CUSTOM,CustomControls}
+	{0,STR_SENS,MouseSensitivityMenu},
+	{1,STR_CUSTOM,CustomControlsMenu}
 #endif
 },
 
@@ -875,7 +886,7 @@ int CP_EndGame(void)
 
 	#pragma warn -sus
 	MainMenu[savegame].active = 0;
-	MainMenu[viewscores].routine=CP_ViewScores;
+	MainMenu[viewscores].routine=CP_ViewScoresMenu;
 	#ifndef JAPAN
 	_fstrcpy(MainMenu[viewscores].string,STR_VS);
 	#endif
@@ -1667,7 +1678,7 @@ int CalibrateJoystick(void)
 	#define CALW	158
 	#define CALH	140
 
-	unsigned xmin,ymin,xmax,ymax,jb;
+	word xmin,ymin,xmax,ymax; unsigned jb;
 
 
 

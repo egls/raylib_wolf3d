@@ -1,740 +1,126 @@
-// WL_SCALE.C
-
+/* Looping scalers replace generated executable x86 code. Bounds use the
+ * same floor(src*height/64) edges as BuildCompScale, including double-step
+ * height aliases above viewheight/2. Sprite commands stay disk byte streams. */
 #include "WL_DEF.H"
-#pragma hdrstop
-
-#define OP_RETF	0xcb
-
-/*
-=============================================================================
-
-						  GLOBALS
-
-=============================================================================
-*/
-
-t_compscale _seg *scaledirectory[MAXSCALEHEIGHT+1];
-long			fullscalefarcall[MAXSCALEHEIGHT+1];
-
-int			maxscale,maxscaleshl2;
-
-boolean	insetupscaling;
-
-/*
-=============================================================================
-
-						  LOCALS
-
-=============================================================================
-*/
-
-t_compscale 	_seg *work;
-unsigned BuildCompScale (int height, memptr *finalspot);
-
-int			stepbytwo;
-
-//===========================================================================
-
-/*
-==============
-=
-= BadScale
-=
-==============
-*/
-
-void far BadScale (void)
-{
-	Quit ("BadScale called!");
+#include "wl_data.h"
+int maxscale, maxscaleshl2;
+boolean insetupscaling;
+static int heights[MAXSCALEHEIGHT + 1];
+void SetupScaling(int maximum) {
+    int i, limit = maximum / 2, stepbytwo = viewheight / 2;
+    if (limit < 1 || limit > MAXSCALEHEIGHT - 2)
+        Quit("SetupScaling: invalid height");
+    maxscale = limit - 1;
+    maxscaleshl2 = maxscale * 4;
+    insetupscaling = true;
+    memset(heights, 0, sizeof heights);
+    for (i = 1; i <= limit; i++) {
+        heights[i] = i * 2;
+        if (i >= stepbytwo) {
+            heights[i + 1] = heights[i];
+            heights[i + 2] = heights[i];
+            i += 2;
+        }
+    }
+    heights[0] = heights[1];
+    insetupscaling = false;
 }
-
-
-/*
-==========================
-=
-= SetupScaling
-=
-==========================
-*/
-
-void SetupScaling (int maxscaleheight)
-{
-	int		i,x,y;
-	byte	far *dest;
-
-	insetupscaling = true;
-
-	maxscaleheight/=2;			// one scaler every two pixels
-
-	maxscale = maxscaleheight-1;
-	maxscaleshl2 = maxscale<<2;
-
-//
-// free up old scalers
-//
-	for (i=1;i<MAXSCALEHEIGHT;i++)
-	{
-		if (scaledirectory[i])
-			MM_FreePtr ((memptr *)&scaledirectory[i]);
-		if (i>=stepbytwo)
-			i += 2;
-	}
-	memset (scaledirectory,0,sizeof(scaledirectory));
-
-	MM_SortMem ();
-
-//
-// build the compiled scalers
-//
-	stepbytwo = viewheight/2;	// save space by double stepping
-	MM_GetPtr ((memptr *)&work,20000);
-
-	for (i=1;i<=maxscaleheight;i++)
-	{
-		BuildCompScale (i*2,(memptr *)&scaledirectory[i]);
-		if (i>=stepbytwo)
-			i+= 2;
-	}
-	MM_FreePtr ((memptr *)&work);
-
-//
-// compact memory and lock down scalers
-//
-	MM_SortMem ();
-	for (i=1;i<=maxscaleheight;i++)
-	{
-		MM_SetLock ((memptr *)&scaledirectory[i],true);
-		fullscalefarcall[i] = (unsigned)scaledirectory[i];
-		fullscalefarcall[i] <<=16;
-		fullscalefarcall[i] += scaledirectory[i]->codeofs[0];
-		if (i>=stepbytwo)
-		{
-			scaledirectory[i+1] = scaledirectory[i];
-			fullscalefarcall[i+1] = fullscalefarcall[i];
-			scaledirectory[i+2] = scaledirectory[i];
-			fullscalefarcall[i+2] = fullscalefarcall[i];
-			i+=2;
-		}
-	}
-	scaledirectory[0] = scaledirectory[1];
-	fullscalefarcall[0] = fullscalefarcall[1];
-
-//
-// check for oversize wall drawing
-//
-	for (i=maxscaleheight;i<MAXSCALEHEIGHT;i++)
-		fullscalefarcall[i] = (long)BadScale;
-
-	insetupscaling = false;
+void WL_ScaleWallColumn(unsigned x, unsigned width, unsigned fractional, const byte *source) {
+    unsigned index = fractional >> 3;
+    int h, top, src, y;
+    unsigned dx;
+    if (index > (unsigned)maxscale)
+        index = maxscale;
+    h = heights[index];
+    if (!h)
+        return;
+    top = (viewheight - h) / 2;
+    for (src = 0; src < 64; src++) {
+        int start = top + src * h / 64, end = top + (src + 1) * h / 64;
+        if (start < 0)
+            start = 0;
+        if (end > viewheight)
+            end = viewheight;
+        for (y = start; y < end; y++)
+            for (dx = x; dx < x + width && dx < (unsigned)viewwidth; dx++)
+                VL_Plot(dx, y, source[src]);
+    }
 }
-
-//===========================================================================
-
-/*
-========================
-=
-= BuildCompScale
-=
-= Builds a compiled scaler object that will scale a 64 tall object to
-= the given height (centered vertically on the screen)
-=
-= height should be even
-=
-= Call with
-= ---------
-= DS:SI		Source for scale
-= ES:DI		Dest for scale
-=
-= Calling the compiled scaler only destroys AL
-=
-========================
-*/
-
-unsigned BuildCompScale (int height, memptr *finalspot)
-{
-	byte		far *code;
-
-	int			i;
-	long		fix,step;
-	unsigned	src,totalscaled,totalsize;
-	int			startpix,endpix,toppix;
-
-
-	step = ((long)height<<16) / 64;
-	code = &work->code[0];
-	toppix = (viewheight-height)/2;
-	fix = 0;
-
-	for (src=0;src<=64;src++)
-	{
-		startpix = fix>>16;
-		fix += step;
-		endpix = fix>>16;
-
-		if (endpix>startpix)
-			work->width[src] = endpix-startpix;
-		else
-			work->width[src] = 0;
-
-//
-// mark the start of the code
-//
-		work->codeofs[src] = FP_OFF(code);
-
-//
-// compile some code if the source pixel generates any screen pixels
-//
-		startpix+=toppix;
-		endpix+=toppix;
-
-		if (startpix == endpix || endpix < 0 || startpix >= viewheight || src == 64)
-			continue;
-
-	//
-	// mov al,[si+src]
-	//
-		*code++ = 0x8a;
-		*code++ = 0x44;
-		*code++ = src;
-
-		for (;startpix<endpix;startpix++)
-		{
-			if (startpix >= viewheight)
-				break;						// off the bottom of the view area
-			if (startpix < 0)
-				continue;					// not into the view area
-
-		//
-		// mov [es:di+heightofs],al
-		//
-			*code++ = 0x26;
-			*code++ = 0x88;
-			*code++ = 0x85;
-			NOTPORTED("BuildCompScale: x86 code generation");	// WOLF-2, was:
-//			*((unsigned far *)code)++ = startpix*SCREENBWIDE;
-		}
-
-	}
-
-//
-// retf
-//
-	*code++ = 0xcb;
-
-	totalsize = FP_OFF(code);
-	MM_GetPtr (finalspot,totalsize);
-	_fmemcpy ((byte _seg *)(*finalspot),(byte _seg *)work,totalsize);
-
-	return totalsize;
+static void column(const byte *shape, size_t len, unsigned offset, int x, int width, int h,
+                   unsigned depth, boolean clip) {
+    size_t pos = offset;
+    int top = (viewheight - h) / 2;
+    while (1) {
+        unsigned end, start, data;
+        int sy;
+        if (pos > len || len - pos < 2)
+            Quit("Sprite: bad command offset");
+        end = WL_ReadLE16(shape + pos);
+        if (!end)
+            return;
+        if (len - pos < 6)
+            Quit("Sprite: truncated command");
+        data = WL_ReadLE16(shape + pos + 2);
+        start = WL_ReadLE16(shape + pos + 4);
+        pos += 6;
+        if ((end | start) & 1 || end > 128 || start >= end)
+            Quit("Sprite: bad pixel range");
+        start /= 2;
+        end /= 2;
+        for (sy = start; sy < (int)end; sy++) {
+            int y, dx, y1 = top + sy * h / 64, y2 = top + (sy + 1) * h / 64;
+            /* Virtual pixel bases are 16-bit offsets and may wrap below zero. */
+            unsigned pixel = (uint16_t)(data + sy);
+            if (pixel >= len)
+                Quit("Sprite: bad pixel offset");
+            if (y1 < 0)
+                y1 = 0;
+            if (y2 > viewheight)
+                y2 = viewheight;
+            for (dx = x; dx < x + width; dx++)
+                if (dx >= 0 && dx < viewwidth && (!clip || wallheight[dx] < depth))
+                    for (y = y1; y < y2; y++)
+                        VL_Plot(dx, y, shape[pixel]);
+        }
+    }
 }
-
-
-/*
-=======================
-=
-= ScaleLine
-=
-= linescale should have the high word set to the segment of the scaler
-=
-=======================
-*/
-
-extern	int			slinex,slinewidth;
-extern	unsigned	far *linecmds;
-extern	long		linescale;
-extern	unsigned	maskword;
-
-byte	mask1,mask2,mask3;
-
-
-void near ScaleLine (void)
-{
-PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-asm	mov	cx,WORD PTR [linescale+2]
-asm	mov	es,cx						// segment of scaler
-
-asm	mov bp,WORD PTR [linecmds]
-asm	mov	dx,SC_INDEX+1				// to set SC_MAPMASK
-
-asm	mov	bx,[slinex]
-asm	mov	di,bx
-asm	shr	di,2						// X in bytes
-asm	add	di,[bufferofs]
-asm	and	bx,3
-asm	shl	bx,3
-asm	add	bx,[slinewidth]				// bx = (pixel*8+pixwidth)
-asm	mov	al,BYTE [mapmasks3-1+bx]	// -1 because pixwidth of 1 is first
-asm	mov	ds,WORD PTR [linecmds+2]
-asm	or	al,al
-asm	jz	notthreebyte				// scale across three bytes
-asm	jmp	threebyte
-notthreebyte:
-asm	mov	al,BYTE PTR ss:[mapmasks2-1+bx]	// -1 because pixwidth of 1 is first
-asm	or	al,al
-asm	jnz	twobyte						// scale across two bytes
-
-//
-// one byte scaling
-//
-asm	mov	al,BYTE PTR ss:[mapmasks1-1+bx]	// -1 because pixwidth of 1 is first
-asm	out	dx,al						// set map mask register
-
-scalesingle:
-
-asm	mov	bx,[ds:bp]					// table location of rtl to patch
-asm	or	bx,bx
-asm	jz	linedone					// 0 signals end of segment list
-asm	mov	bx,[es:bx]
-asm	mov	dl,[es:bx]					// save old value
-asm	mov	BYTE PTR es:[bx],OP_RETF	// patch a RETF in
-asm	mov	si,[ds:bp+4]				// table location of entry spot
-asm	mov	ax,[es:si]
-asm	mov	WORD PTR ss:[linescale],ax	// call here to start scaling
-asm	mov	si,[ds:bp+2]				// corrected top of shape for this segment
-asm	add	bp,6						// next segment list
-
-asm	mov	ax,SCREENSEG
-asm	mov	es,ax
-asm	call ss:[linescale]				// scale the segment of pixels
-
-asm	mov	es,cx						// segment of scaler
-asm	mov	BYTE PTR es:[bx],dl			// unpatch the RETF
-asm	jmp	scalesingle					// do the next segment
-
-
-//
-// done
-//
-linedone:
-asm	mov	ax,ss
-asm	mov	ds,ax
-#endif
-return;
-
-//
-// two byte scaling
-//
-twobyte:
-PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-asm	mov	ss:[mask2],al
-asm	mov	al,BYTE PTR ss:[mapmasks1-1+bx]	// -1 because pixwidth of 1 is first
-asm	mov	ss:[mask1],al
-
-scaledouble:
-
-asm	mov	bx,[ds:bp]					// table location of rtl to patch
-asm	or	bx,bx
-asm	jz	linedone					// 0 signals end of segment list
-asm	mov	bx,[es:bx]
-asm	mov	cl,[es:bx]					// save old value
-asm	mov	BYTE PTR es:[bx],OP_RETF	// patch a RETF in
-asm	mov	si,[ds:bp+4]				// table location of entry spot
-asm	mov	ax,[es:si]
-asm	mov	WORD PTR ss:[linescale],ax	// call here to start scaling
-asm	mov	si,[ds:bp+2]				// corrected top of shape for this segment
-asm	add	bp,6						// next segment list
-
-asm	mov	ax,SCREENSEG
-asm	mov	es,ax
-asm	mov	al,ss:[mask1]
-asm	out	dx,al						// set map mask register
-asm	call ss:[linescale]				// scale the segment of pixels
-asm	inc	di
-asm	mov	al,ss:[mask2]
-asm	out	dx,al						// set map mask register
-asm	call ss:[linescale]				// scale the segment of pixels
-asm	dec	di
-
-asm	mov	es,WORD PTR ss:[linescale+2] // segment of scaler
-asm	mov	BYTE PTR es:[bx],cl			// unpatch the RETF
-asm	jmp	scaledouble					// do the next segment
-
-
-//
-// three byte scaling
-//
-threebyte:
-asm	mov	ss:[mask3],al
-asm	mov	al,BYTE PTR ss:[mapmasks2-1+bx]	// -1 because pixwidth of 1 is first
-asm	mov	ss:[mask2],al
-asm	mov	al,BYTE PTR ss:[mapmasks1-1+bx]	// -1 because pixwidth of 1 is first
-asm	mov	ss:[mask1],al
-
-scaletriple:
-
-asm	mov	bx,[ds:bp]					// table location of rtl to patch
-asm	or	bx,bx
-asm	jz	linedone					// 0 signals end of segment list
-asm	mov	bx,[es:bx]
-asm	mov	cl,[es:bx]					// save old value
-asm	mov	BYTE PTR es:[bx],OP_RETF	// patch a RETF in
-asm	mov	si,[ds:bp+4]				// table location of entry spot
-asm	mov	ax,[es:si]
-asm	mov	WORD PTR ss:[linescale],ax	// call here to start scaling
-asm	mov	si,[ds:bp+2]				// corrected top of shape for this segment
-asm	add	bp,6						// next segment list
-
-asm	mov	ax,SCREENSEG
-asm	mov	es,ax
-asm	mov	al,ss:[mask1]
-asm	out	dx,al						// set map mask register
-asm	call ss:[linescale]				// scale the segment of pixels
-asm	inc	di
-asm	mov	al,ss:[mask2]
-asm	out	dx,al						// set map mask register
-asm	call ss:[linescale]				// scale the segment of pixels
-asm	inc	di
-asm	mov	al,ss:[mask3]
-asm	out	dx,al						// set map mask register
-asm	call ss:[linescale]				// scale the segment of pixels
-asm	dec	di
-asm	dec	di
-
-asm	mov	es,WORD PTR ss:[linescale+2] // segment of scaler
-asm	mov	BYTE PTR es:[bx],cl			// unpatch the RETF
-asm	jmp	scaletriple					// do the next segment
-#endif
-
-
+static void shape(int center, int number, unsigned depth, boolean clip) {
+    byte *p;
+    size_t len;
+    int left, right, src, x, h, index;
+    if (number < 0 || number + PMSpriteStart >= PMSoundStart)
+        Quit("Sprite: invalid page");
+    p = PM_GetSpritePage(number);
+    len = PMPages[number + PMSpriteStart].length;
+    index = clip ? (depth >> 3) : (depth >> 1);
+    if (!index || (clip && index > maxscale))
+        return;
+    if (index > MAXSCALEHEIGHT || !(h = heights[index]))
+        Quit("Sprite: invalid scale");
+    if (len < 4)
+        Quit("Sprite: truncated header");
+    left = WL_ReadLE16(p);
+    right = WL_ReadLE16(p + 2);
+    if (left > right || right > 63 || len < 4u + 2u * (right - left + 1))
+        Quit("Sprite: bad columns");
+    /* Original left half starts at source 31 and accumulates widths backwards;
+     * the right half begins at center even for shapes wholly right of 31. */
+    x = center;
+    for (src = 31; src >= left; src--) {
+        int width = (src + 1) * h / 64 - src * h / 64;
+        x -= width;
+        if (src <= right && width)
+            column(p, len, WL_ReadLE16(p + 4 + 2 * (src - left)), x, width, h, depth, clip);
+    }
+    x = center;
+    for (src = left >= 31 ? left : 32; src <= right; src++) {
+        int width = (src + 1) * h / 64 - src * h / 64;
+        if (width)
+            column(p, len, WL_ReadLE16(p + 4 + 2 * (src - left)), x, width, h, depth, clip);
+        x += width;
+    }
 }
-
-
-/*
-=======================
-=
-= ScaleShape
-=
-= Draws a compiled shape at [scale] pixels high
-=
-= each vertical line of the shape has a pointer to segment data:
-= 	end of segment pixel*2 (0 terminates line) used to patch rtl in scaler
-= 	top of virtual line with segment in proper place
-=	start of segment pixel*2, used to jsl into compiled scaler
-=	<repeat>
-=
-= Setup for call
-= --------------
-= GC_MODE			read mode 1, write mode 2
-= GC_COLORDONTCARE  set to 0, so all reads from video memory return 0xff
-= GC_INDEX			pointing at GC_BITMASK
-=
-=======================
-*/
-
-static	long		longtemp;
-
-void ScaleShape (int xcenter, int shapenum, unsigned height)
-{
-	t_compshape	_seg *shape;
-	t_compscale _seg *comptable;
-	unsigned	scale,srcx,stopx,tempx;
-	int			t;
-	unsigned	far *cmdptr;
-	boolean		leftvis,rightvis;
-
-
-	shape = PM_GetSpritePage (shapenum);
-
-	scale = height>>3;						// low three bits are fractional
-	if (!scale || scale>maxscale)
-		return;								// too close or far away
-	comptable = scaledirectory[scale];
-
-	*(((unsigned *)&linescale)+1)=(unsigned)comptable;	// seg of far call
-	SET_FP_SEG(linecmds, shape);		// seg of shape
-
-//
-// scale to the left (from pixel 31 to shape->leftpix)
-//
-	srcx = 32;
-	slinex = xcenter;
-	stopx = shape->leftpix;
-	cmdptr = &shape->dataofs[31-stopx];
-
-	while ( --srcx >=stopx && slinex>0)
-	{
-		SET_FP_OFF(linecmds, *cmdptr--);
-		if ( !(slinewidth = comptable->width[srcx]) )
-			continue;
-
-		if (slinewidth == 1)
-		{
-			slinex--;
-			if (slinex<viewwidth)
-			{
-				if (wallheight[slinex] >= height)
-					continue;		// obscured by closer wall
-				ScaleLine ();
-			}
-			continue;
-		}
-
-		//
-		// handle multi pixel lines
-		//
-		if (slinex>viewwidth)
-		{
-			slinex -= slinewidth;
-			slinewidth = viewwidth-slinex;
-			if (slinewidth<1)
-				continue;		// still off the right side
-		}
-		else
-		{
-			if (slinewidth>slinex)
-				slinewidth = slinex;
-			slinex -= slinewidth;
-		}
-
-
-		leftvis = (wallheight[slinex] < height);
-		rightvis = (wallheight[slinex+slinewidth-1] < height);
-
-		if (leftvis)
-		{
-			if (rightvis)
-				ScaleLine ();
-			else
-			{
-				while (wallheight[slinex+slinewidth-1] >= height)
-					slinewidth--;
-				ScaleLine ();
-			}
-		}
-		else
-		{
-			if (!rightvis)
-				continue;		// totally obscured
-
-			while (wallheight[slinex] >= height)
-			{
-				slinex++;
-				slinewidth--;
-			}
-			ScaleLine ();
-			break;			// the rest of the shape is gone
-		}
-	}
-
-
-//
-// scale to the right
-//
-	slinex = xcenter;
-	stopx = shape->rightpix;
-	if (shape->leftpix<31)
-	{
-		srcx = 31;
-		cmdptr = &shape->dataofs[32-shape->leftpix];
-	}
-	else
-	{
-		srcx = shape->leftpix-1;
-		cmdptr = &shape->dataofs[0];
-	}
-	slinewidth = 0;
-
-	while ( ++srcx <= stopx && (slinex+=slinewidth)<viewwidth)
-	{
-		SET_FP_OFF(linecmds, *cmdptr++);
-		if ( !(slinewidth = comptable->width[srcx]) )
-			continue;
-
-		if (slinewidth == 1)
-		{
-			if (slinex>=0 && wallheight[slinex] < height)
-			{
-				ScaleLine ();
-			}
-			continue;
-		}
-
-		//
-		// handle multi pixel lines
-		//
-		if (slinex<0)
-		{
-			if (slinewidth <= -slinex)
-				continue;		// still off the left edge
-
-			slinewidth += slinex;
-			slinex = 0;
-		}
-		else
-		{
-			if (slinex + slinewidth > viewwidth)
-				slinewidth = viewwidth-slinex;
-		}
-
-
-		leftvis = (wallheight[slinex] < height);
-		rightvis = (wallheight[slinex+slinewidth-1] < height);
-
-		if (leftvis)
-		{
-			if (rightvis)
-			{
-				ScaleLine ();
-			}
-			else
-			{
-				while (wallheight[slinex+slinewidth-1] >= height)
-					slinewidth--;
-				ScaleLine ();
-				break;			// the rest of the shape is gone
-			}
-		}
-		else
-		{
-			if (rightvis)
-			{
-				while (wallheight[slinex] >= height)
-				{
-					slinex++;
-					slinewidth--;
-				}
-				ScaleLine ();
-			}
-			else
-				continue;		// totally obscured
-		}
-	}
+void ScaleShape(int center, int number, unsigned height) { shape(center, number, height, true); }
+void SimpleScaleShape(int center, int number, unsigned height) {
+    shape(center, number, height, false);
 }
-
-
-
-/*
-=======================
-=
-= SimpleScaleShape
-=
-= NO CLIPPING, height in pixels
-=
-= Draws a compiled shape at [scale] pixels high
-=
-= each vertical line of the shape has a pointer to segment data:
-= 	end of segment pixel*2 (0 terminates line) used to patch rtl in scaler
-= 	top of virtual line with segment in proper place
-=	start of segment pixel*2, used to jsl into compiled scaler
-=	<repeat>
-=
-= Setup for call
-= --------------
-= GC_MODE			read mode 1, write mode 2
-= GC_COLORDONTCARE  set to 0, so all reads from video memory return 0xff
-= GC_INDEX			pointing at GC_BITMASK
-=
-=======================
-*/
-
-void SimpleScaleShape (int xcenter, int shapenum, unsigned height)
-{
-	t_compshape	_seg *shape;
-	t_compscale _seg *comptable;
-	unsigned	scale,srcx,stopx,tempx;
-	int			t;
-	unsigned	far *cmdptr;
-	boolean		leftvis,rightvis;
-
-
-	shape = PM_GetSpritePage (shapenum);
-
-	scale = height>>1;
-	comptable = scaledirectory[scale];
-
-	*(((unsigned *)&linescale)+1)=(unsigned)comptable;	// seg of far call
-	SET_FP_SEG(linecmds, shape);		// seg of shape
-
-//
-// scale to the left (from pixel 31 to shape->leftpix)
-//
-	srcx = 32;
-	slinex = xcenter;
-	stopx = shape->leftpix;
-	cmdptr = &shape->dataofs[31-stopx];
-
-	while ( --srcx >=stopx )
-	{
-		SET_FP_OFF(linecmds, *cmdptr--);
-		if ( !(slinewidth = comptable->width[srcx]) )
-			continue;
-
-		slinex -= slinewidth;
-		ScaleLine ();
-	}
-
-
-//
-// scale to the right
-//
-	slinex = xcenter;
-	stopx = shape->rightpix;
-	if (shape->leftpix<31)
-	{
-		srcx = 31;
-		cmdptr = &shape->dataofs[32-shape->leftpix];
-	}
-	else
-	{
-		srcx = shape->leftpix-1;
-		cmdptr = &shape->dataofs[0];
-	}
-	slinewidth = 0;
-
-	while ( ++srcx <= stopx )
-	{
-		SET_FP_OFF(linecmds, *cmdptr++);
-		if ( !(slinewidth = comptable->width[srcx]) )
-			continue;
-
-		ScaleLine ();
-		slinex+=slinewidth;
-	}
-}
-
-
-
-
-//
-// bit mask tables for drawing scaled strips up to eight pixels wide
-//
-// down here so the STUPID inline assembler doesn't get confused!
-//
-
-
-byte	mapmasks1[4][8] = {
-{1 ,3 ,7 ,15,15,15,15,15},
-{2 ,6 ,14,14,14,14,14,14},
-{4 ,12,12,12,12,12,12,12},
-{8 ,8 ,8 ,8 ,8 ,8 ,8 ,8} };
-
-byte	mapmasks2[4][8] = {
-{0 ,0 ,0 ,0 ,1 ,3 ,7 ,15},
-{0 ,0 ,0 ,1 ,3 ,7 ,15,15},
-{0 ,0 ,1 ,3 ,7 ,15,15,15},
-{0 ,1 ,3 ,7 ,15,15,15,15} };
-
-byte	mapmasks3[4][8] = {
-{0 ,0 ,0 ,0 ,0 ,0 ,0 ,0},
-{0 ,0 ,0 ,0 ,0 ,0 ,0 ,1},
-{0 ,0 ,0 ,0 ,0 ,0 ,1 ,3},
-{0 ,0 ,0 ,0 ,0 ,1 ,3 ,7} };
-
-
-unsigned	wordmasks[8][8] = {
-{0x0080,0x00c0,0x00e0,0x00f0,0x00f8,0x00fc,0x00fe,0x00ff},
-{0x0040,0x0060,0x0070,0x0078,0x007c,0x007e,0x007f,0x807f},
-{0x0020,0x0030,0x0038,0x003c,0x003e,0x003f,0x803f,0xc03f},
-{0x0010,0x0018,0x001c,0x001e,0x001f,0x801f,0xc01f,0xe01f},
-{0x0008,0x000c,0x000e,0x000f,0x800f,0xc00f,0xe00f,0xf00f},
-{0x0004,0x0006,0x0007,0x8007,0xc007,0xe007,0xf007,0xf807},
-{0x0002,0x0003,0x8003,0xc003,0xe003,0xf003,0xf803,0xfc03},
-{0x0001,0x8001,0xc001,0xe001,0xf001,0xf801,0xfc01,0xfe01} };
-
-int			slinex,slinewidth;
-unsigned	far *linecmds;
-long		linescale;
-unsigned	maskword;
-

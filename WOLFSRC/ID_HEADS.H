@@ -24,11 +24,8 @@ extern	char		far signon;
 
 #ifndef SPEAR
 
-// WOLF-2: the *WL1.H headers in this release predate shareware v1.4 and do
-// not match its data.  v1.4 AUDIOHED.WL1 has 288 chunks = AUDIOWL6.H.
-// v1.4 VGAHEAD.WL1 has 156 chunks; GFXV_WL6.H (149) is a compile-time
-// placeholder until Stage 2 adds a matching header (see PORTING.md).
-#include "GFXV_WL6.H"
+// Apogee shareware v1.4 graphics/audio chunk layout.
+#include "GFXV_WL14.H"
 #include "AUDIOWL6.H"
 #include "MAPSWL6.H"
 

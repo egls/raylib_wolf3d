@@ -1,0 +1,220 @@
+//////////////////////////////////////
+//
+// Graphics constants for Apogee shareware v1.4 (WL1)
+// Disk layout: 144 pictures, one tile chunk, eight externals.
+//
+//////////////////////////////////////
+
+typedef enum {
+    // Lump Start
+    H_BJPIC = 3,
+    H_CASTLEPIC,
+    H_KEYBOARDPIC,
+    H_JOYPIC,
+    H_HEALPIC,
+    H_TREASUREPIC,
+    H_GUNPIC,
+    H_KEYPIC,
+    H_BLAZEPIC,
+    H_WEAPON1234PIC,
+    H_WOLFLOGOPIC,
+    H_VISAPIC,
+    H_MCPIC,
+    H_IDLOGOPIC,
+    H_TOPWINDOWPIC,
+    H_LEFTWINDOWPIC,
+    H_RIGHTWINDOWPIC,
+    H_BOTTOMINFOPIC,
+    H_SPEARADPIC,
+    // Lump Start
+    C_OPTIONSPIC,
+    C_CURSOR1PIC,
+    C_CURSOR2PIC,
+    C_NOTSELECTEDPIC,
+    C_SELECTEDPIC,
+    C_FXTITLEPIC,
+    C_DIGITITLEPIC,
+    C_MUSICTITLEPIC,
+    C_MOUSELBACKPIC,
+    C_BABYMODEPIC,
+    C_EASYPIC,
+    C_NORMALPIC,
+    C_HARDPIC,
+    C_LOADSAVEDISKPIC,
+    C_DISKLOADING1PIC,
+    C_DISKLOADING2PIC,
+    C_CONTROLPIC,
+    C_CUSTOMIZEPIC,
+    C_LOADGAMEPIC,
+    C_SAVEGAMEPIC,
+    C_EPISODE1PIC,
+    C_EPISODE2PIC,
+    C_EPISODE3PIC,
+    C_EPISODE4PIC,
+    C_EPISODE5PIC,
+    C_EPISODE6PIC,
+    C_CODEPIC,
+    C_TIMECODEPIC,
+    C_LEVELPIC,
+    C_NAMEPIC,
+    C_SCOREPIC,
+    C_JOY1PIC,
+    C_JOY2PIC,
+    // Lump Start
+    L_GUYPIC,
+    L_COLONPIC,
+    L_NUM0PIC,
+    L_NUM1PIC,
+    L_NUM2PIC,
+    L_NUM3PIC,
+    L_NUM4PIC,
+    L_NUM5PIC,
+    L_NUM6PIC,
+    L_NUM7PIC,
+    L_NUM8PIC,
+    L_NUM9PIC,
+    L_PERCENTPIC,
+    L_APIC,
+    L_BPIC,
+    L_CPIC,
+    L_DPIC,
+    L_EPIC,
+    L_FPIC,
+    L_GPIC,
+    L_HPIC,
+    L_IPIC,
+    L_JPIC,
+    L_KPIC,
+    L_LPIC,
+    L_MPIC,
+    L_NPIC,
+    L_OPIC,
+    L_PPIC,
+    L_QPIC,
+    L_RPIC,
+    L_SPIC,
+    L_TPIC,
+    L_UPIC,
+    L_VPIC,
+    L_WPIC,
+    L_XPIC,
+    L_YPIC,
+    L_ZPIC,
+    L_EXPOINTPIC,
+    L_APOSTROPHEPIC,
+    L_GUY2PIC,
+    L_BJWINSPIC,
+    STATUSBARPIC,
+    TITLEPIC,
+    PG13PIC,
+    CREDITSPIC,
+    HIGHSCORESPIC,
+    // Lump Start
+    KNIFEPIC,
+    GUNPIC,
+    MACHINEGUNPIC,
+    GATLINGGUNPIC,
+    NOKEYPIC,
+    GOLDKEYPIC,
+    SILVERKEYPIC,
+    N_BLANKPIC,
+    N_0PIC,
+    N_1PIC,
+    N_2PIC,
+    N_3PIC,
+    N_4PIC,
+    N_5PIC,
+    N_6PIC,
+    N_7PIC,
+    N_8PIC,
+    N_9PIC,
+    FACE1APIC,
+    FACE1BPIC,
+    FACE1CPIC,
+    FACE2APIC,
+    FACE2BPIC,
+    FACE2CPIC,
+    FACE3APIC,
+    FACE3BPIC,
+    FACE3CPIC,
+    FACE4APIC,
+    FACE4BPIC,
+    FACE4CPIC,
+    FACE5APIC,
+    FACE5BPIC,
+    FACE5CPIC,
+    FACE6APIC,
+    FACE6BPIC,
+    FACE6CPIC,
+    FACE7APIC,
+    FACE7BPIC,
+    FACE7CPIC,
+    FACE8APIC,
+    GOTGATLINGPIC,
+    MUTANTBJPIC,
+    PAUSEDPIC,
+    GETPSYCHEDPIC,
+
+    ORDERSCREEN = 148,
+    ERRORSCREEN,
+    T_HELPART,
+    T_DEMO0,
+    T_DEMO1,
+    T_DEMO2,
+    T_DEMO3,
+    T_ENDART1,
+    ENUMEND
+} graphicnums;
+
+//
+// Data LUMPs
+//
+#define README_LUMP_START 3
+#define README_LUMP_END 20
+
+#define CONTROLS_LUMP_START 22
+#define CONTROLS_LUMP_END 54
+
+#define LEVELEND_LUMP_START 55
+#define LEVELEND_LUMP_END 97
+
+#define LATCHPICS_LUMP_START 103
+#define LATCHPICS_LUMP_END 146
+
+//
+// Amount of each data item
+//
+#define NUMCHUNKS 156
+#define NUMFONT 2
+#define NUMFONTM 0
+#define NUMPICS 144
+#define NUMPICM 0
+#define NUMSPRITES 0
+#define NUMTILE8 35
+#define NUMTILE8M 0
+#define NUMTILE16 0
+#define NUMTILE16M 0
+#define NUMTILE32 0
+#define NUMTILE32M 0
+#define NUMEXTERNS 8
+//
+// File offsets for data items
+//
+#define STRUCTPIC 0
+
+#define STARTFONT 1
+#define STARTFONTM 3
+#define STARTPICS 3
+#define STARTPICM 147
+#define STARTSPRITES 147
+#define STARTTILE8 147
+#define STARTTILE8M 148
+#define STARTTILE16 148
+#define STARTTILE16M 148
+#define STARTTILE32 148
+#define STARTTILE32M 148
+#define STARTEXTERNS 148
+
+//
+// Thank you for using IGRAB!
+//

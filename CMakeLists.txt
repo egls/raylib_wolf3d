@@ -86,7 +86,9 @@ set(WOLF3D_GAME_SOURCES
 set(WOLF3D_PORT_SOURCES
   port/wl_compat.c
   port/wl_platform.c
-  port/asm_stubs.c)
+  port/asm_stubs.c
+  port/wl_data.c
+  port/wl_raycast.c)
 
 set(WOLF3D_WARNINGS -Wall -fsigned-char)
 # The id code defines globals in headers (e.g. menuitems in WL_MENU.H) and
@@ -131,4 +133,33 @@ endif()
 if(WOLF3D_WITH_AUDIO)
   add_subdirectory(audio)
   target_link_libraries(raylib_wolf3d PRIVATE wolf_audio)
+endif()
+
+include(CTest)
+if(BUILD_TESTING)
+  add_executable(wolf_core_data_test tests/core_data_test.c
+    WOLFSRC/ID_MM.C WOLFSRC/ID_PM.C WOLFSRC/ID_CA.C WOLFSRC/WL_SCALE.C port/wl_data.c)
+  target_include_directories(wolf_core_data_test PRIVATE port WOLFSRC)
+  target_compile_options(wolf_core_data_test PRIVATE -Wall -Wextra -fsigned-char -fcommon)
+  add_executable(wolf_codec_test tests/codec_test.c port/wl_data.c)
+  target_include_directories(wolf_codec_test PRIVATE port)
+  target_compile_options(wolf_codec_test PRIVATE -Wall -Wextra -fsigned-char)
+  add_executable(wolf_render_test tests/render_test.c WOLFSRC/WL_DRAW.C WOLFSRC/WL_STATE.C
+    WOLFSRC/WL_SCALE.C WOLFSRC/WOLFHACK.C WOLFSRC/ID_MM.C port/wl_raycast.c port/wl_data.c port/asm_stubs.c)
+  target_include_directories(wolf_render_test PRIVATE port WOLFSRC)
+  target_compile_options(wolf_render_test PRIVATE ${WOLF3D_WARNINGS} ${WOLF3D_GAME_FLAGS} -ffunction-sections -fdata-sections)
+  target_link_options(wolf_render_test PRIVATE -Wl,--gc-sections)
+  target_link_libraries(wolf_render_test PRIVATE m)
+  add_test(NAME core_renderer COMMAND wolf_render_test)
+  set(WOLF3D_TEST_DATA "$ENV{HOME}/wolf3d-data/shareware" CACHE PATH "External WL1 data for core tests")
+  add_test(NAME core_wl1_data COMMAND wolf_core_data_test "${WOLF3D_TEST_DATA}")
+  set_tests_properties(core_wl1_data PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 30)
+  add_test(NAME core_codecs COMMAND wolf_codec_test)
+  option(WOLF3D_CORE_SANITIZERS "Use ASan/UBSan on headless core tests" OFF)
+  if(WOLF3D_CORE_SANITIZERS AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    foreach(t wolf_core_data_test wolf_codec_test wolf_render_test)
+      target_compile_options(${t} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+      target_link_options(${t} PRIVATE -fsanitize=address,undefined)
+    endforeach()
+  endif()
 endif()

@@ -10,9 +10,9 @@
 
 typedef	struct
 {
-	long		planestart[3];
-	unsigned	planelength[3];
-	unsigned	width,height;
+	uint32_t	planestart[3];
+	word	planelength[3];
+	word	width,height;
 	char		name[16];
 } maptype;
 
@@ -23,7 +23,7 @@ extern	char		audioname[13];
 extern	byte 		_seg	*tinf;
 extern	int			mapon;
 
-extern	unsigned	_seg	*mapsegs[MAPPLANES];
+extern	word	_seg	*mapsegs[MAPPLANES];
 extern	maptype		_seg	*mapheaderseg[NUMMAPS];
 extern	byte		_seg	*audiosegs[NUMSNDCHUNKS];
 extern	void		_seg	*grsegs[NUMCHUNKS];
@@ -44,8 +44,8 @@ extern	char		extension[5],
 			aheadname[10],
 			afilename[10];
 
-extern long		_seg *grstarts;	// array of offsets in egagraph, -1 for sparse
-extern long		_seg *audiostarts;	// array of offsets in audio / audiot
+extern int32_t	_seg *grstarts;	// array of offsets in egagraph, -1 for sparse
+extern uint32_t	_seg *audiostarts;	// array of offsets in audio / audiot
 //
 // hooks for custom cache dialogs
 //
@@ -70,10 +70,10 @@ boolean CA_ReadFile (char *filename, memptr *ptr);
 boolean CA_LoadFile (char *filename, memptr *ptr);
 boolean CA_WriteFile (char *filename, void far *ptr, long length);
 
-long CA_RLEWCompress (unsigned huge *source, long length, unsigned huge *dest,
+long CA_RLEWCompress (word huge *source, long length, word huge *dest,
   unsigned rlewtag);
 
-void CA_RLEWexpand (unsigned huge *source, unsigned huge *dest,long length,
+void CA_RLEWexpand (word huge *source, word huge *dest,long length,
   unsigned rlewtag);
 
 void CA_Startup (void);

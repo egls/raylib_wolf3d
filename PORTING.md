@@ -1,5 +1,7 @@
 # Porting inventory
 
+The inventory below records the WOLF-2 foundation. The WOLF-4 update immediately below supersedes its S2-core stub entries.
+
 This file lists everything in `WOLFSRC/` that does not run on a 64-bit OS as written, what WOLF-2 did about it, and which stage replaces it.
 
 Owners:
@@ -9,6 +11,50 @@ Owners:
 - **S3-audio**: Stage 3 ID_SD (Wolf Audio Porter), on top of the WOLF-3 `audio/` engine (PR #1).
 
 WOLF-2 only makes the program build and link. Anything DOS-only aborts at runtime with `raylib_wolf3d: not ported yet: <what> (<file>:<line>)` and exit code 3. It never silently returns.
+
+## WOLF-4 core implementation
+
+- `ID_MM.C` uses malloc with stable owner slots, purge invalidation and locks.
+  Sort purges unlocked purgeable allocations, calls the original hooks, and
+  never moves live blocks. Memory totals are advisory OS availability.
+- `ID_PM.C` reads the VSWAP header/offsets/lengths explicitly and retains all
+  non-sparse pages; EMS/XMS are absent. Lock/purge APIs remain callable because
+  resident pages cannot be evicted. Shutdown releases them separately from MM.
+- `ID_CA.C` decodes 38-byte map headers, 24-bit graphics offsets, 16-bit
+  Huffman nodes, and 32-bit audio offsets field by field. Carmack/RLEW/Huffman
+  production decoders in `port/wl_data.c` reject input/output overruns. Map
+  planes and their game callers use `word *`. Pictures and sound headers are
+  constructed in native memory; fonts/music have fixed-size native word fields.
+- `GFXV_WL14.H` matches the SHA-pinned Apogee v1.4 WL1 set: 156 chunks,
+  144 pictures, **35** eight-pixel tiles, eight externals. Title is chunk 99,
+  tiles are chunk 147, externals start at 148. The Apogee names/ordering were
+  cross-checked with [Wolf4SDL's Apogee header](https://github.com/fabiangreffrath/wolf4sdl/blob/master/gfxv_apo.h);
+  the actual tile count and decoded lengths were checked against our WL1 files.
+- `port/wl_raycast.c` translates `WL_DR_A.ASM`, including original quadrant
+  lookup/equality ordering, midpoint door tests, pushwall multiplication with
+  32-bit wrap, and partial products truncating toward zero. `FixedByFrac`
+  preserves the trig table's signed-magnitude convention (not two's complement).
+- `WL_SCALE.C` uses loops with original integer pixel edges and large-height
+  aliases instead of generated code. Sprite commands are checked byte streams;
+  virtual pixel bases wrap as 16-bit offsets before indexing the page.
+- `WL_DRAW.C` uses flat wall-page pointers and `VL_Plot`/`VL_Hlin`/`VL_SetScreen`.
+  These existing backend functions keep their signatures and relative
+  `bufferofs` coordinates; no `raylib.h` enters the core. The first wall/door/
+  pushwall post cannot reuse stale state from a previous frame.
+- `WOLFHACK.C`/`MapRow` use the same backend pixel API. RNG table/order are
+  retained. CPU detection selects native division; there is no code patching.
+- Actor occupancy retains full `uintptr_t` values in `TryWalk`. Menu callbacks
+  have correctly typed adapters. Signon static storage is not reclaimed by
+  paragraph arithmetic; errors print before teardown rather than recursively
+  requesting a cache chunk during a loader failure.
+
+Validation: CTest `core_codecs`, `core_renderer`, `core_wl1_data` (the last
+skips without external WL1 data). Sanitizers are optional via
+`WOLF3D_CORE_SANITIZERS`. No commercial data is used or included.
+The video/input and audio entries below remain owned by WOLF-5 and WOLF-6;
+playable screens and demo sync cannot be checked until those backends land.
+`CONFIG`/save-game native dumps remain a separate persistence migration; the
+core's game-data readers no longer use native disk struct dumps.
 
 ## Build configuration
 

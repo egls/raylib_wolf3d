@@ -36,8 +36,11 @@ jobs:
 
       - name: Build
         run: |
-          cmake --build build --target wolf3d_raylib raylib_wolf3d 2>&1 | tee build.log
+          cmake --build build 2>&1 | tee build.log
           echo "Game warnings: $(grep -E '/(WOLFSRC|port)/.*warning:' build.log | wc -l)"
+
+      - name: Headless core tests (data test skips without WL1)
+        run: ctest --test-dir build --output-on-failure --no-tests=error
 
       - name: Smoke test (no game data)
         run: |

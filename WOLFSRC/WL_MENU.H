@@ -230,3 +230,5 @@ void FreeMusic (void);	// WOLF-2: was implicitly declared
 int GetYorN(int x,int y,int pic);
 
 
+
+void CP_ViewScoresMenu(int item);
