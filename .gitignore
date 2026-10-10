@@ -9,3 +9,4 @@ build*/
 *.sod
 *.SDM
 *.sdm
+dist/
