@@ -19,9 +19,9 @@
  * which is what a desync looks like).
  *
  * "-savetest" (also here) checks the save game format: a save/load round
- * trip of E1M1 after a demo must restore the same state hash, and damaged
- * files (with valid checksums) must be rejected by SaveGameValid without
- * touching the game.
+ * trip of E1M1 after a demo must restore the same state hash and, saved
+ * again, the same bytes (WOLF-18); damaged files (with valid checksums)
+ * must be rejected by SaveGameValid without touching the game.
  */
 
 #include <fcntl.h>
@@ -165,12 +165,32 @@ static int Accepted (wl_stream *s)
 	return ok;
 }
 
+/* saves the current game with SaveTheGame and reads back the body that
+ * follows the 32-byte name */
+static void SaveBody (wl_stream *body)
+{
+	int	fd;
+
+	fd = open(WL_UserFile(SAVETEST_FILE), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	write(fd, "savetest\0", 9);
+	lseek(fd, 32, SEEK_SET);
+	if (fd == -1 || !SaveTheGame(fd, 0, 0))
+		Quit("-savetest: SaveTheGame failed");
+	close(fd);
+
+	WS_Init(body);
+	if (!ReadAll(WL_UserFile(SAVETEST_FILE), body) || body->len < 32 + 14)
+		Quit("-savetest: can't read the save back");
+	memmove(body->buf, body->buf + 32, body->len - 32);
+	body->len -= 32;
+}
+
 static void SaveTest (void)
 {
 	wl_stream	good, bad;
 	uint32_t	before, after;
 	size_t		actors;
-	int			fd, failed = 0, i;
+	int			fd, failed = 0, i, ok;
 	struct { const char *what; int expect; } *c, cases[] =
 	{
 		{"unchanged file", 1},
@@ -188,18 +208,7 @@ static void SaveTest (void)
 	PlayDemo(0);
 	before = StateHash();
 
-	fd = open(WL_UserFile(SAVETEST_FILE), O_WRONLY | O_CREAT | O_TRUNC, 0644);
-	write(fd, "savetest\0", 9);
-	lseek(fd, 32, SEEK_SET);
-	if (fd == -1 || !SaveTheGame(fd, 0, 0))
-		Quit("-savetest: SaveTheGame failed");
-	close(fd);
-
-	WS_Init(&good);
-	if (!ReadAll(WL_UserFile(SAVETEST_FILE), &good) || good.len < 32 + 14)
-		Quit("-savetest: can't read the save back");
-	memmove(good.buf, good.buf + 32, good.len - 32);
-	good.len -= 32;
+	SaveBody(&good);
 
 	// offset of the actor count: header, gamestate, LevelRatios, tilemap,
 	// actorat, areaconnect, areabyplayer
@@ -254,6 +263,14 @@ static void SaveTest (void)
 	after = StateHash();
 	printf("savetest: round trip hash %08x -> %08x %s\n", before, after, before == after ? "ok" : "FAIL");
 	failed |= before != after;
+
+	// WOLF-18: write -> read -> write gives the same bytes
+	SaveBody(&bad);
+	ok = bad.len == good.len && !memcmp(bad.buf, good.buf, good.len);
+	printf("savetest: re-save after load %zu -> %zu bytes, %s\n", good.len, bad.len,
+		ok ? "identical" : "FAIL: different");
+	failed |= !ok;
+	WS_Free(&bad);
 
 	WS_Free(&good);
 	unlink(WL_UserFile(SAVETEST_FILE));

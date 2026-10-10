@@ -1560,13 +1560,51 @@ void PrintLSEntry(int w,int color)
 
 ////////////////////////////////////////////////////////////////////
 //
+// WOLF-18: write a save game to NAME.TMP (the 32-byte title, then the
+// game) and rename it over the slot's file only once all of it is on
+// disk, so a failed save leaves the slot's previous save intact.  The DOS
+// version truncated the old file first and ignored SaveTheGame's result.
+//
+////////////////////////////////////////////////////////////////////
+static boolean WriteSaveFile(char *name,char *title,int x,int y)
+{
+	char path[1100],tmp[1100+4],header[32];
+	int handle;
+	boolean ok=false;
+
+	snprintf(path,sizeof(path),"%s",WL_UserFile(name));
+	snprintf(tmp,sizeof(tmp),"%s.TMP",path);
+	memset(header,0,sizeof(header));
+	memcpy(header,title,strnlen(title,sizeof(header)-1));
+
+	handle=open(tmp,O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,0644);
+	if (handle != -1)
+	{
+		ok=write(handle,header,32) == 32 && SaveTheGame(handle,x,y);
+		ok=fsync(handle) == 0 && ok;
+		ok=close(handle) == 0 && ok;
+		ok=ok && rename(tmp,path) == 0;
+		if (!ok)
+			unlink(tmp);
+	}
+	if (!ok)
+	{
+		Message(STR_NOSPACE1"\n"STR_NOSPACE2);
+		IN_ClearKeysDown();
+		IN_Ack();
+	}
+	return ok;
+}
+
+
+////////////////////////////////////////////////////////////////////
+//
 // SAVE CURRENT GAME
 //
 ////////////////////////////////////////////////////////////////////
 int CP_SaveGame(int quick)
 {
-	int handle,which,exit=0;
-	unsigned nwritten;
+	int which,exit=0;
 	char name[13],input[32];
 
 
@@ -1582,18 +1620,7 @@ int CP_SaveGame(int quick)
 		if (SaveGamesAvail[which])
 		{
 			name[7]=which+'0';
-			handle=open(WL_UserFile(name),O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,0644);	// WOLF-7
-			if (handle == -1)
-				return 0;
-
-			strcpy(input,&SaveGameNames[which][0]);
-
-			write(handle,input,32);
-			lseek(handle,32,SEEK_SET);
-			SaveTheGame(handle,0,0);
-			close(handle);
-
-			return 1;
+			return WriteSaveFile(name,&SaveGameNames[which][0],0,0);	// WOLF-18
 		}
 	}
 
@@ -1642,25 +1669,14 @@ int CP_SaveGame(int quick)
 
 			if (US_LineInput(LSM_X+LSItems.indent+2,LSM_Y+which*13+1,input,input,true,31,LSM_W-LSItems.indent-30))
 			{
-				SaveGamesAvail[which]=1;
-				strcpy(&SaveGameNames[which][0],input);
-
-				handle=open(WL_UserFile(name),O_WRONLY | O_CREAT | O_TRUNC | O_BINARY,0644);	// WOLF-7
-				if (handle == -1)
+				DrawLSAction(1);
+				if (!WriteSaveFile(name,input,LSA_X+8,LSA_Y+5))	// WOLF-18: slot unchanged
 				{
-					Message(STR_NOSPACE1"\n"STR_NOSPACE2);
-					IN_ClearKeysDown();
-					IN_Ack();
 					DrawLoadSaveScreen(1);
 					continue;
 				}
-				write(handle,input,32);
-				lseek(handle,32,SEEK_SET);
-
-				DrawLSAction(1);
-				SaveTheGame(handle,LSA_X+8,LSA_Y+5);
-
-				close(handle);
+				SaveGamesAvail[which]=1;
+				strcpy(&SaveGameNames[which][0],input);
 
 				ShootSnd();
 				exit=1;
