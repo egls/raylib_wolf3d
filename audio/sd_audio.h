@@ -18,6 +18,8 @@ void sd_audio_set_register_hook(sd_audio *s, sd_register_hook hook, void *user);
  * leave current playback unchanged. Headerless IMF is not accepted. */
 int sd_audio_music(sd_audio *s, const uint8_t *data, size_t bytes, int loop);
 void sd_audio_stop_music(sd_audio *s);
+/* Pause retains the sequencer cursor; resume continues at the next event. */
+void sd_audio_music_pause(sd_audio *s, int paused);
 /* Raw on-disk SoundCommon + instrument/block/data, not host structs.
  * Return 1 accepted, 0 rejected (bad input or lower priority). */
 int sd_audio_adlib(sd_audio *s, const uint8_t *chunk, size_t bytes);
@@ -27,8 +29,14 @@ void sd_audio_stop_effect(sd_audio *s);
  * Both 15 is invalid. PCM priority is independent from synthesized effects. */
 int sd_audio_pcm(sd_audio *s, const uint8_t *data, size_t bytes,
                  unsigned priority, unsigned left, unsigned right);
+/* Original PC digitized mode: bit 7 at the 7000 Hz extreme ISR rate. */
+int sd_audio_pc_pcm(sd_audio *s, const uint8_t *data, size_t bytes);
 void sd_audio_stop_pcm(sd_audio *s);
+int sd_audio_effect_playing(const sd_audio *s);
+int sd_audio_pcm_playing(const sd_audio *s);
+void sd_audio_pcm_position(sd_audio *s, unsigned left, unsigned right);
 void sd_audio_mix(sd_audio *s, int16_t *out, size_t frames);
+void sd_audio_register(sd_audio *s, uint8_t reg, uint8_t value);
 unsigned sd_audio_music_hz(void);
 #ifdef __cplusplus
 }

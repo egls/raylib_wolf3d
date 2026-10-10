@@ -52,8 +52,14 @@ E1M1 plane CRC32s, wall/sprite/title CRC32s, all ten maps, all graphics/audio
 chunks, every resident sprite at several scales, and cache/purge/shutdown
 cycles. SHA-256 verification stays in ``scripts/fetch_shareware.sh``.
 
-The integrated WOLF-5 video/input backend runs; normal startup reaches the
-remaining WOLF-6 audio adapter ``SDL_SetDS`` and exits with code 3.
+The WOLF-6 Sound Manager now drives the Nuked OPL engine and 7042 Hz VSWAP
+samples through a raylib AudioStream. ``-nosound`` / ``WOLF3D_NOSOUND=1``
+disable all audio; ``-nomusic`` / ``WOLF3D_NOMUSIC=1`` disable music only.
+The environment switches are useful while WOLF-7 completes startup: at this
+revision, command-line parsing in ``US_CheckParm`` crashes on unmatched
+arguments, and environment-only startup reaches the unported ``peekb``.
+Audio integration tests and device recordings can run independently of those
+unfinished game paths; see ``audio/README.md``.
 Headless core checks do not establish DOS demo playback synchronization or
 playable screen output. No save-game format migration is included here.
 

@@ -64,4 +64,9 @@ int		RL_JoyButtons (void);				/* bit0 = A, bit1 = B/X */
 
 void	RL_ToggleFullscreen (void);
 
+/* Mixer runs only on the game thread. Callback consumes copied PCM only. */
+int RL_AudioOpen(void (*mixer)(short *samples, unsigned frames));
+void RL_AudioPump(void);
+void RL_AudioClose(void);
+
 #endif
