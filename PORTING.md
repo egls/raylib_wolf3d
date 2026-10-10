@@ -36,8 +36,8 @@ Each routine is replaced by a stub in `port/asm_stubs.c` with the same C signatu
 |---|---|---|---|
 | `C0.ASM` | Borland startup, `_argc/_argv`, exit handling, null check, divide-by-zero handler | dropped. C runtime + `main()`; `_argc/_argv` set in `port/wl_platform.c` | done |
 | `H_LDIV.ASM` | `LDIV@`, `LUDIV@`, `LMOD@`, `LUMOD@` (32-bit divide helpers) | dropped (native) | done |
-| `ID_VL_A.ASM` | `VL_WaitVBL`, `VL_SetCRTC`, `VL_SetScreen`, `VL_ScreenToScreen`, `VL_VideoID` | stubs | S2-backend |
-| `ID_VH_A.ASM` | `VH_UpdateScreen` (dirty-tile blit to VGA) | stub | S2-backend |
+| `ID_VL_A.ASM` | `VL_WaitVBL`, `VL_SetCRTC`, `VL_SetScreen`, `VL_ScreenToScreen`, `VL_VideoID` | **done (WOLF-5)**, C in `ID_VL.C` | done |
+| `ID_VH_A.ASM` | `VH_UpdateScreen` (dirty-tile blit to VGA) | **done (WOLF-5)**, C in `ID_VH.C` | done |
 | `ID_US_A.ASM` | `US_InitRndT`, `US_RndT`, `rndtable[256]` | stubs; `rndtable` copied verbatim | S2-core |
 | `ID_SD_A.ASM` | `SDL_SetDS`, `SDL_IndicatePC`, `SDL_t0ExtremeAsmService`, `SDL_t0FastAsmService`, `SDL_t0SlowAsmService` (timer ISRs, PC speaker/AdLib/digitized) | stubs | S3-audio |
 | `WL_DR_A.ASM` | `AsmRefresh` (raycaster inner loop; near helpers `xpartialbyystep`, `ypartialbyxstep`) | stub | S2-core |
@@ -53,17 +53,17 @@ Every run of Borland `asm` statements in the built C files is kept in place unde
 |---|---:|---|---|
 | `ID_SD.C` | 60 | PIT/timer programming, PC speaker, AdLib/SB port I/O, ISR glue | S3-audio |
 | `ID_PM.C` | 12 | EMS (`int 67h`) / XMS driver calls | S2-core |
-| `ID_VL.C` | 10 | VGA mode set, palette I/O, planar memory copies | S2-backend |
+| `ID_VL.C` | 10 | VGA mode set, palette I/O, planar memory copies | done (WOLF-5: rewritten, see below) |
 | `ID_CA.C` | 9 | Huffman expand, RLEW/Carmack helpers, far reads | S2-core |
 | `WL_DRAW.C` | 9 | `ScalePost`, `FixedByFrac`, `TransformTile`/wall helpers, VGA latches | S2-core |
-| `ID_VH.C` | 5 | latch/plane copies | S2-backend |
+| `ID_VH.C` | 5 | latch/plane copies, `FizzleFade` | done (WOLF-5) |
 | `ID_MM.C` | 3 | XMS UMB allocation, segment math | S2-core |
 | `ID_US_1.C` | 3 | BIOS text output, `int 21h` | S2-backend |
 | `WL_SCALE.C` | 2 | compiled-scaler call glue | S2-core |
-| `ID_IN.C` | 1 | mouse/joystick BIOS calls | S2-backend |
+| `ID_IN.C` | 1 | mouse/joystick BIOS calls | done (WOLF-5) |
 | `WL_DEBUG.C` | 1 | debug border/port I/O | S2-backend |
-| `ID_VL.H` macros | `VGAWRITEMODE`, `VGAMAPMASK`, `VGAREADMAP` | VGA register writes | S2-backend |
-| `WL_DEF.H` macro | `COLORBORDER` | overscan colour | S2-backend |
+| `ID_VL.H` macros | `VGAWRITEMODE`, `VGAMAPMASK`, `VGAREADMAP` | VGA register writes | done (WOLF-5: no-ops, memory is linear) |
+| `WL_DEF.H` macro | `COLORBORDER` | overscan colour | done (WOLF-5: `VL_ColorBorder`, remembered only) |
 | `ID_MM.H` macro | `XMS_CALL` | far call into XMS driver | S2-core |
 
 `WL_SCALE.C` `BuildCompScale` writes x86 machine code at runtime (compiled scalers). The emitting line now calls `NOTPORTED("BuildCompScale: x86 code generation")`. S2-core must replace it with a C scaler.
@@ -149,3 +149,47 @@ The data is little-endian. Every current target (x86_64, aarch64) is little-endi
 | `scripts/obj2c.py` | `OBJ/*.OBJ` (OMF) to C arrays, run by CMake |
 
 Startup order today: `main` → `WL_PlatformStartup` (window opens) → `CheckForEpisodes` (finds `*.WL1`) → `Patch386` → `CheckIs386` → abort.
+
+## Video, input and timer backend (WOLF-5)
+
+Replaces the DOS video, keyboard/mouse/joystick and timer layers.  `raylib.h` is still only included by `port/id_raylib.c`.
+
+### Video memory model: read this before touching the renderer
+
+Wolf3D drew into VGA Mode X: 4 planes of 64K, pages and latch pictures addressed in plane bytes, writes steered by the map mask.  The port keeps those **addresses** (`bufferofs`, `displayofs`, `linewidth`, `ylookup[]`, `latchpics[]`, `freelatch`, `PAGE1START` ... are unchanged, in plane bytes) but stores the memory linearly: plane byte `o` of plane `p` is `vl_vram[4*o + p]`. So pixel `(x,y)` of the page at plane offset `ofs` is
+
+```
+vl_vram[4*(ofs + ylookup[y]) + x]
+```
+
+and a latch (the 4 plane bytes at one address) is 4 consecutive bytes. Consequences:
+
+- `VGAMAPMASK`, `VGAWRITEMODE`, `VGAREADMAP` are no-ops. Code that selects planes with them (the wall/sprite scalers in `WL_DRAW.C`, `WL_SCALE.C`, `WOLFHACK.C`, `WL_DR_A.ASM`) must write chunky pixels with the formula above instead; `VL_Span(ofs, y, x, count)` gives a checked pointer.
+- Everything in `ID_VL.C` / `ID_VH.C` that touched `SCREENSEG` is translated: `VL_Plot/Hlin/Vlin/Bar`, `VL_MemToScreen` (de-planes a `VL_MungePic`-ordered picture), `VL_MemToLatch`, `VL_LatchToScreen`, `VL_ScreenToScreen`, `VL_DrawTile8String`, `VL_DrawLatch8String`, `VW_DrawPropString`, `VW_DrawColorPropString`, `VH_UpdateScreen`, `FizzleFade`.
+- `MK_FP(SCREENSEG, ...)` still aborts: S2-core code that builds screen pointers must use `vl_vram`.
+- The page that is shown is the CRTC start address set by `VL_SetScreen` / `VL_SetCRTC` (not `displayofs`, which the game keeps for itself, as before).
+
+Palette: `VL_SetPalette/GetPalette/SetColor/FillPalette/FadeIn/FadeOut` keep the 6-bit VGA DAC values; `VL_Present` expands the shown page through a 256-entry RGBA table. Damage/bonus flashes (`VL_SetPalette(redshifts[..])`) work unchanged. `VL_ColorBorder` only remembers the colour.
+
+### Presenting, timing, input
+
+| Piece | Where | Notes |
+|---|---|---|
+| Present | `ID_VL.C` `VL_Present`/`VL_Refresh`, `port/id_raylib.c` `RL_Present` | `VL_WaitVBL(n)` sleeps to the n-th 70 Hz boundary and presents. `VL_SetScreen`, `VH_UpdateScreen` and `IN_PumpEvents` also present (rate limited to 70 Hz), so busy loops keep the window alive. Scaling: whole-number nearest enlargement into a render texture, then smooth scale to the window, letterboxed 4:3. Alt+Enter toggles borderless fullscreen (both Enter events are swallowed). |
+| `TimeCount` | `port/wl_timer.c` | A thread adds ticks from `CLOCK_MONOTONIC` at 70 Hz; `TimeCount` is now `volatile` (`ID_SD.H/.C`). Started by `WL_PlatformStartup`. Wolf's `while (TimeCount < n);` loops and `TimeCount = 0` resets work unchanged. The 700 Hz music/effects timer is **not** here: S3-audio drives `ID_SD` from the audio callback. |
+| Keyboard | `ID_IN.C` `IN_PumpEvents`, `id_raylib.c` | raylib is polled; key changes become PC set-1 scan codes (0xE0 prefix for the extended keys) fed to the old `INL_KeyService`, which still maintains `Keyboard[]`, `LastScan`, `LastASCII` and the key hook. raylib's pressed-key queue is drained before and after every poll (EndDrawing resets it) so taps shorter than a poll are kept. |
+| Waiting on input | `IN_SpinWait()` | Every `while (Keyboard[..]);`, `while (!LastScan);` and `while (TimeCount < n);` loop in `ID_IN`, `WL_MENU`, `WL_TEXT`, `WL_INTER`, `WL_DEBUG` now calls it. New code that spins on those variables must too. |
+| Mouse | `IN_MouseCall` (the `Mouse(x)` macro) | Emulates int 33h functions 0, 3, 4, 11 on `RL_MouseDelta/Buttons`; the cursor is captured (hidden, locked) only inside `PlayLoop`. |
+| Joystick | `IN_GetJoyAbs`, `IN_JoyButtons` | Gamepad 0: left stick/d-pad as the analog stick (1000 +- 1000 counts), A/right trigger = button 0, B/X = button 1. |
+| Closing the window | `IN_PumpEvents` | Calls `exit(0)`. TODO (S2-core): route through `Quit("")` once its DOS text-screen exit is ported. |
+
+### Not done here
+
+- `SignonScreen` / `VL_MungePic` still go through `MM_*` and `FP_SEG` (S2-core).
+- No graphics header matches the v1.4 shareware `VGAGRAPH` yet (S2-core), so the title picture is only shown by the harness below.
+
+### Developer harness and tests
+
+- `raylib_wolf3d -data DIR -videotest signon|title|fade|latch|fizzle|keys|timing` runs `port/wl_videotest.c`: it shows the linked-in signon screen, the title picture decoded straight from `VGAGRAPH.WL1`, a palette fade, latch/bar/line drawing, `FizzleFade`, prints key events, or measures `VL_WaitVBL` and `TimeCount` against the clock.
+- `ctest` runs `tests/rl_keys_test.c`: `port/id_raylib.c` against a scripted fake raylib (held keys, sub-poll taps, extended keys, Alt+Enter), no display needed.
+- GCC 14+ makes incompatible-pointer-type, int-conversion and implicit-declaration errors; the game sources are built with `-Wno-error=` for those three until S2-core clears the warnings.

@@ -205,5 +205,6 @@ extern char		**_argv;
 
 /* Platform startup (port/wl_platform.c): argv, data directory, window. */
 void	WL_PlatformStartup (int argc, char **argv);
+void	WL_VideoTest (const char *what);
 
 #endif
