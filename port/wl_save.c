@@ -8,6 +8,10 @@
 #include <sys/stat.h>
 #include <errno.h>
 
+#ifndef NUMMAPS
+#define NUMMAPS 60
+#endif
+
 /* -------------------------------------------------------------------------
  * Little-endian serialization primitives
  * ------------------------------------------------------------------------- */
@@ -618,25 +622,26 @@ boolean WL_DeserializeSaveGame (const uint8_t *buf, size_t size)
     int16_t v_map = (int16_t)rd_i16_le(&v);
     if (v_diff < 0 || v_diff > 3 || v_map < 0 || v_map > 9)
         return false;
-    v += 62;
+    v += 34; /* skip to episode at offset 38 */
+    int16_t v_episode = (int16_t)rd_i16_le(&v);
+    if (v_episode < 0 || v_episode > 5 || (v_map + 10 * v_episode) >= NUMMAPS)
+        return false;
+    v += 26; /* remainder of gamestate (66 total) */
 
     /* 2. LevelRatios (80 bytes) */
     v += WL_LEVELRATIOS_SIZE;
 
     /* 3. tilemap (4096 bytes) */
-    v += WL_TILEMAP_SIZE;
-
-    /* 4. actorat (8192 bytes) */
     for (int i = 0; i < 64 * 64; i++)
     {
-        uint16_t actval = rd_u16_le(&v);
-        if (actval & 0x8000)
-        {
-            int idx = actval & ~0x8000;
-            if (idx < 0 || idx >= MAXACTORS)
-                return false;
-        }
+        uint8_t tile = rd_u8(&v);
+        if ((tile & 0x80) && (tile & 0x7f) >= MAXDOORS)
+            return false;
     }
+
+    /* 4. actorat (8192 bytes) - deferred until actor count is known */
+    const uint8_t *v_actorat = v;
+    v += WL_ACTORAT_SIZE;
 
     /* 5. areaconnect (1369 bytes) and areabyplayer (74 bytes) */
     v += WL_AREACONNECT_SIZE;
@@ -651,9 +656,17 @@ boolean WL_DeserializeSaveGame (const uint8_t *buf, size_t size)
         return false;
     v += 4; /* ticcount, obclass */
     uint16_t p_st = rd_u16_le(&v);
-    if (p_st > WL_NUM_STATES)
+    if (p_st == 0 || p_st > WL_NUM_STATES)
         return false;
-    v += 52; /* remainder of player record */
+    v += 16; /* flags (1), pad (1), distance (4), dir (2), x (4), y (4) */
+    uint16_t p_tx = rd_u16_le(&v);
+    uint16_t p_ty = rd_u16_le(&v);
+    if (p_tx >= MAPSIZE || p_ty >= MAPSIZE)
+        return false;
+    uint8_t p_area = rd_u8(&v);
+    if (p_area >= NUMAREAS)
+        return false;
+    v += 31; /* pad (1) + remainder of player record (30) */
 
     /* Validate follower actors until ac_badobject */
     int validated_actors = 1;
@@ -672,13 +685,38 @@ boolean WL_DeserializeSaveGame (const uint8_t *buf, size_t size)
             return false;
         v += 4; /* ticcount, obclass */
         uint16_t st = rd_u16_le(&v);
-        if (st > WL_NUM_STATES)
+        if (st == 0 || st > WL_NUM_STATES)
             return false;
-        v += 52;
+        v += 16; /* flags, pad, distance, dir, x, y */
+        uint16_t tx = rd_u16_le(&v);
+        uint16_t ty = rd_u16_le(&v);
+        if (tx >= MAPSIZE || ty >= MAPSIZE)
+            return false;
+        uint8_t area = rd_u8(&v);
+        if (area >= NUMAREAS)
+            return false;
+        v += 31; /* pad + remainder of record */
     }
 
     if (!found_term)
         return false;
+
+    /* Validate actorat entries against actor count and valid tile/door values */
+    for (int i = 0; i < 64 * 64; i++)
+    {
+        uint16_t actval = rd_u16_le(&v_actorat);
+        if (actval & 0x8000)
+        {
+            uint16_t idx = actval & (uint16_t)~0x8000;
+            if (idx >= validated_actors)
+                return false;
+        }
+        else
+        {
+            if (actval >= 256)
+                return false;
+        }
+    }
 
     /* Trailing section must match WL_TRAILING_SIZE exactly */
     if ((size_t)(end - v) != WL_TRAILING_SIZE)

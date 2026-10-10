@@ -1604,14 +1604,13 @@ int CP_SaveGame(int quick)
 				size_t inlen = strlen(input);
 				if (inlen > 31) inlen = 31;
 				memcpy(input32, input, inlen);
-				write(handle, input32, 32);
+				ssize_t wr = write(handle, input32, 32);
 				lseek(handle,32,SEEK_SET);
-				boolean ok = SaveTheGame(handle,0,0);
+				boolean ok = (wr == 32) && SaveTheGame(handle,0,0);
 				close(handle);
 
-				if (ok)
+				if (ok && rename(tmpname, name) == 0)
 				{
-					rename(tmpname, name);
 					return 1;
 				}
 				unlink(tmpname);
@@ -1681,18 +1680,16 @@ int CP_SaveGame(int quick)
 					memset(input32, 0, sizeof(input32));
 					size_t inlen = strlen(input);
 					if (inlen > 31) inlen = 31;
-					memcpy(input32, input, inlen);
-					write(handle, input32, 32);
+					ssize_t wr = write(handle, input32, 32);
 					lseek(handle,32,SEEK_SET);
 
 					DrawLSAction(1);
-					boolean ok = SaveTheGame(handle,LSA_X+8,LSA_Y+5);
+					boolean ok = (wr == 32) && SaveTheGame(handle,LSA_X+8,LSA_Y+5);
 
 					close(handle);
 
-					if (ok)
+					if (ok && rename(tmpname, name) == 0)
 					{
-						rename(tmpname, name);
 						SaveGamesAvail[which]=1;
 						strcpy(&SaveGameNames[which][0],input);
 						ShootSnd();

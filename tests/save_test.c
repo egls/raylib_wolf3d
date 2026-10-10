@@ -432,7 +432,7 @@ static int test_savegame_roundtrip (void)
     for (int y = 0; y < MAPSIZE; y++)
     {
         for (int x = 0; x < MAPSIZE; x++)
-            tilemap[x][y] = (uint8_t)((x * 3 + y * 7) & 0xff);
+            tilemap[x][y] = (uint8_t)((x * 3 + y * 7) % 64);
     }
 
     /* 4. Setup areaconnect & areabyplayer */
@@ -482,6 +482,9 @@ static int test_savegame_roundtrip (void)
     player->active = ac_yes;
     player->x = 0x11223344;
     player->y = 0x55667788;
+    player->tilex = 5;
+    player->tiley = 5;
+    player->areanumber = 0;
     player->angle = 180;
     player->ticcount = 42;
     player->hitpoints = 92;
@@ -492,6 +495,9 @@ static int test_savegame_roundtrip (void)
     guard->active = ac_yes;
     guard->x = 0x22334455;
     guard->y = 0x66778899;
+    guard->tilex = 6;
+    guard->tiley = 6;
+    guard->areanumber = 1;
     guard->angle = 90;
     guard->ticcount = 12;
     guard->hitpoints = 50;
@@ -504,6 +510,9 @@ static int test_savegame_roundtrip (void)
     dog->active = ac_yes;
     dog->x = 0x33445566;
     dog->y = 0x77889900;
+    dog->tilex = 7;
+    dog->tiley = 7;
+    dog->areanumber = 2;
     dog->angle = 270;
     dog->ticcount = 8;
     dog->hitpoints = 25;
@@ -605,7 +614,7 @@ static int test_savegame_roundtrip (void)
     for (int y = 0; y < MAPSIZE; y++)
     {
         for (int x = 0; x < MAPSIZE; x++)
-            CHECK(tilemap[x][y] == (uint8_t)((x * 3 + y * 7) & 0xff));
+            CHECK(tilemap[x][y] == (uint8_t)((x * 3 + y * 7) % 64));
     }
 
     for (int a = 0; a < NUMAREAS; a++)
@@ -757,6 +766,8 @@ static int test_actor_holes_and_reuse (void)
     uint8_t buf[65536];
 
     InitActorList();
+    player->active = ac_yes;
+    player->state = &s_player;
     GetNewActor(); /* slot 1 */
     GetNewActor(); /* slot 2 */
 
@@ -838,6 +849,8 @@ static int test_corrupt_savegame (void)
 
     size_t len = WL_SerializeSaveGame(buf, sizeof(buf));
     CHECK(len > 0);
+    const size_t P = 13877;
+    const size_t ACTORAT = 66 + 80 + 4096;
 
     /* 1. Missing badobject terminator */
     memcpy(corrupt, buf, len);
@@ -845,25 +858,66 @@ static int test_corrupt_savegame (void)
     corrupt[term_offset] = 1;
     CHECK(WL_DeserializeSaveGame(corrupt, len) == false);
 
-    /* 2. Invalid actor state ID (> WL_NUM_STATES) */
+    /* 2. Invalid actor state ID (> WL_NUM_STATES or == 0) */
     memcpy(corrupt, buf, len);
-    corrupt[13877 + 6] = 0xff;
-    corrupt[13877 + 7] = 0x01; /* ID 511 > 305 */
+    corrupt[P + 6] = 0xff;
+    corrupt[P + 7] = 0x01; /* ID 511 > 305 */
     CHECK(WL_DeserializeSaveGame(corrupt, len) == false);
 
-    /* 3. Out-of-bounds statobj coordinates (>= 64) */
+    memcpy(corrupt, buf, len);
+    corrupt[P + 6] = 0;
+    corrupt[P + 7] = 0; /* ID 0 (NULL state) */
+    CHECK(WL_DeserializeSaveGame(corrupt, len) == false);
+
+    /* 3. Out-of-bounds actor coordinates & area */
+    memcpy(corrupt, buf, len);
+    corrupt[P + 24] = 0xe8; corrupt[P + 25] = 0x03; /* tilex = 1000 >= 64 */
+    CHECK(WL_DeserializeSaveGame(corrupt, len) == false);
+
+    memcpy(corrupt, buf, len);
+    corrupt[P + 26] = 0xe8; corrupt[P + 27] = 0x03; /* tiley = 1000 >= 64 */
+    CHECK(WL_DeserializeSaveGame(corrupt, len) == false);
+
+    memcpy(corrupt, buf, len);
+    corrupt[P + 28] = 255; /* areanumber = 255 >= NUMAREAS */
+    CHECK(WL_DeserializeSaveGame(corrupt, len) == false);
+
+    /* 4. Out-of-bounds gamestate.episode */
+    memcpy(corrupt, buf, len);
+    corrupt[38] = 0xf4; corrupt[39] = 0x01; /* episode = 500 */
+    CHECK(WL_DeserializeSaveGame(corrupt, len) == false);
+
+    memcpy(corrupt, buf, len);
+    corrupt[38] = 6; corrupt[39] = 0; /* episode = 6 (maps >= NUMMAPS 60) */
+    CHECK(WL_DeserializeSaveGame(corrupt, len) == false);
+
+    /* 5. Wild pointer or out-of-range actor index in actorat */
+    memcpy(corrupt, buf, len);
+    corrupt[ACTORAT + 2] = 0x34; corrupt[ACTORAT + 3] = 0x12; /* raw 0x1234 */
+    CHECK(WL_DeserializeSaveGame(corrupt, len) == false);
+
+    memcpy(corrupt, buf, len);
+    corrupt[ACTORAT + 2] = 0x05; corrupt[ACTORAT + 3] = 0x80; /* 0x8000 | 5 >= 1 actor */
+    CHECK(WL_DeserializeSaveGame(corrupt, len) == false);
+
+    /* 6. Invalid door index in tilemap (> MAXDOORS) */
+    memcpy(corrupt, buf, len);
+    corrupt[66 + 80] = 0xff; /* door index 127 >= MAXDOORS */
+    CHECK(WL_DeserializeSaveGame(corrupt, len) == false);
+
+    /* 7. Out-of-bounds statobj coordinates (>= 64) */
     memcpy(corrupt, buf, len);
     size_t trailing_start = len - WL_TRAILING_SIZE;
     corrupt[trailing_start + 2] = 64; /* tx >= 64 */
     CHECK(WL_DeserializeSaveGame(corrupt, len) == false);
 
-    /* 4. Out-of-bounds pushwall coordinates */
+    /* 8. Out-of-bounds pushwall coordinates */
     memcpy(corrupt, buf, len);
     size_t pwall_offset = len - WL_CHECKSUM_SIZE - WL_PWALL_SIZE;
     corrupt[pwall_offset + 2] = 65; /* pw_x >= 64 */
     CHECK(WL_DeserializeSaveGame(corrupt, len) == false);
 
-    /* 5. Extra garbage appended past valid save */
+    /* 9. Extra garbage appended past valid save */
     uint8_t extra[65536];
     memcpy(extra, buf, len);
     extra[len] = 0xaa;
