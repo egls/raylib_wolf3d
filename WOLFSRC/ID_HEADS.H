@@ -1,22 +1,10 @@
 // ID_GLOB.H
 
 
-#include <ALLOC.H>
-#include <CTYPE.H>
-#include <DOS.H>
-#include <ERRNO.H>
-#include <FCNTL.H>
-#include <IO.H>
-#include <MEM.H>
-#include <PROCESS.H>
-#include <STDIO.H>
-#include <STDLIB.H>
-#include <STRING.H>
-#include <SYS\STAT.H>
-#include <VALUES.H>
-#include <DIR.H>
+// WOLF-2: Borland/DOS headers replaced by the portable compatibility layer
+#include "wl_compat.h"
 #define __ID_GLOB__
-#include "VERSION.H"
+#include "WOLF1VER.H"	// WOLF-2: shareware v1.4 (WL1) build, was VERSION.H
 
 //--------------------------------------------------------------------------
 
@@ -36,6 +24,10 @@ extern	char		far signon;
 
 #ifndef SPEAR
 
+// WOLF-2: the *WL1.H headers in this release predate shareware v1.4 and do
+// not match its data.  v1.4 AUDIOHED.WL1 has 288 chunks = AUDIOWL6.H.
+// v1.4 VGAHEAD.WL1 has 156 chunks; GFXV_WL6.H (149) is a compile-time
+// placeholder until Stage 2 adds a matching header (see PORTING.md).
 #include "GFXV_WL6.H"
 #include "AUDIOWL6.H"
 #include "MAPSWL6.H"
@@ -65,10 +57,11 @@ extern	char		far signon;
 //	v1.0d1
 //
 
+// WOLF-2: fixed-width so 16-bit word / 32-bit longword survive on LP64
 typedef	enum	{false,true}	boolean;
-typedef	unsigned	char		byte;
-typedef	unsigned	int			word;
-typedef	unsigned	long		longword;
+typedef	uint8_t				byte;
+typedef	uint16_t			word;
+typedef	uint32_t			longword;
 typedef	byte *					Ptr;
 
 typedef	struct

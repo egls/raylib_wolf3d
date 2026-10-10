@@ -130,12 +130,15 @@ boolean MML_CheckForXMS (void)
 {
 	numUMBs = 0;
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm {
 	mov	ax,0x4300
 	int	0x2f				// query status of installed diver
 	cmp	al,0x80
 	je	good
 	}
+#endif
 
 	return false;
 good:
@@ -157,6 +160,9 @@ void MML_SetupXMS (void)
 {
 	unsigned	base,size;
 
+getmemory:	// WOLF-2: label moved out of the fenced asm for the goto below
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	{
 	mov	ax,0x4310
 	int	0x2f
@@ -186,6 +192,7 @@ asm	{
 	mov	[base],bx
 	mov	[size],dx
 	}
+#endif
 	MML_UseSpace (base,size);
 	mminfo.XMSmem += size*16;
 	UMBbase[numUMBs] = base;
@@ -214,9 +221,12 @@ void MML_ShutdownXMS (void)
 	{
 		base = UMBbase[i];
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	ah,XMS_FREEUMB
 asm	mov	dx,[base]
 asm	call	[DWORD PTR XMSaddr]
+#endif
 	}
 }
 
@@ -684,7 +694,7 @@ void MM_SortMem (void)
 			playing += STARTADLIBSOUNDS;
 			break;
 		}
-		MM_SetLock(&(memptr)audiosegs[playing],true);
+		MM_SetLock((memptr *)&audiosegs[playing],true);
 	}
 
 
@@ -755,7 +765,7 @@ void MM_SortMem (void)
 		aftersort();
 
 	if (playing)
-		MM_SetLock(&(memptr)audiosegs[playing],false);
+		MM_SetLock((memptr *)&audiosegs[playing],false);
 }
 
 

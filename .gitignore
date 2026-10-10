@@ -1,4 +1,11 @@
 build*/
 *.wav
+# Game data must never be committed (see scripts/fetch_shareware.sh)
 *.WL1
 *.wl1
+*.WL6
+*.wl6
+*.SOD
+*.sod
+*.SDM
+*.sdm

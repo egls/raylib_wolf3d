@@ -98,6 +98,8 @@ extern	unsigned	bordercolor;
 // VGA hardware routines
 //
 
+// WOLF-2: VGA register writes via inline asm; not ported yet.  Original:
+#if 0
 #define VGAWRITEMODE(x) asm{\
 cli;\
 mov dx,GC_INDEX;\
@@ -112,6 +114,10 @@ sti;}
 
 #define VGAMAPMASK(x) asm{cli;mov dx,SC_INDEX;mov al,SC_MAPMASK;mov ah,x;out dx,ax;sti;}
 #define VGAREADMAP(x) asm{cli;mov dx,GC_INDEX;mov al,GC_READMAP;mov ah,x;out dx,ax;sti;}
+#endif
+#define VGAWRITEMODE(x)	PORT_ASM()
+#define VGAMAPMASK(x)	PORT_ASM()
+#define VGAREADMAP(x)	PORT_ASM()
 
 
 void VL_Startup (void);
@@ -150,6 +156,7 @@ void VL_MemToLatch (byte far *source, int width, int height, unsigned dest);
 void VL_ScreenToScreen (unsigned source, unsigned dest,int width, int height);
 void VL_MemToScreen (byte far *source, int width, int height, int x, int y);
 void VL_MaskedToScreen (byte far *source, int width, int height, int x, int y);
+void VL_LatchToScreen (unsigned source, int width, int height, int x, int y);	// WOLF-2: was implicitly declared
 
 void VL_DrawTile8String (char *str, char far *tile8ptr, int printx, int printy);
 void VL_DrawLatch8String (char *str, unsigned tile8ptr, int printx, int printy);

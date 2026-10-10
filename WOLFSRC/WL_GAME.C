@@ -4,7 +4,7 @@
 #pragma hdrstop
 
 #ifdef MYPROFILE
-#include <TIME.H>
+#include <time.h>
 #endif
 
 
@@ -671,13 +671,13 @@ void SetupGameLevel (void)
 			{
 			// solid wall
 				tilemap[x][y] = tile;
-				(unsigned)actorat[x][y] = tile;
+				actorat[x][y] = (objtype *)(uintptr_t)(tile);
 			}
 			else
 			{
 			// area floor
 				tilemap[x][y] = 0;
-				(unsigned)actorat[x][y] = 0;
+				actorat[x][y] = (objtype *)(uintptr_t)(0);
 			}
 		}
 
@@ -734,7 +734,7 @@ void SetupGameLevel (void)
 			if (tile == AMBUSHTILE)
 			{
 				tilemap[x][y] = 0;
-				if ( (unsigned)actorat[x][y] == AMBUSHTILE)
+				if ( (unsigned)(uintptr_t)actorat[x][y] == AMBUSHTILE)
 					actorat[x][y] = NULL;
 
 				if (*map >= AREATILE)
@@ -1066,7 +1066,8 @@ void PlayDemo (int demonumber)
 	NewGame (1,0);
 	gamestate.mapon = *demoptr++;
 	gamestate.difficulty = gd_hard;
-	length = *((unsigned far *)demoptr)++;
+	length = (byte)demoptr[0] | ((byte)demoptr[1] << 8);	// WOLF-2: was *((unsigned far *)demoptr)++
+	demoptr += 2;
 	demoptr++;
 	lastdemoptr = demoptr-4+length;
 

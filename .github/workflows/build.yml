@@ -1,0 +1,64 @@
+name: build
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  ubuntu-24_04:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            cmake ninja-build python3 xvfb xauth \
+            libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
+            libgl1-mesa-dev libasound2-dev
+
+      - name: Toolchain
+        run: |
+          uname -m
+          cc --version | head -1
+          cmake --version | head -1
+
+      - name: raylib quarantine
+        run: |
+          # Only port/id_raylib.c may include raylib.h
+          hits=$(grep -rIlE --include='*.[ch]' --include='*.[CH]' '#[[:space:]]*include[[:space:]]*[<"]raylib\.h[">]' WOLFSRC port | grep -v '^port/id_raylib\.c$' || true)
+          if [ -n "$hits" ]; then echo "raylib.h included from: $hits"; exit 1; fi
+
+      - name: Configure
+        run: cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+
+      - name: Build
+        run: |
+          cmake --build build --target wolf3d_raylib raylib_wolf3d 2>&1 | tee build.log
+          echo "Game warnings: $(grep -E '/(WOLFSRC|port)/.*warning:' build.log | wc -l)"
+
+      - name: Smoke test (no game data)
+        run: |
+          # Missing data must be reported, not crash.
+          set +e
+          ./build/raylib_wolf3d -data "$RUNNER_TEMP/nodata" ; rc=$?
+          set -e
+          echo "exit code: $rc"
+          test "$rc" = 2
+          # Empty placeholder files get past the data check, open the window
+          # under Xvfb and must stop with a clean "not ported yet" (exit 3).
+          mkdir -p "$RUNNER_TEMP/fake"
+          for f in AUDIOHED AUDIOT GAMEMAPS MAPHEAD VGADICT VGAGRAPH VGAHEAD VSWAP; do
+            : > "$RUNNER_TEMP/fake/$f.WL1"
+          done
+          set +e
+          # (xvfb-run sends the program's stderr to stdout, so capture both)
+          xvfb-run -a -s "-screen 0 1024x768x24" \
+            ./build/raylib_wolf3d -data "$RUNNER_TEMP/fake" > run.txt 2>&1 ; rc=$?
+          set -e
+          cat run.txt
+          echo "exit code: $rc"
+          test "$rc" = 3
+          grep -q 'not ported yet' run.txt

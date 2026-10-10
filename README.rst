@@ -1,6 +1,42 @@
 Wolfenstein 3D
 ==============
 
+raylib port (work in progress)
+------------------------------
+
+This fork ports the DOS source in ``WOLFSRC`` to 64-bit C on raylib 5.5.
+The game logic and renderer stay as they are.  The DOS platform layer is
+replaced by ``port/``, and only ``port/id_raylib.c`` includes ``raylib.h``.
+``PORTING.md`` lists every non-portable piece and the stage that replaces it.
+The current build compiles and links the shareware (WL1) configuration.  At
+runtime it opens a window and stops at the first unported routine with
+``not ported yet: <name>`` (exit code 3).
+
+Build (Ubuntu 24.04; needs CMake >= 3.16, a C compiler, Python 3 and the X11/GL
+development packages raylib needs: ``libx11-dev libxrandr-dev libxinerama-dev
+libxcursor-dev libxi-dev libgl1-mesa-dev libasound2-dev``)::
+
+    cmake -B build
+    cmake --build build -j2
+
+raylib 5.5 is downloaded by CMake (pinned by SHA-256) unless an installed
+raylib 5.5 is found.  ``-DWOLF3D_ALL_WARNINGS=ON`` shows the full ``-Wall``
+output for the original sources.
+
+Game data: only the freely distributable shareware v1.4 files (``*.WL1``) are
+supported.  They are never committed.  Fetch and verify them (SHA-256) into a
+cache outside the repository::
+
+    scripts/fetch_shareware.sh              # -> ~/wolf3d-data/shareware
+    ./build/raylib_wolf3d -data ~/wolf3d-data/shareware
+    # or: WOLF3D_DATA=~/wolf3d-data/shareware ./build/raylib_wolf3d
+
+``WOLF3D_NOTPORTED_HOLD_MS=<ms>`` keeps the window up for that long before
+the not-ported exit (for screenshots).
+
+Original release notes
+----------------------
+
 The original source release was made using the ``DEICE.EXE``
 installer (DeIce) in the root directory.  (Basically a way to
 split self-extracting zip files over multiple floppy disks.)

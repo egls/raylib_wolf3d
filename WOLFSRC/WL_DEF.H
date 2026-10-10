@@ -4,8 +4,7 @@
 #define DAY		30
 
 #include "ID_HEADS.H"
-#include <MATH.H>
-#include <VALUES.H>
+#include <math.h>	// WOLF-2: was <MATH.H>/<VALUES.H>
 
 #include "WL_MENU.H"
 
@@ -28,9 +27,8 @@
 */
 
 
-#define COLORBORDER(color)		asm{mov	dx,STATUS_REGISTER_1;in al,dx;\
-	mov dx,ATR_INDEX;mov al,ATR_OVERSCAN;out dx,al;mov al,color;out	dx,al;\
-	mov	al,32;out dx,al};
+// WOLF-2: VGA overscan border via port I/O; not ported yet
+#define COLORBORDER(color)		PORT_ASM();
 
 #define MAPSPOT(x,y,plane)		(*(mapsegs[plane]+farmapylookup[y]+x))
 
@@ -477,7 +475,7 @@ enum	{
 =============================================================================
 */
 
-typedef long fixed;
+typedef int32_t fixed;	// WOLF-2: was long (16.16 fixed point, must stay 32-bit)
 
 typedef enum {
 	di_north,
@@ -940,6 +938,7 @@ void PreloadGraphics(void);
 void LevelCompleted (void);
 void	CheckHighScore (long score,word other);
 void Victory (void);
+void PG13 (void);	// WOLF-2: was implicitly declared in WL_MAIN.C
 void ClearSplitVWB (void);
 
 
@@ -987,7 +986,7 @@ extern	fixed 		far sintable[],far *costable;
 // derived constants
 //
 extern	fixed 	scale;
-extern	long	heightnumerator,mindist;
+extern	long	heightnumerator;	// WOLF-2: mindist is declared above as fixed
 
 //
 // refresh variables
@@ -1241,6 +1240,8 @@ extern	statetype s_giftdeathcam2;
 extern	statetype s_fatdeathcam2;
 
 void SpawnStand (enemy_t which, int tilex, int tiley, int dir);
+void SpawnBJVictory (void);	// WOLF-2: was implicitly declared
+void A_DeathScream (objtype *ob);	// WOLF-2: was implicitly declared
 void SpawnPatrol (enemy_t which, int tilex, int tiley, int dir);
 void KillActor (objtype *ob);
 

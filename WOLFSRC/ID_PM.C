@@ -61,7 +61,10 @@ PML_MapEMS(word logical,word physical)
 	_BX = logical;
 	_DX = EMSHandle;
 	_AH = EMS_MAPPAGE;
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	int	EMS_INT
+#endif
 
 	if (_AH)
 		Quit("PML_MapEMS: Page mapping failed");
@@ -90,24 +93,36 @@ PML_StartupEMS(void)
 	_DX = (word)EMMDriverName;
 	_AX = 0x3d00;
 	geninterrupt(0x21);			// try to open EMMXXXX0 device
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	jnc	gothandle
+#endif
 	goto error;
 
 gothandle:
 	_BX = _AX;
 	_AX = 0x4400;
 	geninterrupt(0x21);			// get device info
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	jnc	gotinfo;
+#endif
 	goto error;
 
 gotinfo:
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	and	dx,0x80
+#endif
 	if (!_DX)
 		goto error;
 
 	_AX = 0x4407;
 	geninterrupt(0x21);			// get status
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	jc	error
+#endif
 	if (!_AL)
 		goto error;
 
@@ -173,9 +188,12 @@ PML_ShutdownEMS(void)
 {
 	if (EMSPresent)
 	{
+	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 	asm	mov	ah,EMS_FREEPAGES
 	asm	mov	dx,[EMSHandle]
 	asm	int	EMS_INT
+#endif
 		if (_AH)
 			Quit ("PML_ShutdownEMS: Error freeing EMS");
 	}
@@ -199,16 +217,22 @@ PML_StartupXMS(void)
 	XMSPresent = false;					// Assume failure
 	XMSAvail = 0;
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	ax,0x4300
 asm	int	XMS_INT         				// Check for presence of XMS driver
+#endif
 	if (_AL != 0x80)
 		goto error;
 
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	ax,0x4310
 asm	int	XMS_INT							// Get address of XMS driver
 asm	mov	[WORD PTR XMSDriver],bx
 asm	mov	[WORD PTR XMSDriver+2],es		// function pointer to XMS driver
+#endif
 
 	XMS_CALL(XMS_QUERYFREE);			// Find out how much XMS is available
 	XMSAvail = _AX;
@@ -264,10 +288,16 @@ PML_XMSCopy(boolean toxms,byte far *addr,word xmspage,word length)
 	copy.target_handle = toxms? XMSHandle : 0;
 	copy.target_offset = toxms? xoffset : (long)addr;
 
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	push si
+#endif
 	_SI = (word)&copy;
 	XMS_CALL(XMS_MOVE);
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	pop	si
+#endif
 	if (!_AX)
 		Quit("PML_XMSCopy: Error on copy");
 }
@@ -502,8 +532,8 @@ PML_OpenPageFile(void)
 
 	// Allocate and clear the page list
 	PMNumBlocks = ChunksInFile;
-	MM_GetPtr(&(memptr)PMSegPages,sizeof(PageListStruct) * PMNumBlocks);
-	MM_SetLock(&(memptr)PMSegPages,true);
+	MM_GetPtr((memptr *)&PMSegPages,sizeof(PageListStruct) * PMNumBlocks);
+	MM_SetLock((memptr *)&PMSegPages,true);
 	PMPages = (PageListStruct far *)PMSegPages;
 	_fmemset(PMPages,0,sizeof(PageListStruct) * PMNumBlocks);
 
@@ -538,8 +568,8 @@ PML_ClosePageFile(void)
 		close(PageFile);
 	if (PMSegPages)
 	{
-		MM_SetLock(&(memptr)PMSegPages,false);
-		MM_FreePtr(&(void _seg *)PMSegPages);
+		MM_SetLock((memptr *)&PMSegPages,false);
+		MM_FreePtr((memptr *)&PMSegPages);
 	}
 }
 
@@ -882,6 +912,8 @@ PM_GetPage(int pagenum)
 		Quit("PM_GetPage: Invalid page request");
 
 #if 0	// for debugging
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	dx,STATUS_REGISTER_1
 asm	in	al,dx
 asm	mov	dx,ATR_INDEX
@@ -889,6 +921,7 @@ asm	mov	al,ATR_OVERSCAN
 asm	out	dx,al
 asm	mov	al,10	// bright green
 asm	out	dx,al
+#endif
 #endif
 
 	if (!(result = PM_GetPageAddress(pagenum)))
@@ -908,6 +941,8 @@ if (!PMPages[pagenum].offset)	// JDC: sparse page
 	PMPages[pagenum].lastHit = PMFrameCount;
 
 #if 0	// for debugging
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm	mov	dx,STATUS_REGISTER_1
 asm	in	al,dx
 asm	mov	dx,ATR_INDEX
@@ -917,6 +952,7 @@ asm	mov	al,3	// blue
 asm	out	dx,al
 asm	mov	al,0x20	// normal
 asm	out	dx,al
+#endif
 #endif
 
 	return(result);

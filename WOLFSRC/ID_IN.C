@@ -257,6 +257,8 @@ IN_GetJoyAbs(word joy,word *xp,word *yp)
 	yb = 1 << ys;
 
 // Read the absolute joystick values
+PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
+#if 0
 asm		pushf				// Save some registers
 asm		push	si
 asm		push	di
@@ -310,6 +312,7 @@ asm		mov		[y],di
 asm		pop		di
 asm		pop		si
 asm		popf				// Restore the registers
+#endif
 
 	*xp = x;
 	*yp = y;
