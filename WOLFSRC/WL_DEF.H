@@ -790,7 +790,7 @@ extern	fixed 	scale,maxslope;
 extern	int32_t heightnumerator;
 extern	int		minheightdiv;
 
-extern	char	configname[13];
+extern	char	configname[256];
 
 
 

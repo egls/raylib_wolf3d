@@ -204,12 +204,25 @@ void _dos_gettime (struct dostime_t *t)	{ (void)t; NOTPORTED("_dos_gettime"); }
 
 unsigned _dos_getdiskfree (unsigned drive, struct diskfree_t *df)
 {
-	(void)drive; (void)df;
-	NOTPORTED("_dos_getdiskfree");
+	(void)drive;
+	if (df)
+	{
+		df->total_clusters = 65535;
+		df->avail_clusters = 65535;
+		df->sectors_per_cluster = 64;
+		df->bytes_per_sector = 512;
+	}
+	return 0;
 }
 
 unsigned _dos_write (int handle, const void *buf, unsigned len, unsigned *nwritten)
 {
-	(void)handle; (void)buf; (void)len; (void)nwritten;
-	NOTPORTED("_dos_write");
+	ssize_t n = write(handle, buf, len);
+	if (n < 0)
+	{
+		if (nwritten) *nwritten = 0;
+		return (unsigned)errno;
+	}
+	if (nwritten) *nwritten = (unsigned)n;
+	return 0;
 }

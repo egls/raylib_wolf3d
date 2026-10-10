@@ -90,7 +90,8 @@ set(WOLF3D_PORT_SOURCES
   port/wl_platform.c
   port/asm_stubs.c
   port/wl_data.c
-  port/wl_raycast.c)
+  port/wl_raycast.c
+  port/wl_save.c)
 
 set(WOLF3D_WARNINGS -Wall -fsigned-char)
 # The id code defines globals in headers (e.g. menuitems in WL_MENU.H) and
@@ -175,9 +176,19 @@ if(BUILD_TESTING)
   endif()
   add_test(NAME rl_keys_test COMMAND rl_keys_test)
 
+  # ---------------------------------------------------------------------------
+  # Tests (ctest): XDG config/save serialization and roundtrip
+  # ---------------------------------------------------------------------------
+  add_executable(wolf_save_test tests/save_test.c port/wl_save.c)
+  target_include_directories(wolf_save_test PRIVATE port WOLFSRC)
+  if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(wolf_save_test PRIVATE -Wall -fsigned-char -fcommon)
+  endif()
+  add_test(NAME core_save COMMAND wolf_save_test)
+
   option(WOLF3D_CORE_SANITIZERS "Use ASan/UBSan on headless core tests" OFF)
   if(WOLF3D_CORE_SANITIZERS AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-    foreach(t wolf_core_data_test wolf_codec_test wolf_render_test rl_keys_test)
+    foreach(t wolf_core_data_test wolf_codec_test wolf_render_test rl_keys_test wolf_save_test)
       target_compile_options(${t} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
       target_link_options(${t} PRIVATE -fsanitize=address,undefined)
     endforeach()
