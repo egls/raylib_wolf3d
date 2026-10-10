@@ -54,10 +54,11 @@ jobs:
             : > "$RUNNER_TEMP/fake/$f.WL1"
           done
           set +e
+          # (xvfb-run sends the program's stderr to stdout, so capture both)
           xvfb-run -a -s "-screen 0 1024x768x24" \
-            ./build/raylib_wolf3d -data "$RUNNER_TEMP/fake" 2> stderr.txt ; rc=$?
+            ./build/raylib_wolf3d -data "$RUNNER_TEMP/fake" > run.txt 2>&1 ; rc=$?
           set -e
-          cat stderr.txt
+          cat run.txt
           echo "exit code: $rc"
           test "$rc" = 3
-          grep -q 'not ported yet' stderr.txt
+          grep -q 'not ported yet' run.txt
