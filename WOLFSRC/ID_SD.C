@@ -82,6 +82,7 @@ extern	void interrupt	SDL_t0ExtremeAsmService(void),
 
 //	Internal variables
 static	boolean			SD_Started;
+static boolean silent;
 		boolean			nextsoundpos;
 		longword		TimerDivisor,TimerCount;
 static	char			*ParmStrings[] =
@@ -1148,6 +1149,7 @@ SDL_PlayDigiSegment(memptr addr,word len)
 void
 SD_StopDigitized(void)
 {
+	if (silent) return;
 	int	i;
 
 PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
@@ -1193,6 +1195,7 @@ asm	popf
 void
 SD_Poll(void)
 {
+	if (silent) return;
 	if (DigiLeft && !DigiNextAddr)
 	{
 		DigiNextLen = (DigiLeft >= PMPageSize)? PMPageSize : (DigiLeft % PMPageSize);
@@ -1302,6 +1305,7 @@ SDL_DigitizedDone(void)
 void
 SD_SetDigiDevice(SDSMode mode)
 {
+	if (silent) return;
 	boolean	devicenotpresent;
 
 	if (mode == DigiMode)
@@ -1931,6 +1935,7 @@ SDL_StartDevice(void)
 boolean
 SD_SetSoundMode(SDMode mode)
 {
+	if (silent) return 0;
 	boolean	result = false;
 	word	tableoffset;
 
@@ -1987,6 +1992,7 @@ SD_SetSoundMode(SDMode mode)
 boolean
 SD_SetMusicMode(SMMode mode)
 {
+	if (silent) return 0;
 	boolean	result = false;
 
 	SD_FadeOutMusic();
@@ -2030,6 +2036,17 @@ SD_Startup(void)
 	if (SD_Started)
 		return;
 
+	/* Silent tests must never enter DOS hardware adapters. */
+	for (i = 1; i < _argc; ++i)
+		if (!strcmp(_argv[i], "-nosound") || !strcmp(_argv[i], "--nosound"))
+			silent = true;
+	if (getenv("WOLF3D_NOSOUND")) silent = true;
+	if (silent) {
+		SoundMode = sdm_Off; MusicMode = smm_Off; DigiMode = sds_Off;
+		for (i = 0; i < LASTSOUND; ++i) DigiMap[i] = -1;
+		SD_Started = true;
+		return;
+	}
 	SDL_SetDS();
 
 	ssIsTandy = false;
@@ -2220,6 +2237,7 @@ SD_Default(boolean gotit,SDMode sd,SMMode sm)
 void
 SD_Shutdown(void)
 {
+	if (silent) return;
 	if (!SD_Started)
 		return;
 
@@ -2286,6 +2304,7 @@ SD_PositionSound(int leftvol,int rightvol)
 boolean
 SD_PlaySound(soundnames sound)
 {
+	if (silent) return 0;
 	boolean		ispos;
 	SoundCommon	far *s;
 	int	lp,rp;
@@ -2383,6 +2402,7 @@ SD_PlaySound(soundnames sound)
 word
 SD_SoundPlaying(void)
 {
+	if (silent) return 0;
 	boolean	result = false;
 
 	switch (SoundMode)
@@ -2409,6 +2429,7 @@ SD_SoundPlaying(void)
 void
 SD_StopSound(void)
 {
+	if (silent) return;
 	if (DigiPlaying)
 		SD_StopDigitized();
 
@@ -2447,6 +2468,7 @@ SD_WaitSoundDone(void)
 void
 SD_MusicOn(void)
 {
+	if (silent) return;
 	sqActive = true;
 }
 
@@ -2458,6 +2480,7 @@ SD_MusicOn(void)
 void
 SD_MusicOff(void)
 {
+	if (silent) return;
 	word	i;
 
 
@@ -2481,6 +2504,7 @@ SD_MusicOff(void)
 void
 SD_StartMusic(MusicGroup far *music)
 {
+	if (silent) return;
 	SD_MusicOff();
 PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
 #if 0
@@ -2530,6 +2554,7 @@ SD_FadeOutMusic(void)
 boolean
 SD_MusicPlaying(void)
 {
+	if (silent) return 0;
 	boolean	result;
 
 	switch (MusicMode)
