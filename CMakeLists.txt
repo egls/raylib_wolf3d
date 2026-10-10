@@ -201,6 +201,12 @@ if(BUILD_TESTING)
     -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/demo_sync.cmake)
   set_tests_properties(demo_sync PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED" TIMEOUT 300)
 
+  # Config and save game formats: -savetest plus malformed CONFIG.WL1 files.
+  add_test(NAME persist_check COMMAND Python3::Interpreter -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/persist_check.py
+    $<TARGET_FILE:raylib_wolf3d> ${WOLF3D_TEST_DATA} ${CMAKE_CURRENT_BINARY_DIR}/persist_check)
+  set_tests_properties(persist_check PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED" TIMEOUT 600)
+
   # ---------------------------------------------------------------------------
   # Tests (ctest): the raylib keyboard translation against a fake raylib, no display needed.
   # ---------------------------------------------------------------------------

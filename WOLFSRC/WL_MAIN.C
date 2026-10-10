@@ -107,7 +107,7 @@ static boolean ReadConfigFile (SDMode *sd, SMMode *sm, SDSMode *sds)
 	wl_stream	s;
 	HighScore	scores[MaxScores];
 	char		magic[8];
-	int			file,i,ok,v[4+4+NUMBUTTONS+4+4+2];	// 4 flags, then the ints below
+	int			file,i,n,ok,v[4+4+NUMBUTTONS+4+4+2];	// 4 flags, then the ints below
 
 	if ( (file = open(WL_UserFile(configname),O_BINARY | O_RDONLY)) == -1)
 		return false;
@@ -140,6 +140,11 @@ static boolean ReadConfigFile (SDMode *sd, SMMode *sm, SDSMode *sds)
 	ok = ok && !s.bad
 		&& *sd <= sdm_AdLib && *sm <= smm_AdLib && *sds <= sds_SoundBlaster
 		&& i >= 0 && i <= 1;
+	// scan codes index Keyboard[], button mappings index buttonstate[]
+	for (n=4;n<8+NUMBUTTONS;n++)
+		ok = ok && v[n] >= 0 && v[n] < NumCodes;
+	for (n=8+NUMBUTTONS;n<16+NUMBUTTONS;n++)
+		ok = ok && v[n] >= bt_nobutton && v[n] < NUMBUTTONS;
 	WS_Free (&s);
 	if (!ok)
 	{
@@ -616,6 +621,107 @@ boolean SaveTheGame(int file,int x,int y)
 ==================
 */
 
+#define RANGE(v,lo,hi)	((v) >= (lo) && (v) <= (hi))
+
+//
+// SaveLayoutValid: reads the whole body the way LoadTheGame does, into
+// throwaway variables, and checks every value that later indexes an array
+// or picks a map, state or sprite.  Changes no game state.
+//
+static boolean SaveLayoutValid (wl_stream *s)
+{
+	int		i,n,v,ok = 1;
+	int32_t	g[27];
+
+	s->pos = 8+2;
+
+	for (i=0;i<27;i++)
+		g[i] = WS_RS32 (s);
+	// difficulty, mapon, ..., lives, health, ammo, keys, best/weapon/chosen,
+	// faceframe, attackframe, attackcount, weaponframe, episode (see SaveGameState)
+	ok &= RANGE(g[0],gd_baby,gd_hard);
+	ok &= RANGE(g[16],0,5) && RANGE(g[1],0,9);
+	ok &= RANGE(g[16]*10+g[1],0,NUMMAPS-1) && mapheaderseg[g[16]*10+g[1]] != NULL;
+	ok &= RANGE(g[5],0,99) && RANGE(g[6],0,100) && RANGE(g[7],0,99);
+	ok &= RANGE(g[9],wp_knife,wp_chaingun) && RANGE(g[10],-1,wp_chaingun)
+		&& RANGE(g[11],wp_knife,wp_chaingun);
+	ok &= RANGE(g[12],0,3) && RANGE(g[13],0,13) && RANGE(g[15],0,4);
+	for (i=0;i<8*4;i++)
+		WS_R32 (s);							// LevelRatios: any value
+
+	for (i=0;i<MAPSIZE*MAPSIZE;i++)
+	{
+		v = WS_R8 (s);						// tilemap: doors index doorobjlist
+		if (v & 0x80)
+			ok &= (v & 0x3f) < MAXDOORS;
+	}
+	for (i=0;i<MAPSIZE*MAPSIZE;i++)
+	{
+		v = WS_R16 (s);						// actorat
+		if (v & SAVE_ACTOR)
+			ok &= (v & ~SAVE_ACTOR) < MAXACTORS;
+		else
+			ok &= v < 256;
+	}
+	for (i=0;i<NUMAREAS*NUMAREAS+NUMAREAS;i++)
+		WS_R8 (s);							// areaconnect, areabyplayer
+
+	n = WS_R16 (s);
+	ok &= RANGE(n,1,MAXACTORS);
+	for (i=0;i<n && ok && !s->bad;i++)
+	{
+		v = (signed char)WS_R8 (s);	ok &= RANGE(v,ac_badobject,ac_allways);
+		WS_R16 (s);						// ticcount
+		v = WS_R16 (s);				ok &= RANGE(v,nothing,sparkobj);
+		v = WS_RS16 (s);			ok &= RANGE(v,0,wl_numstates-1);
+		WS_R8 (s);						// flags
+		WS_R32 (s);						// distance
+		v = WS_R16 (s);				ok &= RANGE(v,east,nodir);
+		WS_R32 (s); WS_R32 (s);			// x, y
+		v = WS_R16 (s);				ok &= v < MAPSIZE;
+		v = WS_R16 (s);				ok &= v < MAPSIZE;
+		v = WS_R8 (s);				ok &= v < NUMAREAS;
+		WS_R16 (s); WS_R16 (s);			// viewx, viewheight
+		WS_R32 (s); WS_R32 (s);			// transx, transy
+		v = WS_RS16 (s);			ok &= RANGE(v,0,ANGLES-1);
+		WS_R16 (s);						// hitpoints
+		WS_R32 (s);						// speed
+		WS_R16 (s); WS_R16 (s); WS_R16 (s);	// temp1-3
+		v = WS_R16 (s);				ok &= v < MAXACTORS;	// slot
+	}
+
+	v = WS_R16 (s);					ok &= v <= MAXSTATS;
+	for (i=0;i<MAXSTATS;i++)
+	{
+		v = WS_R8 (s);				ok &= v < MAPSIZE;
+		v = WS_R8 (s);				ok &= v < MAPSIZE;
+		v = WS_RS16 (s);			ok &= RANGE(v,-1,PMSoundStart-PMSpriteStart-1);
+		WS_R8 (s); WS_R8 (s);			// flags, itemnumber
+	}
+
+	for (i=0;i<MAXDOORS;i++)
+		WS_R16 (s);							// doorposition
+	for (i=0;i<MAXDOORS;i++)
+	{
+		v = WS_R8 (s);				ok &= v < MAPSIZE;
+		v = WS_R8 (s);				ok &= v < MAPSIZE;
+		WS_R8 (s); WS_R8 (s);			// vertical, lock
+		v = WS_R8 (s);				ok &= v <= dr_closing;
+		WS_R16 (s);						// ticcount
+	}
+
+	WS_R16 (s);								// pwallstate
+	v = WS_R16 (s);					ok &= v < MAPSIZE;
+	v = WS_R16 (s);					ok &= v < MAPSIZE;
+	v = WS_RS16 (s);				ok &= RANGE(v,0,3);
+	v = WS_R16 (s);					ok &= v < 64;
+
+	ok &= !s->bad && s->pos == s->len - 4;	// exactly the body, then the checksum
+	s->pos = 0;
+	s->bad = 0;
+	return ok;
+}
+
 static boolean CheckSaveStream (wl_stream *s)
 {
 	return s->len >= 8+2+4
@@ -623,7 +729,8 @@ static boolean CheckSaveStream (wl_stream *s)
 		&& (s->buf[8] | s->buf[9]<<8) == WL_SAVE_VERSION
 		&& WS_Checksum (s,0,s->len-4) ==
 			(s->buf[s->len-4] | s->buf[s->len-3]<<8 |
-			(longword)s->buf[s->len-2]<<16 | (longword)s->buf[s->len-1]<<24);
+			(longword)s->buf[s->len-2]<<16 | (longword)s->buf[s->len-1]<<24)
+		&& SaveLayoutValid (s);
 }
 
 boolean SaveGameValid (int file)
@@ -746,7 +853,7 @@ boolean LoadTheGame(int file,int x,int y)
 	pwalldir = WS_RS16 (&s);
 	pwallpos = WS_R16 (&s);
 
-	if (s.bad || s.pos != s.len)
+	if (s.bad || s.pos != s.len)		// can't happen: SaveLayoutValid walked the same layout
 		Quit ("LoadTheGame: save file doesn't match its own layout");
 	WS_Free (&s);
 
@@ -1749,7 +1856,7 @@ int main (int argc, char *argv[])	// WOLF-2: was void main (void)
 
 	Patch386 ();
 
-	if (MS_CheckParm ("demotest"))
+	if (MS_CheckParm ("demotest") || MS_CheckParm ("savetest"))
 		NoWait = true;		// WOLF-7: no "Press a key" on the signon screen
 
 	InitGame ();

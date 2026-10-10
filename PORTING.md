@@ -289,9 +289,20 @@ version 1).
   `scripts/gen_states.py` at build time, keeping their `#if` guards; append
   new states only), `actorat` actors by objlist slot (remapped to the slots
   the loaded actors get), `statobj.visspot` recomputed from the tile.
-  `LoadTheGame` verifies the whole file first and changes nothing if it's
-  invalid (the DOS version loaded it anyway and docked the player).  The load
-  menu only lists files in this format.
+  Before anything is applied, `SaveLayoutValid` walks the whole body into
+  throwaway variables: exact length, checksum, and range checks on every
+  value that later indexes an array or picks a map, state or sprite (map and
+  episode, weapons and frames, health, actor count/class/state/dir/tile/area,
+  `actorat` slots, door numbers in `tilemap`, statics, doors, pushwall).  An
+  invalid file is not listed in the load menu, and `LoadTheGame` rejects it
+  with the original "corrupted" message without changing the game (the DOS
+  version loaded it anyway and docked the player).
+- Config scan codes must be `0..NumCodes-1` and mouse/joystick button
+  mappings `bt_nobutton..NUMBUTTONS-1`, or the file is ignored.
+- Tests: `-savetest` (save/load round trip of the state after demo 0 must
+  give the same state hash; eight damaged saves with valid checksums must be
+  rejected without changing the game) and malformed `CONFIG.WL1` files, both
+  run by CTest `persist_check` (`tests/persist_check.py`).
 
 ### Demo regression check
 
@@ -311,6 +322,10 @@ by a frame-by-frame state comparison against Wolf4SDL built locally at
 320x200 (not part of the repo); the other differences it showed were
 Wolf4SDL's own changes (it marks the player's tile visible and grabs items
 nearer than `MINDIST`) and changed nothing in the outcome.
+
+`findfirst`/`findnext` (`port/wl_compat.c`) no longer keep a directory
+handle between calls: `CheckForEpisodes` only tests for existence and
+leaked it (found by LeakSanitizer in the `asan` preset).
 
 ### Still not ported
 

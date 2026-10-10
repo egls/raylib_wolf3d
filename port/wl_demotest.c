@@ -17,9 +17,17 @@
  * Exit status 0 if every demo used up all of its recorded input, 1 if one
  * ended early (the player died or left the level before the recording did,
  * which is what a desync looks like).
+ *
+ * "-savetest" (also here) checks the save game format: a save/load round
+ * trip of E1M1 after a demo must restore the same state hash, and damaged
+ * files (with valid checksums) must be rejected by SaveGameValid without
+ * touching the game.
  */
 
+#include <fcntl.h>
+#include <unistd.h>
 #include "WL_DEF.H"
+#include "wl_persist.h"
 
 boolean	demotest;
 
@@ -115,10 +123,155 @@ static int RunOne (int n)
 	return left == 0;
 }
 
-/* Called from main() after InitGame(); returns only if -demotest is absent. */
+/* ---- -savetest ----------------------------------------------------------- */
+
+#define SAVETEST_FILE	"SAVETEST.TMP"
+
+static int ReadAll (const char *path, wl_stream *s)
+{
+	int	fd = open(path, O_RDONLY), ok;
+
+	if (fd == -1)
+		return 0;
+	ok = WS_ReadFile(fd, s);
+	close(fd);
+	return ok;
+}
+
+/* writes the save body s (with its checksum recomputed) after a 32-byte
+ * name and reports whether SaveGameValid accepts it */
+static int Accepted (wl_stream *s)
+{
+	char		name[32] = "savetest";
+	uint32_t	sum;
+	int			fd, ok;
+
+	if (s->len >= 4)
+	{
+		sum = WS_Checksum(s, 0, s->len - 4);
+		s->buf[s->len-4] = sum;			s->buf[s->len-3] = sum >> 8;
+		s->buf[s->len-2] = sum >> 16;	s->buf[s->len-1] = sum >> 24;
+	}
+	fd = open(WL_UserFile(SAVETEST_FILE), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	if (fd == -1)
+		Quit("-savetest: can't write the test file");
+	write(fd, name, 32);
+	WS_WriteFile(fd, s);
+	close(fd);
+	fd = open(WL_UserFile(SAVETEST_FILE), O_RDONLY);
+	lseek(fd, 32, SEEK_SET);
+	ok = SaveGameValid(fd);
+	close(fd);
+	return ok;
+}
+
+static void SaveTest (void)
+{
+	wl_stream	good, bad;
+	uint32_t	before, after;
+	size_t		actors;
+	int			fd, failed = 0, i;
+	struct { const char *what; int expect; } *c, cases[] =
+	{
+		{"unchanged file", 1},
+		{"magic + version + checksum only (14 bytes)", 0},
+		{"truncated by 100 bytes", 0},
+		{"one trailing byte", 0},
+		{"actor count 0", 0},
+		{"player state index 9999", 0},
+		{"actorat entry 0x7000", 0},
+		{"map number 42", 0},
+		{"health 1000", 0},
+	};
+
+	// a level in progress: the end of demo 0
+	PlayDemo(0);
+	before = StateHash();
+
+	fd = open(WL_UserFile(SAVETEST_FILE), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+	write(fd, "savetest\0", 9);
+	lseek(fd, 32, SEEK_SET);
+	if (fd == -1 || !SaveTheGame(fd, 0, 0))
+		Quit("-savetest: SaveTheGame failed");
+	close(fd);
+
+	WS_Init(&good);
+	if (!ReadAll(WL_UserFile(SAVETEST_FILE), &good) || good.len < 32 + 14)
+		Quit("-savetest: can't read the save back");
+	memmove(good.buf, good.buf + 32, good.len - 32);
+	good.len -= 32;
+
+	// offset of the actor count: header, gamestate, LevelRatios, tilemap,
+	// actorat, areaconnect, areabyplayer
+	actors = 8+2 + 27*4 + 8*4*4 + MAPSIZE*MAPSIZE + MAPSIZE*MAPSIZE*2
+		+ NUMAREAS*NUMAREAS + NUMAREAS;
+
+	for (i = 0, c = cases; i < (int)(sizeof(cases)/sizeof(cases[0])); i++, c++)
+	{
+		WS_Init(&bad);
+		WS_WBytes(&bad, good.buf, good.len);
+		switch (i)
+		{
+		case 1: memmove(bad.buf + 10, bad.buf + bad.len - 4, 4); bad.len = 14; break;
+		case 2: bad.len -= 100; break;
+		case 3: WS_W8(&bad, 0); memmove(bad.buf + bad.len - 4, bad.buf + bad.len - 5, 4); break;
+		case 4: bad.buf[actors] = bad.buf[actors+1] = 0; break;
+		case 5: bad.buf[actors+2+5] = 9999 & 0xff; bad.buf[actors+2+6] = 9999 >> 8; break;
+		case 6: bad.buf[10+27*4+8*4*4+MAPSIZE*MAPSIZE] = 0x00;
+				bad.buf[10+27*4+8*4*4+MAPSIZE*MAPSIZE+1] = 0x70; break;
+		case 7: bad.buf[10+4] = 42; break;
+		case 8: bad.buf[10+6*4] = 1000 & 0xff; bad.buf[10+6*4+1] = 1000 >> 8; break;
+		}
+		if (Accepted(&bad) != c->expect)
+		{
+			printf("savetest: FAIL %s: %s\n", c->what, c->expect ? "rejected" : "accepted");
+			failed = 1;
+		}
+		else
+			printf("savetest: ok   %s: %s\n", c->what, c->expect ? "accepted" : "rejected");
+		WS_Free(&bad);
+		if (StateHash() != before)
+		{
+			printf("savetest: FAIL checking \"%s\" changed the game\n", c->what);
+			failed = 1;
+		}
+	}
+
+	// round trip: change the game, load the save, compare
+	gamestate.health = 1;
+	player->x += 0x10000;
+	WS_Init(&bad);
+	WS_WBytes(&bad, good.buf, good.len);
+	Accepted(&bad);				// rewrites SAVETEST.TMP with the good save
+	WS_Free(&bad);
+	fd = open(WL_UserFile(SAVETEST_FILE), O_RDONLY);
+	lseek(fd, 32, SEEK_SET);
+	loadedgame = true;
+	if (!LoadTheGame(fd, 0, 0))
+		Quit("-savetest: LoadTheGame rejected a good save");
+	loadedgame = false;
+	close(fd);
+	after = StateHash();
+	printf("savetest: round trip hash %08x -> %08x %s\n", before, after, before == after ? "ok" : "FAIL");
+	failed |= before != after;
+
+	WS_Free(&good);
+	unlink(WL_UserFile(SAVETEST_FILE));
+	ShutdownId();
+	exit(failed);
+}
+
+/* Called from main() after InitGame(); returns only if -demotest/-savetest are absent. */
 void WL_DemoTest (void)
 {
 	int		i, n, first, last, ok = 1;
+
+	for (i = 1; i < _argc; i++)
+		if (!strcmp(_argv[i], "-savetest"))
+		{
+			demotest = true;
+			SaveTest();
+		}
 
 	for (i = 1; i < _argc - 1; i++)
 		if (!strcmp(_argv[i], "-demotest"))
