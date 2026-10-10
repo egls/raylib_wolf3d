@@ -30,7 +30,11 @@ development packages raylib needs)::
     cmake --build build -j2
 
 raylib 5.5 is downloaded by CMake (pinned by SHA-256) unless an installed
-raylib 5.5 is found.  ``-DWOLF3D_ALL_WARNINGS=ON`` shows the full ``-Wall``
+raylib 5.5 is found.  The downloaded copy gets a small patch
+(``cmake/patch_raylib.cmake``): a failed window/GL setup is reported instead
+of crashing, and a window opens on an X server that reports no connected
+monitor (e.g. a GPU box without a screen plugged in).  An installed raylib 5.5
+lacks that patch; use ``-DWOLF3D_USE_SYSTEM_RAYLIB=OFF`` if you need it.  ``-DWOLF3D_ALL_WARNINGS=ON`` shows the full ``-Wall``
 output for the original sources.
 
 Game data: only the freely distributable shareware v1.4 files (``*.WL1``) are

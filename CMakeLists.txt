@@ -23,6 +23,8 @@ if(WOLF3D_USE_SYSTEM_RAYLIB)
 endif()
 if(raylib_FOUND)
   message(STATUS "Using system raylib ${raylib_VERSION}")
+  message(STATUS "  (unpatched: cannot open a window on an X server with no connected monitor;"
+                 " see cmake/patch_raylib.cmake, or use -DWOLF3D_USE_SYSTEM_RAYLIB=OFF)")
 else()
   message(STATUS "Fetching raylib ${WOLF3D_RAYLIB_VERSION}")
   include(FetchContent)
@@ -31,7 +33,8 @@ else()
   set(CUSTOMIZE_BUILD OFF CACHE BOOL "" FORCE)
   FetchContent_Declare(raylib
     URL https://github.com/raysan5/raylib/archive/refs/tags/5.5.tar.gz
-    URL_HASH SHA256=aea98ecf5bc5c5e0b789a76de0083a21a70457050ea4cc2aec7566935f5e258e)
+    URL_HASH SHA256=aea98ecf5bc5c5e0b789a76de0083a21a70457050ea4cc2aec7566935f5e258e
+    PATCH_COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/patch_raylib.cmake)
   FetchContent_MakeAvailable(raylib)
 endif()
 
