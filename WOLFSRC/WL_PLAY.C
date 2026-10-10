@@ -378,8 +378,8 @@ void PollMouseMove (void)
 	int	mousexmove,mouseymove;
 
 	Mouse(MDelta);
-	mousexmove = _CX;
-	mouseymove = _DX;
+	mousexmove = (int16_t)_CX;
+	mouseymove = (int16_t)_DX;
 
 	controlx += mousexmove*10/(13-mouseadjustment);
 	controly += mouseymove*20/(13-mouseadjustment);
@@ -1380,7 +1380,10 @@ void PlayLoop (void)
 	ClearPaletteShifts ();
 
 	if (MousePresent)
+	{
+		IN_SetMouseCapture(mouseenabled);	// WOLF-5: lock the cursor only while playing
 		Mouse(MDelta);	// Clear accumulated mouse movement
+	}
 
 	if (demoplayback)
 		IN_StartAck ();
@@ -1465,6 +1468,8 @@ void PlayLoop (void)
 		}
 
 	}while (!playstate && !startgame);
+
+	IN_SetMouseCapture(false);
 
 	if (playstate != ex_died)
 		FinishPaletteShifts ();

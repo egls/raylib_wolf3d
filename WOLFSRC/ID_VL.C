@@ -1,18 +1,36 @@
 // ID_VL.C
+//
+// WOLF-5: the VGA Mode X (planar) video layer, rewritten for the raylib port.
+//
+// The game keeps its VGA memory model: 64K "bytes" per plane, screen pages and
+// latch pictures at plane offsets, bufferofs/displayofs/linewidth in plane
+// bytes.  Video memory is now one linear array of 4 * 64K palette indices in
+// which plane byte `ofs` of plane `p` lives at vl_vram[4*ofs + p].  A pixel
+// (x,y) of the page starting at plane offset `ofs` is therefore
+//
+//		vl_vram[4*(ofs + ylookup[y]) + x]
+//
+// and a "latch" (4 pixels, one byte per plane) is 4 consecutive bytes, which
+// turns write mode 1 (latch copy) and the map mask into plain memcpy/memset.
+// VGAMAPMASK / VGAWRITEMODE / VGAREADMAP are therefore no-ops.
+//
+// Showing the frame: VL_Refresh() expands the page at the CRTC start address
+// through the 256-entry palette and hands it to port/id_raylib.c.
 
+#include <math.h>
 #include <string.h>
 #include "ID_HEAD.H"
 #include "ID_VL.H"
 #pragma hdrstop
+#include "id_raylib.h"
+#include "wl_timer.h"
 
-//
-// SC_INDEX is expected to stay at SC_MAPMASK for proper operation
-//
+void IN_PumpEvents (void);		// ID_IN.C
 
 unsigned	bufferofs;
 unsigned	displayofs,pelpan;
 
-unsigned	screenseg=SCREENSEG;		// set to 0xa000 for asm convenience
+unsigned	screenseg=SCREENSEG;		// kept for the asm-era code; no segment any more
 
 unsigned	linewidth;
 unsigned	ylookup[MAXSCANLINES];
@@ -20,23 +38,31 @@ unsigned	ylookup[MAXSCANLINES];
 boolean		screenfaded;
 unsigned	bordercolor;
 
-boolean		fastpalette;				// if true, use outsb to set
+boolean		fastpalette;				// unused: kept for the palette test
 
 byte		far	palette1[256][3],far palette2[256][3];
 
-//===========================================================================
+byte		vl_vram[VL_VRAMSIZE];		// the whole VGA memory, 4 planes interleaved
 
-// asm
-
-int	 VL_VideoID (void);
-void VL_SetCRTC (int crtc);
-void VL_SetScreen (int crtc, int pelpan);
-void VL_WaitVBL (int vbls);
-
-int US_CheckParm (char *parm,char **strings);	// WOLF-2: was implicitly declared (ID_US.H not included)
+static byte		vl_palette[256][3];		// 6-bit DAC values, like the VGA
+static byte		vl_rgba[256][4];		// the same, expanded for the backend
+static unsigned	vl_crtcstart;			// CRTC start address: the page on screen
+static double	vl_lastpresent;
 
 //===========================================================================
 
+// pointer to `count` pixels of the page `ofs`, row y, column x (NULL if outside video memory)
+byte *VL_Span (unsigned ofs, int y, int x, long count)
+{
+	long	index;
+
+	if (y < 0 || y >= MAXSCANLINES)
+		return NULL;
+	index = 4L*(ofs + ylookup[y]) + x;
+	if (index < 0 || count < 0 || index + count > VL_VRAMSIZE)
+		return NULL;
+	return vl_vram + index;
+}
 
 /*
 =======================
@@ -46,54 +72,11 @@ int US_CheckParm (char *parm,char **strings);	// WOLF-2: was implicitly declared
 =======================
 */
 
-#if 0
 void	VL_Startup (void)
 {
-	if ( !MS_CheckParm ("HIDDENCARD") && VL_VideoID () != 5)
-		MS_Quit ("You need a VGA graphics card to run this!");
-
-	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-	asm	cld;				// all string instructions assume forward
-#endif
+	// no VGA detection: raylib always gives us a 320x200 8-bit display
+	VL_SetLineWidth (40);
 }
-
-#endif
-
-/*
-=======================
-=
-= VL_Startup	// WOLFENSTEIN HACK
-=
-=======================
-*/
-
-static	char *ParmStrings[] = {"HIDDENCARD",""};
-
-void	VL_Startup (void)
-{
-	int i,videocard;
-
-	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-	asm	cld;
-#endif
-
-	videocard = VL_VideoID ();
-	for (i = 1;i < _argc;i++)
-		if (US_CheckParm(_argv[i],ParmStrings) == 0)
-		{
-			videocard = 5;
-			break;
-		}
-
-	if (videocard != 5)
-Quit ("Improper video card!  If you really have a VGA card that I am not \n"
-	  "detecting, use the -HIDDENCARD command line parameter!");
-
-}
-
-
 
 /*
 =======================
@@ -108,7 +91,6 @@ void	VL_Shutdown (void)
 	VL_SetTextMode ();
 }
 
-
 /*
 =======================
 =
@@ -119,32 +101,12 @@ void	VL_Shutdown (void)
 
 void	VL_SetVGAPlaneMode (void)
 {
-PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-asm	mov	ax,0x13
-asm	int	0x10
-#endif
 	VL_DePlaneVGA ();
-	VGAMAPMASK(15);
 	VL_SetLineWidth (40);
 }
 
-
-/*
-=======================
-=
-= VL_SetTextMode
-=
-=======================
-*/
-
 void	VL_SetTextMode (void)
 {
-PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-asm	mov	ax,3
-asm	int	0x10
-#endif
 }
 
 //===========================================================================
@@ -161,91 +123,23 @@ asm	int	0x10
 
 void VL_ClearVideo (byte color)
 {
-PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-asm	mov	dx,GC_INDEX
-asm	mov	al,GC_MODE
-asm	out	dx,al
-asm	inc	dx
-asm	in	al,dx
-asm	and	al,0xfc				// write mode 0 to store directly to video
-asm	out	dx,al
-
-asm	mov	dx,SC_INDEX
-asm	mov	ax,SC_MAPMASK+15*256
-asm	out	dx,ax				// write through all four planes
-
-asm	mov	ax,SCREENSEG
-asm	mov	es,ax
-asm	mov	al,[color]
-asm	mov	ah,al
-asm	mov	cx,0x8000			// 0x8000 words, clearing 8 video bytes/word
-asm	xor	di,di
-asm	rep	stosw
-#endif
+	memset (vl_vram,color,sizeof(vl_vram));
 }
-
-
-/*
-=============================================================================
-
-			VGA REGISTER MANAGEMENT ROUTINES
-
-=============================================================================
-*/
-
 
 /*
 =================
 =
 = VL_DePlaneVGA
 =
+= Nothing to switch: video memory is already addressable per page and pixel.
+=
 =================
 */
 
 void VL_DePlaneVGA (void)
 {
-
-//
-// change CPU addressing to non linear mode
-//
-
-//
-// turn off chain 4 and odd/even
-//
-	outportb (SC_INDEX,SC_MEMMODE);
-	outportb (SC_INDEX+1,(inportb(SC_INDEX+1)&~8)|4);
-
-	outportb (SC_INDEX,SC_MAPMASK);		// leave this set throughought
-
-//
-// turn off odd/even and set write mode 0
-//
-	outportb (GC_INDEX,GC_MODE);
-	outportb (GC_INDEX+1,inportb(GC_INDEX+1)&~0x13);
-
-//
-// turn off chain
-//
-	outportb (GC_INDEX,GC_MISCELLANEOUS);
-	outportb (GC_INDEX+1,inportb(GC_INDEX+1)&~2);
-
-//
-// clear the entire buffer space, because int 10h only did 16 k / plane
-//
 	VL_ClearVideo (0);
-
-//
-// change CRTC scanning from doubleword to byte mode, allowing >64k scans
-//
-	outportb (CRTC_INDEX,CRTC_UNDERLINE);
-	outportb (CRTC_INDEX+1,inportb(CRTC_INDEX+1)&~0x40);
-
-	outportb (CRTC_INDEX,CRTC_MODE);
-	outportb (CRTC_INDEX+1,inportb(CRTC_INDEX+1)|0x40);
 }
-
-//===========================================================================
 
 /*
 ====================
@@ -261,14 +155,6 @@ void VL_SetLineWidth (unsigned width)
 {
 	int i,offset;
 
-//
-// set wide virtual screen
-//
-	outport (CRTC_INDEX,CRTC_OFFSET+width*256);
-
-//
-// set up lookup tables
-//
 	linewidth = width*2;
 
 	offset = 0;
@@ -285,32 +171,130 @@ void VL_SetLineWidth (unsigned width)
 =
 = VL_SetSplitScreen
 =
+= Wolf3D never splits the screen; the status bar is part of the page.
+=
 ====================
 */
 
 void VL_SetSplitScreen (int linenum)
 {
-	VL_WaitVBL (1);
-	linenum=linenum*2-1;
-	outportb (CRTC_INDEX,CRTC_LINECOMPARE);
-	outportb (CRTC_INDEX+1,linenum % 256);
-	outportb (CRTC_INDEX,CRTC_OVERFLOW);
-	outportb (CRTC_INDEX+1, 1+16*(linenum/256));
-	outportb (CRTC_INDEX,CRTC_MAXSCANLINE);
-	outportb (CRTC_INDEX+1,inportb(CRTC_INDEX+1) & (255-64));
+	(void)linenum;
 }
 
+/*
+=============================================================================
+
+						TIMING AND PAGE FLIPPING
+
+=============================================================================
+*/
+
+/*
+==============
+=
+= VL_Refresh
+=
+= Expands the page on screen to RGBA and presents it.  Cheap enough to call
+= from every wait loop; draws at most once per 70 Hz tick unless forced.
+=
+==============
+*/
+
+static void VL_Present (void)
+{
+	static unsigned char	frame[VL_SCREENW*VL_SCREENH*4];
+	unsigned char			*dst = frame;
+	const byte				*src;
+	int						x,y;
+	long					stride = 4L*linewidth;
+
+	for (y=0;y<VL_SCREENH;y++)
+	{
+		src = vl_vram + 4L*vl_crtcstart + y*stride + (pelpan&3);
+		if (src + VL_SCREENW > vl_vram + sizeof(vl_vram))
+		{
+			memset (dst,0,VL_SCREENW*4);		// page runs off the end of video memory
+			dst += VL_SCREENW*4;
+			continue;
+		}
+		for (x=0;x<VL_SCREENW;x++,dst+=4)
+			memcpy (dst,vl_rgba[src[x]],4);
+	}
+	RL_Present (frame);
+	vl_lastpresent = WL_TickClock();
+}
+
+void VL_Refresh (boolean force)
+{
+	if (force || WL_TickClock() - vl_lastpresent >= 1.0)
+		VL_Present ();
+}
+
+/*
+==============
+=
+= VL_WaitVBL
+=
+= Waits for `vbls` 70 Hz retraces and shows the frame.
+=
+==============
+*/
+
+void VL_WaitVBL (int vbls)
+{
+	double	target;
+
+	if (vbls < 1)
+		vbls = 1;
+	target = floor(WL_TickClock()) + vbls;
+	WL_SleepUntilTick (target);
+	VL_Present ();
+	IN_PumpEvents ();
+}
+
+/*
+==============
+=
+= VL_SetCRTC / VL_SetScreen
+=
+= Select the page that is shown (plane offset) and the pel panning.
+=
+==============
+*/
+
+void VL_SetCRTC (int crtc)
+{
+	vl_crtcstart = (unsigned)crtc & 0xffff;
+}
+
+void VL_SetScreen (int crtc, int pel)
+{
+	vl_crtcstart = (unsigned)crtc & 0xffff;
+	pelpan = pel;
+	VL_WaitVBL (1);				// the page flip happens at the retrace
+}
+
+int VL_VideoID (void)
+{
+	return 5;					// VGA
+}
 
 /*
 =============================================================================
 
 						PALETTE OPS
 
-		To avoid snow, do a WaitVBL BEFORE calling these
-
 =============================================================================
 */
 
+static void VL_UpdateRGBA (int color)
+{
+	int i;
+
+	for (i=0;i<3;i++)
+		vl_rgba[color][i] = (vl_palette[color][i]<<2) | (vl_palette[color][i]>>4);
+	vl_rgba[color][3] = 255;
+}
 
 /*
 =================
@@ -324,16 +308,9 @@ void VL_FillPalette (int red, int green, int blue)
 {
 	int	i;
 
-	outportb (PEL_WRITE_ADR,0);
 	for (i=0;i<256;i++)
-	{
-		outportb (PEL_DATA,red);
-		outportb (PEL_DATA,green);
-		outportb (PEL_DATA,blue);
-	}
+		VL_SetColor (i,red,green,blue);
 }
-
-//===========================================================================
 
 /*
 =================
@@ -345,13 +322,11 @@ void VL_FillPalette (int red, int green, int blue)
 
 void VL_SetColor	(int color, int red, int green, int blue)
 {
-	outportb (PEL_WRITE_ADR,color);
-	outportb (PEL_DATA,red);
-	outportb (PEL_DATA,green);
-	outportb (PEL_DATA,blue);
+	vl_palette[color][0] = red & 63;
+	vl_palette[color][1] = green & 63;
+	vl_palette[color][2] = blue & 63;
+	VL_UpdateRGBA (color);
 }
-
-//===========================================================================
 
 /*
 =================
@@ -363,21 +338,17 @@ void VL_SetColor	(int color, int red, int green, int blue)
 
 void VL_GetColor	(int color, int *red, int *green, int *blue)
 {
-	outportb (PEL_READ_ADR,color);
-	*red = inportb (PEL_DATA);
-	*green = inportb (PEL_DATA);
-	*blue = inportb (PEL_DATA);
+	*red = vl_palette[color][0];
+	*green = vl_palette[color][1];
+	*blue = vl_palette[color][2];
 }
-
-//===========================================================================
 
 /*
 =================
 =
 = VL_SetPalette
 =
-= If fast palette setting has been tested for, it is used
-= (some cards don't like outsb palette setting)
+= 768 bytes of 6-bit DAC values
 =
 =================
 */
@@ -386,73 +357,22 @@ void VL_SetPalette (byte far *palette)
 {
 	int	i;
 
-//	outportb (PEL_WRITE_ADR,0);
-//	for (i=0;i<768;i++)
-//		outportb(PEL_DATA,*palette++);
-
-	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-	asm	mov	dx,PEL_WRITE_ADR
-	asm	mov	al,0
-	asm	out	dx,al
-	asm	mov	dx,PEL_DATA
-	asm	lds	si,[palette]
-
-	asm	test	[ss:fastpalette],1
-	asm	jz	slowset
-//
-// set palette fast for cards that can take it
-//
-	asm	mov	cx,768
-	asm	rep outsb
-	asm	jmp	done
-
-//
-// set palette slowly for some video cards
-//
-slowset:
-	asm	mov	cx,256
-setloop:
-	asm	lodsb
-	asm	out	dx,al
-	asm	lodsb
-	asm	out	dx,al
-	asm	lodsb
-	asm	out	dx,al
-	asm	loop	setloop
-
-done:
-	asm	mov	ax,ss
-	asm	mov	ds,ax
-#endif
-
+	for (i=0;i<256;i++,palette+=3)
+		VL_SetColor (i,palette[0],palette[1],palette[2]);
 }
-
-
-//===========================================================================
 
 /*
 =================
 =
 = VL_GetPalette
 =
-= This does not use the port string instructions,
-= due to some incompatabilities
-=
 =================
 */
 
 void VL_GetPalette (byte far *palette)
 {
-	int	i;
-
-	outportb (PEL_READ_ADR,0);
-	for (i=0;i<768;i++)
-		*palette++ = inportb(PEL_DATA);
+	memcpy (palette,vl_palette,768);
 }
-
-
-//===========================================================================
 
 /*
 =================
@@ -501,6 +421,7 @@ void VL_FadeOut (int start, int end, int red, int green, int blue, int steps)
 // final color
 //
 	VL_FillPalette (red,green,blue);
+	VL_Refresh (true);
 
 	screenfaded = true;
 }
@@ -544,6 +465,7 @@ void VL_FadeIn (int start, int end, byte far *palette, int steps)
 // final color
 //
 	VL_SetPalette (palette);
+	VL_Refresh (true);
 	screenfaded = false;
 }
 
@@ -554,24 +476,14 @@ void VL_FadeIn (int start, int end, byte far *palette, int steps)
 =
 = VL_TestPaletteSet
 =
-= Sets the palette with outsb, then reads it in and compares
-= If it compares ok, fastpalette is set to true.
+= The DAC is memory now, so fast palette setting always works.
 =
 =================
 */
 
 void VL_TestPaletteSet (void)
 {
-	int	i;
-
-	for (i=0;i<768;i++)
-		palette1[0][i] = i;
-
 	fastpalette = true;
-	VL_SetPalette (&palette1[0][0]);
-	VL_GetPalette (&palette2[0][0]);
-	if (_fmemcmp (&palette1[0][0],&palette2[0][0],768))
-		fastpalette = false;
 }
 
 
@@ -580,15 +492,13 @@ void VL_TestPaletteSet (void)
 =
 = VL_ColorBorder
 =
+= The overscan colour is not drawn; the window is letterboxed in black.
+=
 ==================
 */
 
 void VL_ColorBorder (int color)
 {
-	_AH=0x10;
-	_AL=1;
-	_BH=color;
-	geninterrupt (0x10);
 	bordercolor = color;
 }
 
@@ -602,11 +512,6 @@ void VL_ColorBorder (int color)
 =============================================================================
 */
 
-byte	pixmasks[4] = {1,2,4,8};
-byte	leftmasks[4] = {15,14,12,8};
-byte	rightmasks[4] = {1,3,7,15};
-
-
 /*
 =================
 =
@@ -617,12 +522,10 @@ byte	rightmasks[4] = {1,3,7,15};
 
 void VL_Plot (int x, int y, int color)
 {
-	byte mask;
+	byte *dest = VL_Span (bufferofs,y,x,1);
 
-	mask = pixmasks[x&3];
-	VGAMAPMASK(mask);
-	*(byte far *)MK_FP(SCREENSEG,bufferofs+(ylookup[y]+(x>>2))) = color;
-	VGAMAPMASK(15);
+	if (dest)
+		*dest = color;
 }
 
 
@@ -636,38 +539,10 @@ void VL_Plot (int x, int y, int color)
 
 void VL_Hlin (unsigned x, unsigned y, unsigned width, unsigned color)
 {
-	unsigned		xbyte;
-	byte			far *dest;
-	byte			leftmask,rightmask;
-	int				midbytes;
+	byte *dest = VL_Span (bufferofs,y,x,width);
 
-	xbyte = x>>2;
-	leftmask = leftmasks[x&3];
-	rightmask = rightmasks[(x+width-1)&3];
-	midbytes = ((x+width+3)>>2) - xbyte - 2;
-
-	dest = MK_FP(SCREENSEG,bufferofs+ylookup[y]+xbyte);
-
-	if (midbytes<0)
-	{
-	// all in one byte
-		VGAMAPMASK(leftmask&rightmask);
-		*dest = color;
-		VGAMAPMASK(15);
-		return;
-	}
-
-	VGAMAPMASK(leftmask);
-	*dest++ = color;
-
-	VGAMAPMASK(15);
-	_fmemset (dest,color,midbytes);
-	dest+=midbytes;
-
-	VGAMAPMASK(rightmask);
-	*dest = color;
-
-	VGAMAPMASK(15);
+	if (dest)
+		memset (dest,color,width);
 }
 
 
@@ -681,20 +556,16 @@ void VL_Hlin (unsigned x, unsigned y, unsigned width, unsigned color)
 
 void VL_Vlin (int x, int y, int height, int color)
 {
-	byte	far *dest,mask;
+	byte	*dest = VL_Span (bufferofs,y,x,1);
 
-	mask = pixmasks[x&3];
-	VGAMAPMASK(mask);
-
-	dest = MK_FP(SCREENSEG,bufferofs+ylookup[y]+(x>>2));
+	if (!dest || !VL_Span (bufferofs,y+height-1,x,1))
+		return;
 
 	while (height--)
 	{
 		*dest = color;
-		dest += linewidth;
+		dest += 4*linewidth;
 	}
-
-	VGAMAPMASK(15);
 }
 
 
@@ -708,46 +579,19 @@ void VL_Vlin (int x, int y, int height, int color)
 
 void VL_Bar (int x, int y, int width, int height, int color)
 {
-	byte	far *dest;
-	byte	leftmask,rightmask;
-	int		midbytes,linedelta;
+	byte	*dest;
 
-	leftmask = leftmasks[x&3];
-	rightmask = rightmasks[(x+width-1)&3];
-	midbytes = ((x+width+3)>>2) - (x>>2) - 2;
-	linedelta = linewidth-(midbytes+1);
-
-	dest = MK_FP(SCREENSEG,bufferofs+ylookup[y]+(x>>2));
-
-	if (midbytes<0)
-	{
-	// all in one byte
-		VGAMAPMASK(leftmask&rightmask);
-		while (height--)
-		{
-			*dest = color;
-			dest += linewidth;
-		}
-		VGAMAPMASK(15);
+	if (width <= 0 || height <= 0)
 		return;
-	}
+	if (!VL_Span (bufferofs,y,x,width) || !VL_Span (bufferofs,y+height-1,x,width))
+		return;
 
+	dest = VL_Span (bufferofs,y,x,width);
 	while (height--)
 	{
-		VGAMAPMASK(leftmask);
-		*dest++ = color;
-
-		VGAMAPMASK(15);
-		_fmemset (dest,color,midbytes);
-		dest+=midbytes;
-
-		VGAMAPMASK(rightmask);
-		*dest = color;
-
-		dest+=linedelta;
+		memset (dest,color,width);
+		dest += 4*linewidth;
 	}
-
-	VGAMAPMASK(15);
 }
 
 /*
@@ -763,33 +607,24 @@ void VL_Bar (int x, int y, int width, int height, int color)
 =
 = VL_MemToLatch
 =
+= Source is planar: all of plane 0, then plane 1, ...  Each plane holds
+= ((width+3)/4)*height bytes, stored to successive latch bytes at `dest`.
+=
 =================
 */
 
 void VL_MemToLatch (byte far *source, int width, int height, unsigned dest)
 {
-	unsigned	count;
-	byte	plane,mask;
+	unsigned	count,i;
+	int			plane;
 
 	count = ((width+3)/4)*height;
-	mask = 1;
+	if (4L*(dest+count) > VL_VRAMSIZE)
+		return;
 	for (plane = 0; plane<4 ; plane++)
 	{
-		VGAMAPMASK(mask);
-		mask <<= 1;
-
-PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-asm	mov	cx,count
-asm mov ax,SCREENSEG
-asm mov es,ax
-asm	mov	di,[dest]
-asm	lds	si,[source]
-asm	rep movsb
-asm mov	ax,ss
-asm	mov	ds,ax
-#endif
-
+		for (i=0;i<count;i++)
+			vl_vram[4L*(dest+i)+plane] = source[i];
 		source+= count;
 	}
 }
@@ -803,30 +638,28 @@ asm	mov	ds,ax
 =
 = VL_MemToScreen
 =
-= Draws a block of data to the screen.
+= Draws a block of planar data (see VL_MungePic) to the screen.
 =
 =================
 */
 
 void VL_MemToScreen (byte far *source, int width, int height, int x, int y)
 {
-	byte    far *screen,far *dest,mask;
-	int		plane;
+	byte	*dest;
+	int		plane,row,col,p;
 
 	width>>=2;
-	dest = MK_FP(SCREENSEG,bufferofs+ylookup[y]+(x>>2) );
-	mask = 1 << (x&3);
-
 	for (plane = 0; plane<4; plane++)
 	{
-		VGAMAPMASK(mask);
-		mask <<= 1;
-		if (mask == 16)
-			mask = 1;
-
-		screen = dest;
-		for (y=0;y<height;y++,screen+=linewidth,source+=width)
-			_fmemcpy (screen,source,width);
+		p = ((x&3)+plane)&3;			// the plane the mask selects
+		for (row=0;row<height;row++,source+=width)
+		{
+			dest = VL_Span (bufferofs,y+row,x&~3,width*4);
+			if (!dest)
+				continue;
+			for (col=0;col<width;col++)
+				dest[col*4+p] = source[col];
+		}
 	}
 }
 
@@ -838,34 +671,14 @@ void VL_MemToScreen (byte far *source, int width, int height, int x, int y)
 =
 = VL_MaskedToScreen
 =
-= Masks a block of main memory to the screen.
+= Unused by Wolf3D; it had no mask handling in the original either.
 =
 =================
 */
 
 void VL_MaskedToScreen (byte far *source, int width, int height, int x, int y)
 {
-	byte    far *screen,far *dest,mask;
-	byte	far *maskptr;
-	int		plane;
-
-	width>>=2;
-	dest = MK_FP(SCREENSEG,bufferofs+ylookup[y]+(x>>2) );
-//	mask = 1 << (x&3);
-
-//	maskptr = source;
-
-	for (plane = 0; plane<4; plane++)
-	{
-		VGAMAPMASK(mask);
-		mask <<= 1;
-		if (mask == 16)
-			mask = 1;
-
-		screen = dest;
-		for (y=0;y<height;y++,screen+=linewidth,source+=width)
-			_fmemcpy (screen,source,width);
-	}
+	VL_MemToScreen (source,width,height,x,y);
 }
 
 //==========================================================================
@@ -875,94 +688,54 @@ void VL_MaskedToScreen (byte far *source, int width, int height, int x, int y)
 =
 = VL_LatchToScreen
 =
+= Copies width*4 x height pixels from latch memory (rows of `width` latch
+= bytes, stored back to back) to the page at bufferofs.
+=
 =================
 */
 
 void VL_LatchToScreen (unsigned source, int width, int height, int x, int y)
 {
-	VGAWRITEMODE(1);
-	VGAMAPMASK(15);
+	byte		*dest;
+	const byte	*src;
+	int			row;
 
-PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-asm	mov	di,[y]				// dest = bufferofs+ylookup[y]+(x>>2)
-asm	shl	di,1
-asm	mov	di,[WORD PTR ylookup+di]
-asm	add	di,[bufferofs]
-asm	mov	ax,[x]
-asm	shr	ax,2
-asm	add	di,ax
-
-asm	mov	si,[source]
-asm	mov	ax,[width]
-asm	mov	bx,[linewidth]
-asm	sub	bx,ax
-asm	mov	dx,[height]
-asm	mov	cx,SCREENSEG
-asm	mov	ds,cx
-asm	mov	es,cx
-
-drawline:
-asm	mov	cx,ax
-asm	rep movsb
-asm	add	di,bx
-asm	dec	dx
-asm	jnz	drawline
-
-asm	mov	ax,ss
-asm	mov	ds,ax
-#endif
-
-	VGAWRITEMODE(0);
+	src = vl_vram + 4L*source;
+	for (row=0;row<height;row++,src+=width*4)
+	{
+		dest = VL_Span (bufferofs,y+row,x&~3,width*4);
+		if (!dest || src + width*4 > vl_vram + sizeof(vl_vram))
+			continue;
+		memmove (dest,src,width*4);
+	}
 }
 
 
 //===========================================================================
-
-#if 0
 
 /*
 =================
 =
 = VL_ScreenToScreen
 =
+= Block copy inside video memory.  bufferofs is NOT accounted for.  width is
+= in latch bytes (4 pixels).
+=
 =================
 */
 
 void VL_ScreenToScreen (unsigned source, unsigned dest,int width, int height)
 {
-	VGAWRITEMODE(1);
-	VGAMAPMASK(15);
+	long	srcpos = 4L*source, destpos = 4L*dest;
+	int		row;
 
-PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-asm	mov	si,[source]
-asm	mov	di,[dest]
-asm	mov	ax,[width]
-asm	mov	bx,[linewidth]
-asm	sub	bx,ax
-asm	mov	dx,[height]
-asm	mov	cx,SCREENSEG
-asm	mov	ds,cx
-asm	mov	es,cx
-
-drawline:
-asm	mov	cx,ax
-asm	rep movsb
-asm	add	si,bx
-asm	add	di,bx
-asm	dec	dx
-asm	jnz	drawline
-
-asm	mov	ax,ss
-asm	mov	ds,ax
-#endif
-
-	VGAWRITEMODE(0);
+	for (row=0;row<height;row++,srcpos+=4L*linewidth,destpos+=4L*linewidth)
+	{
+		if (srcpos + width*4 > VL_VRAMSIZE || destpos + width*4 > VL_VRAMSIZE)
+			continue;
+		memmove (vl_vram+destpos,vl_vram+srcpos,width*4);
+	}
 }
-
-
-#endif
 
 /*
 =============================================================================
@@ -980,41 +753,30 @@ asm	mov	ds,ax
 =
 = VL_DrawTile8String
 =
+= tile8ptr: 64 bytes per character, planar (8 rows of 2 bytes per plane)
+=
 ===================
 */
 
 void VL_DrawTile8String (char *str, char far *tile8ptr, int printx, int printy)
 {
-	int		i;
-	unsigned	far *dest,far *screen,far *src;
-
-	dest = MK_FP(SCREENSEG,bufferofs+ylookup[printy]+(printx>>2));
+	int		plane,row,col;
+	byte	*dest;
+	const byte *src;
 
 	while (*str)
 	{
-		src = (unsigned far *)(tile8ptr + (*str<<6));
-		// each character is 64 bytes
-
-		VGAMAPMASK(1);
-		screen = dest;
-		for (i=0;i<8;i++,screen+=linewidth)
-			*screen = *src++;
-		VGAMAPMASK(2);
-		screen = dest;
-		for (i=0;i<8;i++,screen+=linewidth)
-			*screen = *src++;
-		VGAMAPMASK(4);
-		screen = dest;
-		for (i=0;i<8;i++,screen+=linewidth)
-			*screen = *src++;
-		VGAMAPMASK(8);
-		screen = dest;
-		for (i=0;i<8;i++,screen+=linewidth)
-			*screen = *src++;
-
+		src = (const byte *)tile8ptr + (*str<<6);
+		for (plane=0;plane<4;plane++)
+			for (row=0;row<8;row++)
+			{
+				dest = VL_Span (bufferofs,printy+row,printx&~3,8);
+				for (col=0;col<2;col++,src++)
+					if (dest)
+						dest[col*4+plane] = *src;
+			}
 		str++;
 		printx += 8;
-		dest+=2;
 	}
 }
 
@@ -1025,67 +787,29 @@ void VL_DrawTile8String (char *str, char far *tile8ptr, int printx, int printy)
 =
 = VL_DrawLatch8String
 =
+= tile8ptr: latch address of the characters, 16 latch bytes (8x8 pixels) each
+=
 ===================
 */
 
 void VL_DrawLatch8String (char *str, unsigned tile8ptr, int printx, int printy)
 {
-	int		i;
-	unsigned	src,dest;
-
-	dest = bufferofs+ylookup[printy]+(printx>>2);
-
-	VGAWRITEMODE(1);
-	VGAMAPMASK(15);
+	int		row;
+	byte	*dest;
 
 	while (*str)
 	{
-		src = tile8ptr + (*str<<4);		// each character is 16 latch bytes
+		unsigned src = tile8ptr + (*str<<4);
 
-PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-asm	mov	si,[src]
-asm	mov	di,[dest]
-asm	mov	dx,[linewidth]
-
-asm	mov	ax,SCREENSEG
-asm	mov	ds,ax
-
-asm	lodsw
-asm	mov	[di],ax
-asm	add	di,dx
-asm	lodsw
-asm	mov	[di],ax
-asm	add	di,dx
-asm	lodsw
-asm	mov	[di],ax
-asm	add	di,dx
-asm	lodsw
-asm	mov	[di],ax
-asm	add	di,dx
-asm	lodsw
-asm	mov	[di],ax
-asm	add	di,dx
-asm	lodsw
-asm	mov	[di],ax
-asm	add	di,dx
-asm	lodsw
-asm	mov	[di],ax
-asm	add	di,dx
-asm	lodsw
-asm	mov	[di],ax
-asm	add	di,dx
-
-asm	mov	ax,ss
-asm	mov	ds,ax
-#endif
-
+		for (row=0;row<8;row++)
+		{
+			dest = VL_Span (bufferofs,printy+row,printx&~3,8);
+			if (dest && 4L*(src+row*2+2) <= VL_VRAMSIZE)
+				memmove (dest,vl_vram+4L*(src+row*2),8);
+		}
 		str++;
 		printx += 8;
-		dest+=2;
 	}
-
-	VGAWRITEMODE(0);
 }
 
 
@@ -1102,12 +826,3 @@ void VL_SizeTile8String (char *str, int *width, int *height)
 	*height = 8;
 	*width = 8*strlen(str);
 }
-
-
-
-
-
-
-
-
-

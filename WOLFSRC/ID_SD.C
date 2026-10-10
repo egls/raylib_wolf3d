@@ -73,7 +73,7 @@ extern	void interrupt	SDL_t0ExtremeAsmService(void),
 	SDMode		SoundMode;
 	SMMode		MusicMode;
 	SDSMode		DigiMode;
-	longword	TimeCount;
+	_Atomic longword	TimeCount;
 	word		HackCount;
 	word		*SoundTable;	// Really * _seg *SoundTable, but that don't work
 	boolean		ssIsTandy;

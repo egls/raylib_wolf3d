@@ -4,9 +4,10 @@
  */
 #include "wl_compat.h"
 #include "id_raylib.h"
+#include "wl_timer.h"
 
-#define WL_WINDOW_W		640		// 320x200 doubled; scaling comes with Stage 2
-#define WL_WINDOW_H		400
+#define WL_WINDOW_W		960		// 4:3, 3x the 320x200 frame; resizable, letterboxed
+#define WL_WINDOW_H		720
 #define WL_EXIT_NOTPORTED	3
 
 int		_argc;
@@ -97,5 +98,13 @@ void WL_PlatformStartup (int argc, char **argv)
 		fprintf(stderr, "raylib_wolf3d: could not open a window\n");
 		exit(2);
 	}
+	WL_TimerStart();		// 70 Hz TimeCount, replaces the PIT interrupt
 	atexit(WL_Shutdown);
+
+	for (i = 1; i + 1 < (unsigned)argc; i++)
+		if (!strcmp(argv[i], "-videotest"))
+		{
+			WL_VideoTest(argv[i + 1]);		// developer harness, see wl_videotest.c
+			exit(0);
+		}
 }
