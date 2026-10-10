@@ -52,7 +52,8 @@ E1M1 plane CRC32s, wall/sprite/title CRC32s, all ten maps, all graphics/audio
 chunks, every resident sprite at several scales, and cache/purge/shutdown
 cycles. SHA-256 verification stays in ``scripts/fetch_shareware.sh``.
 
-The application still stops in the video backend until WOLF-5 lands.
+The integrated WOLF-5 video/input backend runs; normal startup reaches the
+remaining WOLF-6 audio adapter ``SDL_SetDS`` and exits with code 3.
 Headless core checks do not establish DOS demo playback synchronization or
 playable screen output. No save-game format migration is included here.
 

@@ -107,7 +107,9 @@ typedef	byte		ScanCode;
 #define	MDelta		11
 
 #define	MouseInt	0x33
-#define	Mouse(x)	_AX = x,geninterrupt(MouseInt)
+// WOLF-5: int 33h is emulated (functions 0,3,4,11) on top of the raylib mouse
+void IN_MouseCall(int function);
+#define	Mouse(x)	IN_MouseCall(x)
 
 typedef	enum		{
 						demo_Off,demo_Record,demo_Playback,demo_PlayDone
@@ -198,5 +200,8 @@ byte	IN_JoyButtons (void);
 void INL_GetJoyDelta(word joy,int *dx,int *dy);
 void IN_StartAck(void);
 boolean IN_CheckAck (void);
+void IN_PumpEvents (void);		// WOLF-5: poll raylib, feed INL_KeyService, refresh the window
+void IN_SpinWait (void);		// WOLF-5: body of busy-wait loops
+void IN_SetMouseCapture (boolean on);
 
 #endif

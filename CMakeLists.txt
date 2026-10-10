@@ -84,6 +84,8 @@ set(WOLF3D_GAME_SOURCES
   WOLFSRC/WL_TEXT.C
   WOLFSRC/WOLFHACK.C)
 set(WOLF3D_PORT_SOURCES
+  port/wl_timer.c
+  port/wl_videotest.c
   port/wl_compat.c
   port/wl_platform.c
   port/asm_stubs.c
@@ -94,6 +96,10 @@ set(WOLF3D_WARNINGS -Wall -fsigned-char)
 # The id code defines globals in headers (e.g. menuitems in WL_MENU.H) and
 # relied on the DOS linker merging them; keep that behaviour.
 set(WOLF3D_GAME_FLAGS -fcommon)
+# GCC 14+ turned these into errors; the id code (and the DOS-era stubs) still trip them.
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU" AND CMAKE_C_COMPILER_VERSION VERSION_GREATER_EQUAL 14)
+  list(APPEND WOLF3D_GAME_FLAGS -Wno-error=incompatible-pointer-types -Wno-error=int-conversion -Wno-error=implicit-function-declaration)
+endif()
 
 # -Wall on the untouched id code is dominated by harmless classes: enum values
 # not handled in switch, char signedness, Borland #pragmas, unchecked read()/
@@ -123,7 +129,8 @@ endif()
 
 add_executable(raylib_wolf3d ${WOLF3D_GAME_SOURCES} ${WOLF3D_PORT_SOURCES} ${WOLF3D_OBJDATA})
 target_include_directories(raylib_wolf3d PRIVATE port WOLFSRC)
-target_link_libraries(raylib_wolf3d PRIVATE wolf3d_raylib m)
+find_package(Threads REQUIRED)
+target_link_libraries(raylib_wolf3d PRIVATE wolf3d_raylib Threads::Threads m)
 
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(raylib_wolf3d PRIVATE ${WOLF3D_WARNINGS} ${WOLF3D_GAME_FLAGS})
@@ -155,9 +162,22 @@ if(BUILD_TESTING)
   add_test(NAME core_wl1_data COMMAND wolf_core_data_test "${WOLF3D_TEST_DATA}")
   set_tests_properties(core_wl1_data PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 30)
   add_test(NAME core_codecs COMMAND wolf_codec_test)
+
+  # ---------------------------------------------------------------------------
+  # Tests (ctest): the raylib keyboard translation against a fake raylib, no display needed.
+  # ---------------------------------------------------------------------------
+  add_executable(rl_keys_test tests/rl_keys_test.c port/id_raylib.c)
+  target_include_directories(rl_keys_test PRIVATE port
+    $<TARGET_PROPERTY:raylib,INTERFACE_INCLUDE_DIRECTORIES>)
+  target_link_libraries(rl_keys_test PRIVATE m)
+  if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(rl_keys_test PRIVATE -Wall)
+  endif()
+  add_test(NAME rl_keys_test COMMAND rl_keys_test)
+
   option(WOLF3D_CORE_SANITIZERS "Use ASan/UBSan on headless core tests" OFF)
   if(WOLF3D_CORE_SANITIZERS AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-    foreach(t wolf_core_data_test wolf_codec_test wolf_render_test)
+    foreach(t wolf_core_data_test wolf_codec_test wolf_render_test rl_keys_test)
       target_compile_options(${t} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
       target_link_options(${t} PRIVATE -fsanitize=address,undefined)
     endforeach()

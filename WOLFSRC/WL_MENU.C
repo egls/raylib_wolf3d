@@ -441,7 +441,8 @@ void US_ControlPanel(byte scancode)
 			VL_FadeIn(0,255,grsegs[IDGUYSPALETTE],30);
 			UNCACHEGRCHUNK(IDGUYSPALETTE);
 
-			while (Keyboard[sc_I] || Keyboard[sc_D]);
+			while (Keyboard[sc_I] || Keyboard[sc_D])
+				IN_SpinWait();
 			IN_ClearKeysDown();
 			IN_Ack();
 
@@ -1678,7 +1679,8 @@ int CalibrateJoystick(void)
 	#define CALW	158
 	#define CALH	140
 
-	word xmin,ymin,xmax,ymax; unsigned jb;
+	word xmin,ymin,xmax,ymax;
+	unsigned jb;
 
 
 
@@ -1750,7 +1752,8 @@ int CalibrateJoystick(void)
 	IN_GetJoyAbs(joystickport,&xmax,&ymax);
 	SD_PlaySound(SHOOTSND);
 
-	while (IN_JoyButtons());
+	while (IN_JoyButtons())
+		IN_SpinWait();
 
 	//
 	// ASSIGN ACTUAL VALUES HERE
@@ -1916,7 +1919,8 @@ void MouseSensitivity(void)
 					VWB_Bar(61+20*mouseadjustment,98,19,9,READHCOLOR);
 					VW_UpdateScreen();
 					SD_PlaySound(MOVEGUN1SND);
-					while(Keyboard[sc_LeftArrow]);
+					while (Keyboard[sc_LeftArrow])
+						IN_SpinWait();
 					WaitKeyUp();
 				}
 				break;
@@ -1932,7 +1936,8 @@ void MouseSensitivity(void)
 					VWB_Bar(61+20*mouseadjustment,98,19,9,READHCOLOR);
 					VW_UpdateScreen();
 					SD_PlaySound(MOVEGUN1SND);
-					while(Keyboard[sc_RightArrow]);
+					while (Keyboard[sc_RightArrow])
+						IN_SpinWait();
 					WaitKeyUp();
 				}
 				break;
@@ -3381,7 +3386,8 @@ void DrawHalfStep(int x,int y)
 	VW_UpdateScreen();
 	SD_PlaySound(MOVEGUN1SND);
 	TimeCount=0;
-	while(TimeCount<8);
+	while (TimeCount<8)
+		IN_SpinWait();
 }
 
 
@@ -3652,7 +3658,8 @@ int Confirm(char far *string)
 		ShootSnd();
 	}
 
-	while(Keyboard[sc_S] || Keyboard[sc_N] || Keyboard[sc_Escape]);
+	while (Keyboard[sc_S] || Keyboard[sc_N] || Keyboard[sc_Escape])
+		IN_SpinWait();
 
 	#else
 
@@ -3662,7 +3669,8 @@ int Confirm(char far *string)
 		ShootSnd();
 	}
 
-	while(Keyboard[sc_Y] || Keyboard[sc_N] || Keyboard[sc_Escape]);
+	while (Keyboard[sc_Y] || Keyboard[sc_N] || Keyboard[sc_Escape])
+		IN_SpinWait();
 	#endif
 
 	IN_ClearKeysDown();
@@ -3707,7 +3715,8 @@ int GetYorN(int x,int y,int pic)
 		ShootSnd();
 	}
 
-	while(Keyboard[sc_S] || Keyboard[sc_N] || Keyboard[sc_Escape]);
+	while (Keyboard[sc_S] || Keyboard[sc_N] || Keyboard[sc_Escape])
+		IN_SpinWait();
 
 	#else
 
@@ -3717,7 +3726,8 @@ int GetYorN(int x,int y,int pic)
 		ShootSnd();
 	}
 
-	while(Keyboard[sc_Y] || Keyboard[sc_N] || Keyboard[sc_Escape]);
+	while (Keyboard[sc_Y] || Keyboard[sc_N] || Keyboard[sc_Escape])
+		IN_SpinWait();
 	#endif
 
 	IN_ClearKeysDown();

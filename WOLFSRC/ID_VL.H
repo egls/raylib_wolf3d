@@ -98,27 +98,24 @@ extern	unsigned	bordercolor;
 // VGA hardware routines
 //
 
-// WOLF-2: VGA register writes via inline asm; not ported yet.  Original:
-#if 0
-#define VGAWRITEMODE(x) asm{\
-cli;\
-mov dx,GC_INDEX;\
-mov al,GC_MODE;\
-out dx,al;\
-inc dx;\
-in al,dx;\
-and al,252;\
-or al,x;\
-out dx,al;\
-sti;}
+// WOLF-5: video memory is linear (see ID_VL.C), so there is no map mask, write
+// mode or read map to program.  Kept so the drawing code still reads like the original.
+#define VGAWRITEMODE(x)	((void)(x))
+#define VGAMAPMASK(x)	((void)(x))
+#define VGAREADMAP(x)	((void)(x))
 
-#define VGAMAPMASK(x) asm{cli;mov dx,SC_INDEX;mov al,SC_MAPMASK;mov ah,x;out dx,ax;sti;}
-#define VGAREADMAP(x) asm{cli;mov dx,GC_INDEX;mov al,GC_READMAP;mov ah,x;out dx,ax;sti;}
-#endif
-#define VGAWRITEMODE(x)	PORT_ASM()
-#define VGAMAPMASK(x)	PORT_ASM()
-#define VGAREADMAP(x)	PORT_ASM()
+#define VL_SCREENW		320
+#define VL_SCREENH		200
+#define VL_VRAMSIZE		(4*65536L)		// 4 planes of 64K, interleaved: plane p byte o is vl_vram[4*o+p]
 
+extern	byte		vl_vram[VL_VRAMSIZE];
+
+// presents the page at the CRTC start address; draws at most once per 70 Hz tick unless forced
+void VL_Refresh (boolean force);
+// pointer to `count` pixels of page `ofs` at row y, column x; NULL if outside video memory
+byte *VL_Span (unsigned ofs, int y, int x, long count);
+int  VL_VideoID (void);
+void VL_SetCRTC (int crtc);
 
 void VL_Startup (void);
 void VL_Shutdown (void);

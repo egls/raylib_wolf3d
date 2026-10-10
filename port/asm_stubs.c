@@ -1,48 +1,14 @@
-/* Remaining video/audio assembly adapters belong to WOLF-5/WOLF-6.
- * The core RNG is native C below; ray tracing lives in wl_raycast.c and
- * MapRow in WOLFHACK.C. Startup/long division use the native C runtime. */
+/* Remaining audio assembly adapters belong to WOLF-6.
+ * Core RNG is native C below; ray tracing lives in wl_raycast.c,
+ * MapRow in WOLFHACK.C, and video adapters in ID_VL.C/ID_VH.C. */
 
 #include "ID_HEADS.H"
 #include <time.h>
 static unsigned rndindex;
 
-/* ---- ID_VL_A.ASM ------------------------------------------------------- */
-
-void VL_WaitVBL (int vbls)
-{
-	(void)vbls;
-	NOTPORTED("VL_WaitVBL");
-}
-
-void VL_SetCRTC (int crtc)
-{
-	(void)crtc;
-	NOTPORTED("VL_SetCRTC");
-}
-
-void VL_SetScreen (int crtc, int pelpan)
-{
-	(void)crtc; (void)pelpan;
-	NOTPORTED("VL_SetScreen");
-}
-
-void VL_ScreenToScreen (unsigned source, unsigned dest, int width, int height)
-{
-	(void)source; (void)dest; (void)width; (void)height;
-	NOTPORTED("VL_ScreenToScreen");
-}
-
-int VL_VideoID (void)
-{
-	NOTPORTED("VL_VideoID");
-}
-
-/* ---- ID_VH_A.ASM ------------------------------------------------------- */
-
-void VH_UpdateScreen (void)
-{
-	NOTPORTED("VH_UpdateScreen");
-}
+/* ---- ID_VL_A.ASM, ID_VH_A.ASM -------------------------------------------
+ * Translated in WOLFSRC/ID_VL.C and ID_VH.C (WOLF-5).
+ */
 
 /* ---- ID_US_A.ASM ------------------------------------------------------- */
 

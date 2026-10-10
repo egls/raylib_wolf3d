@@ -746,7 +746,6 @@ void HitVertPWall (void)
 		if (lastside != -1)				// if not the first scaled post
 			ScalePost ();
 
-		lastside = 3;
 		lastside = 4;
 		lasttilehit = tilehit;
 		postx = pixx;

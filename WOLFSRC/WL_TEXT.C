@@ -678,7 +678,7 @@ void ShowArticle (char far *article)
 
 		LastScan = 0;
 		while (!LastScan)
-		;
+			IN_SpinWait();
 
 		switch (LastScan)
 		{

@@ -27,8 +27,8 @@
 */
 
 
-// WOLF-2: VGA overscan border via port I/O; not ported yet
-#define COLORBORDER(color)		PORT_ASM();
+// WOLF-5: the overscan colour is only remembered (VL_ColorBorder)
+#define COLORBORDER(color)		VL_ColorBorder(color)
 
 #define MAPSPOT(x,y,plane)		(*(mapsegs[plane]+farmapylookup[y]+x))
 

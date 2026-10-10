@@ -1,6 +1,7 @@
 // ID_VH.C
 
 #include "ID_HEADS.H"
+#include "id_raylib.h"
 
 #define	SCREENWIDTH		80
 #define CHARWIDTH		2
@@ -40,15 +41,13 @@ void	VWL_UpdateScreenBlocks (void);
 void VW_DrawPropString (char far *string)
 {
 	fontstruct	far	*font;
-	int		width,step,height,i;
-	byte	far *source, far *dest, far *origdest;
-	byte	ch,mask;
+	int		width,step,height,row,startx;
+	byte	far *source, *dest;
+	byte	ch;
 
 	font = (fontstruct far *)grsegs[STARTFONT+fontnumber];
 	height = bufferheight = font->height;
-	dest = origdest = MK_FP(SCREENSEG,bufferofs+ylookup[py]+(px>>2));
-	mask = 1<<(px&3);
-
+	startx = px;
 
 	while ((ch = *string++)!=0)
 	{
@@ -56,58 +55,32 @@ void VW_DrawPropString (char far *string)
 		source = ((byte far *)font)+font->location[ch];
 		while (width--)
 		{
-			VGAMAPMASK(mask);
-
-PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-asm	mov	ah,[BYTE PTR fontcolor]
-asm	mov	bx,[step]
-asm	mov	cx,[height]
-asm	mov	dx,[linewidth]
-asm	lds	si,[source]
-asm	les	di,[dest]
-
-vertloop:
-asm	mov	al,[si]
-asm	or	al,al
-asm	je	next
-asm	mov	[es:di],ah			// draw color
-
-next:
-asm	add	si,bx
-asm	add	di,dx
-asm	loop	vertloop
-asm	mov	ax,ss
-asm	mov	ds,ax
-#endif
-
+			for (row=0;row<height;row++)
+				if (source[row*step])
+				{
+					dest = VL_Span(bufferofs,py+row,px,1);
+					if (dest)
+						*dest = fontcolor;		// draw color
+				}
 			source++;
 			px++;
-			mask <<= 1;
-			if (mask == 16)
-			{
-				mask = 1;
-				dest++;
-			}
 		}
 	}
 bufferheight = height;
-bufferwidth = ((dest+1)-origdest)*4;
+bufferwidth = ((px>>2)+1-(startx>>2))*4;
 }
 
 
 void VW_DrawColorPropString (char far *string)
 {
 	fontstruct	far	*font;
-	int		width,step,height,i;
-	byte	far *source, far *dest, far *origdest;
-	byte	ch,mask;
+	int		width,step,height,row,startx;
+	byte	far *source, *dest;
+	byte	ch,color;
 
 	font = (fontstruct far *)grsegs[STARTFONT+fontnumber];
 	height = bufferheight = font->height;
-	dest = origdest = MK_FP(SCREENSEG,bufferofs+ylookup[py]+(px>>2));
-	mask = 1<<(px&3);
-
+	startx = px;
 
 	while ((ch = *string++)!=0)
 	{
@@ -115,50 +88,24 @@ void VW_DrawColorPropString (char far *string)
 		source = ((byte far *)font)+font->location[ch];
 		while (width--)
 		{
-			VGAMAPMASK(mask);
-
-PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-asm	mov	ah,[BYTE PTR fontcolor]
-asm	mov	bx,[step]
-asm	mov	cx,[height]
-asm	mov	dx,[linewidth]
-asm	lds	si,[source]
-asm	les	di,[dest]
-
-vertloop:
-asm	mov	al,[si]
-asm	or	al,al
-asm	je	next
-asm	mov	[es:di],ah			// draw color
-
-next:
-asm	add	si,bx
-asm	add	di,dx
-
-asm rcr cx,1				// inc font color
-asm jc  cont
-asm	inc ah
-
-cont:
-asm rcl cx,1
-asm	loop	vertloop
-asm	mov	ax,ss
-asm	mov	ds,ax
-#endif
-
+			color = fontcolor;
+			for (row=0;row<height;row++)
+			{
+				if (source[row*step])
+				{
+					dest = VL_Span(bufferofs,py+row,px,1);
+					if (dest)
+						*dest = color;
+				}
+				if (!((height-row)&1))
+					color++;				// inc font color every second row
+			}
 			source++;
 			px++;
-			mask <<= 1;
-			if (mask == 16)
-			{
-				mask = 1;
-				dest++;
-			}
 		}
 	}
 bufferheight = height;
-bufferwidth = ((dest+1)-origdest)*4;
+bufferwidth = ((px>>2)+1-(startx>>2))*4;
 }
 
 
@@ -356,6 +303,39 @@ void VWB_Vlin (int y1, int y2, int x, int color)
 		VW_Vlin(y1,y2,x,color);
 }
 
+/*
+=======================
+=
+= VH_UpdateScreen
+=
+= Copies every marked 16x16 block from the drawing page to the display page
+= (was ID_VH_A.ASM), then shows the result.
+=
+=======================
+*/
+
+void VH_UpdateScreen (void)
+{
+	int		bx,row;
+
+	for (bx=UPDATEWIDE*UPDATEHIGH-1;bx>=0;bx--)
+	{
+		if (!update[0][bx])
+			continue;
+		update[0][bx] = 0;
+
+		for (row=0;row<16;row++)
+		{
+			long from = 4L*(blockstarts[bx]+bufferofs+row*linewidth);
+			long to = 4L*(blockstarts[bx]+displayofs+row*linewidth);
+
+			if (from+16 <= VL_VRAMSIZE && to+16 <= VL_VRAMSIZE)
+				memmove (vl_vram+to,vl_vram+from,16);
+		}
+	}
+	VL_Refresh (true);
+}
+
 void VW_UpdateScreen (void)
 {
 	VH_UpdateScreen ();
@@ -478,12 +458,12 @@ boolean FizzleFade (unsigned source, unsigned dest,
 	unsigned width,unsigned height, unsigned frames, boolean abortable)
 {
 	int			pixperframe;
-	unsigned	drawofs,pagedelta;
-	byte 		mask,maskb[8] = {1,2,4,8};
+	long		pagedelta;
 	unsigned	x,y,p,frame;
-	long		rndval;
+	uint32_t	rndval;
+	byte		*from;
 
-	pagedelta = dest-source;
+	pagedelta = (long)dest-(long)source;
 	rndval = 1;
 	y = 0;
 	pixperframe = 64000/frames;
@@ -496,66 +476,39 @@ boolean FizzleFade (unsigned source, unsigned dest,
 		if (abortable && IN_CheckAck () )
 			return true;
 
-		PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-		asm	mov	es,[screenseg]
-#endif
-
 		for (p=0;p<pixperframe;p++)
 		{
 			//
 			// seperate random value into x/y pair
 			//
-			PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-			asm	mov	ax,[WORD PTR rndval]
-			asm	mov	dx,[WORD PTR rndval+2]
-			asm	mov	bx,ax
-			asm	dec	bl
-			asm	mov	[BYTE PTR y],bl			// low 8 bits - 1 = y xoordinate
-			asm	mov	bx,ax
-			asm	mov	cx,dx
-			asm	mov	[BYTE PTR x],ah			// next 9 bits = x xoordinate
-			asm	mov	[BYTE PTR x+1],dl
+			y = (byte)((rndval&0xff)-1);			// low 8 bits - 1 = y xoordinate
+			x = ((rndval>>8)&0xff) | (((rndval>>16)&0xff)<<8);	// next 9 bits = x xoordinate
+
 			//
-			// advance to next random element
+			// advance to next random element (17 bit LFSR)
 			//
-			asm	shr	dx,1
-			asm	rcr	ax,1
-			asm	jnc	noxor
-			asm	xor	dx,0x0001
-			asm	xor	ax,0x2000
-noxor:
-			asm	mov	[WORD PTR rndval],ax
-			asm	mov	[WORD PTR rndval+2],dx
-#endif
+			if (rndval&1)
+				rndval = (rndval>>1) ^ 0x00012000;
+			else
+				rndval >>= 1;
 
 			if (x>width || y>height)
 				continue;
-			drawofs = source+ylookup[y] + (x>>2);
 
 			//
 			// copy one pixel
 			//
-			mask = x&3;
-			VGAREADMAP(mask);
-			mask = maskb[mask];
-			VGAMAPMASK(mask);
-
-			PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-			asm	mov	di,[drawofs]
-			asm	mov	al,[es:di]
-			asm add	di,[pagedelta]
-			asm	mov	[es:di],al
-#endif
+			from = VL_Span (source,y,x,1);
+			if (from && VL_Span (source+pagedelta,y,x,1))
+				from[4*pagedelta] = *from;
 
 			if (rndval == 1)		// entire sequence has been completed
 				return false;
 		}
 		frame++;
+		VL_Refresh (true);
 		while (TimeCount<frame)		// don't go too fast
-		;
+			IN_SpinWait ();
 	} while (1);
 
 

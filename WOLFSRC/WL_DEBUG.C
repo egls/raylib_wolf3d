@@ -146,7 +146,7 @@ void PicturePause (void)
 
 	LastScan = 0;
 	while (!LastScan)
-	;
+		IN_SpinWait();
 	if (LastScan != sc_Enter)
 	{
 		VW_ColorBorder (0);
@@ -356,7 +356,10 @@ static	char	buf[10];
 		VW_UpdateScreen();
 
 		while (!(scan = LastScan))
+		{
 			SD_Poll();
+			IN_SpinWait();
+		}
 
 		IN_ClearKey(scan);
 		switch (scan)
