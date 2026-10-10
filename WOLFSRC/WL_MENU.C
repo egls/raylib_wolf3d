@@ -1404,9 +1404,12 @@ int CP_LoadGame(int quick)
 			{
 				lseek(handle,32,SEEK_SET);
 				loadedgame=true;
-				LoadTheGame(handle,0,0);
+				boolean ok = LoadTheGame(handle,0,0);
 				loadedgame=false;
 				close(handle);
+
+				if (!ok)
+					return 0;
 
 				DrawFace ();
 				DrawHealth ();
@@ -1418,6 +1421,7 @@ int CP_LoadGame(int quick)
 				DrawScore ();
 				return 1;
 			}
+			return 0;
 		}
 	}
 
@@ -1445,8 +1449,16 @@ int CP_LoadGame(int quick)
 				DrawLSAction(0);
 				loadedgame=true;
 
-				LoadTheGame(handle,LSA_X+8,LSA_Y+5);
+				boolean ok = LoadTheGame(handle,LSA_X+8,LSA_Y+5);
 				close(handle);
+
+				if (!ok)
+				{
+					loadedgame=false;
+					SD_PlaySound(NOWAYSND);
+					DrawLoadSaveScreen(0);
+					continue;
+				}
 
 				StartGame=1;
 				ShootSnd();
@@ -1462,6 +1474,12 @@ int CP_LoadGame(int quick)
 
 				exit=1;
 				break;
+			}
+			else
+			{
+				SD_PlaySound(NOWAYSND);
+				DrawLoadSaveScreen(0);
+				continue;
 			}
 		}
 
@@ -1574,21 +1592,32 @@ int CP_SaveGame(int quick)
 			char *slash = strrchr(dir, '/');
 			if (slash) { *slash = '\0'; WL_EnsureDir(dir); }
 
-			unlink(name);
-			handle=open(name, O_WRONLY | O_CREAT | O_TRUNC | O_BINARY, 0644);
+			char tmpname[sizeof(name) + 8];
+			snprintf(tmpname, sizeof(tmpname), "%s.tmp", name);
+
+			handle=open(tmpname, O_WRONLY | O_CREAT | O_TRUNC | O_BINARY, 0644);
 			if (handle != -1)
 			{
 				strcpy(input,&SaveGameNames[which][0]);
 				char input32[32];
 				memset(input32, 0, sizeof(input32));
-				strncpy(input32, input, 31);
+				size_t inlen = strlen(input);
+				if (inlen > 31) inlen = 31;
+				memcpy(input32, input, inlen);
 				write(handle, input32, 32);
 				lseek(handle,32,SEEK_SET);
-				SaveTheGame(handle,0,0);
+				boolean ok = SaveTheGame(handle,0,0);
 				close(handle);
 
-				return 1;
+				if (ok)
+				{
+					rename(tmpname, name);
+					return 1;
+				}
+				unlink(tmpname);
+				return 0;
 			}
+			return 0;
 		}
 	}
 
@@ -1637,31 +1666,51 @@ int CP_SaveGame(int quick)
 
 			if (US_LineInput(LSM_X+LSItems.indent+2,LSM_Y+which*13+1,input,input,true,31,LSM_W-LSItems.indent-30))
 			{
-				SaveGamesAvail[which]=1;
-				strcpy(&SaveGameNames[which][0],input);
-
 				char dir[512];
 				snprintf(dir, sizeof(dir), "%s", name);
 				char *slash = strrchr(dir, '/');
 				if (slash) { *slash = '\0'; WL_EnsureDir(dir); }
 
-				unlink(name);
-				handle=open(name, O_WRONLY | O_CREAT | O_TRUNC | O_BINARY, 0644);
+				char tmpname[sizeof(name) + 8];
+				snprintf(tmpname, sizeof(tmpname), "%s.tmp", name);
+
+				handle=open(tmpname, O_WRONLY | O_CREAT | O_TRUNC | O_BINARY, 0644);
 				if (handle != -1)
 				{
 					char input32[32];
 					memset(input32, 0, sizeof(input32));
-					strncpy(input32, input, 31);
+					size_t inlen = strlen(input);
+					if (inlen > 31) inlen = 31;
+					memcpy(input32, input, inlen);
 					write(handle, input32, 32);
 					lseek(handle,32,SEEK_SET);
 
 					DrawLSAction(1);
-					SaveTheGame(handle,LSA_X+8,LSA_Y+5);
+					boolean ok = SaveTheGame(handle,LSA_X+8,LSA_Y+5);
 
 					close(handle);
 
-					ShootSnd();
-					exit=1;
+					if (ok)
+					{
+						rename(tmpname, name);
+						SaveGamesAvail[which]=1;
+						strcpy(&SaveGameNames[which][0],input);
+						ShootSnd();
+						exit=1;
+					}
+					else
+					{
+						unlink(tmpname);
+						SD_PlaySound(NOWAYSND);
+						DrawLoadSaveScreen(1);
+						continue;
+					}
+				}
+				else
+				{
+					SD_PlaySound(NOWAYSND);
+					DrawLoadSaveScreen(1);
+					continue;
 				}
 			}
 			else

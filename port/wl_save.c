@@ -320,8 +320,15 @@ boolean WL_DeserializeConfig (const uint8_t *buf, size_t size)
     }
     if (!MousePresent)
         mouseenabled = false;
-    if (joystickport >= 0 && joystickport < 4 && !JoysPresent[joystickport])
+    if (joystickport < 0 || joystickport >= MaxJoys)
+    {
+        joystickport = 0;
         joystickenabled = false;
+    }
+    else if (!JoysPresent[joystickport])
+    {
+        joystickenabled = false;
+    }
 
     MainMenu[6].active = 1;
     MainItems.curpos = 0;
@@ -397,6 +404,14 @@ size_t WL_SerializeSaveGame (uint8_t *buf, size_t max_size)
     if (!buf || max_size < 32768)
         return 0;
 
+    /* Build sequential list of active actors in the chain */
+    objtype *chain_ptrs[MAXACTORS];
+    int chain_count = 0;
+    for (objtype *ob = player; ob && chain_count < MAXACTORS; ob = ob->next)
+    {
+        chain_ptrs[chain_count++] = ob;
+    }
+
     uint8_t *p = buf;
     int32_t checksum = 0;
     const uint8_t *p_start;
@@ -458,10 +473,19 @@ size_t WL_SerializeSaveGame (uint8_t *buf, size_t max_size)
             uint16_t actnum;
             if ((uintptr_t)ob > 1024)
             {
-                int idx = (int)(ob - objlist);
-                if (idx < 0) idx = 0;
-                if (idx >= MAXACTORS) idx = MAXACTORS - 1;
-                actnum = (uint16_t)(0x8000 | idx);
+                int found_idx = -1;
+                for (int i = 0; i < chain_count; i++)
+                {
+                    if (chain_ptrs[i] == ob)
+                    {
+                        found_idx = i;
+                        break;
+                    }
+                }
+                if (found_idx >= 0)
+                    actnum = (uint16_t)(0x8000 | found_idx);
+                else
+                    actnum = 0;
             }
             else
             {
@@ -478,8 +502,9 @@ size_t WL_SerializeSaveGame (uint8_t *buf, size_t max_size)
         wr_i16_le(&p, (int16_t)areabyplayer[i]);
 
     /* 6. Actor chain (60 bytes per actor, ending with badobject) */
-    for (objtype *ob = player; ob; ob = ob->next)
+    for (int i = 0; i < chain_count; i++)
     {
+        objtype *ob = chain_ptrs[i];
         wr_i16_le(&p, (int16_t)ob->active);
         wr_i16_le(&p, (int16_t)ob->ticcount);
         wr_i16_le(&p, (int16_t)ob->obclass);
@@ -579,11 +604,134 @@ size_t WL_SerializeSaveGame (uint8_t *buf, size_t max_size)
 
 boolean WL_DeserializeSaveGame (const uint8_t *buf, size_t size)
 {
-    if (!buf || size < 17865) /* minimum savegame size */
+    if (!buf || size < WL_SAVE_MIN_SIZE)
         return false;
 
-    const uint8_t *p = buf;
+    /* ---------------------------------------------------------------------
+     * Pass 1: Strict validation (read-only, no modification of live state)
+     * --------------------------------------------------------------------- */
+    const uint8_t *v = buf;
     const uint8_t *end = buf + size;
+
+    /* 1. gamestate (66 bytes) */
+    int16_t v_diff = (int16_t)rd_i16_le(&v);
+    int16_t v_map = (int16_t)rd_i16_le(&v);
+    if (v_diff < 0 || v_diff > 3 || v_map < 0 || v_map > 9)
+        return false;
+    v += 62;
+
+    /* 2. LevelRatios (80 bytes) */
+    v += WL_LEVELRATIOS_SIZE;
+
+    /* 3. tilemap (4096 bytes) */
+    v += WL_TILEMAP_SIZE;
+
+    /* 4. actorat (8192 bytes) */
+    for (int i = 0; i < 64 * 64; i++)
+    {
+        uint16_t actval = rd_u16_le(&v);
+        if (actval & 0x8000)
+        {
+            int idx = actval & ~0x8000;
+            if (idx < 0 || idx >= MAXACTORS)
+                return false;
+        }
+    }
+
+    /* 5. areaconnect (1369 bytes) and areabyplayer (74 bytes) */
+    v += WL_AREACONNECT_SIZE;
+    v += WL_AREABYPLAYER_SIZE;
+
+    /* 6. Actors chain */
+    /* Validate player actor record */
+    if (v + WL_ACTOR_SIZE > end)
+        return false;
+    activetype p_act = (activetype)rd_i16_le(&v);
+    if (p_act == ac_badobject)
+        return false;
+    v += 4; /* ticcount, obclass */
+    uint16_t p_st = rd_u16_le(&v);
+    if (p_st > WL_NUM_STATES)
+        return false;
+    v += 52; /* remainder of player record */
+
+    /* Validate follower actors until ac_badobject */
+    int validated_actors = 1;
+    boolean found_term = false;
+    while (v + WL_ACTOR_SIZE <= end)
+    {
+        activetype act = (activetype)rd_i16_le(&v);
+        if (act == ac_badobject)
+        {
+            v += 58;
+            found_term = true;
+            break;
+        }
+        validated_actors++;
+        if (validated_actors > MAXACTORS)
+            return false;
+        v += 4; /* ticcount, obclass */
+        uint16_t st = rd_u16_le(&v);
+        if (st > WL_NUM_STATES)
+            return false;
+        v += 52;
+    }
+
+    if (!found_term)
+        return false;
+
+    /* Trailing section must match WL_TRAILING_SIZE exactly */
+    if ((size_t)(end - v) != WL_TRAILING_SIZE)
+        return false;
+
+    /* Validate laststatobj */
+    uint16_t v_laststat = rd_u16_le(&v);
+    if (v_laststat >= MAXSTATS)
+        return false;
+
+    /* Validate statobjlist coordinates */
+    for (int i = 0; i < MAXSTATS; i++)
+    {
+        uint8_t tx = rd_u8(&v);
+        uint8_t ty = rd_u8(&v);
+        if (tx >= 64 || ty >= 64)
+            return false;
+        v += 6;
+    }
+
+    /* Skip doorposition (128 bytes) */
+    v += WL_DOORPOSITION_SIZE;
+
+    /* Validate doorobjlist coordinates and action */
+    for (int i = 0; i < MAXDOORS; i++)
+    {
+        uint8_t d_tx = rd_u8(&v);
+        uint8_t d_ty = rd_u8(&v);
+        if (d_tx >= 64 || d_ty >= 64)
+            return false;
+        v += 4; /* vertical, lock, pad */
+        int16_t d_act = rd_i16_le(&v);
+        if (d_act < 0 || d_act > 3)
+            return false;
+        v += 2; /* ticcount */
+    }
+
+    /* Validate pushwall coordinates */
+    v += 2; /* pwallstate */
+    uint16_t pw_x = rd_u16_le(&v);
+    uint16_t pw_y = rd_u16_le(&v);
+    if (pw_x >= 64 || pw_y >= 64)
+        return false;
+    v += 4; /* pwalldir, pwallpos */
+    v += 4; /* checksum */
+
+    if (v != end)
+        return false;
+
+    /* ---------------------------------------------------------------------
+     * Pass 2: Deserialization into live game state
+     * --------------------------------------------------------------------- */
+    const uint8_t *p = buf;
     int32_t checksum = 0;
     const uint8_t *p_start;
 
@@ -637,7 +785,7 @@ boolean WL_DeserializeSaveGame (const uint8_t *buf, size_t size)
     rd_bytes(&p, tilemap, sizeof(tilemap));
     checksum = DoChecksum((byte far *)p_start, WL_TILEMAP_SIZE, checksum);
 
-    /* 4. actorat raw entries (8192 bytes) - stored temporarily for fixup after actors are loaded */
+    /* 4. actorat raw entries (8192 bytes) */
     uint16_t actorat_raw[64][64];
     p_start = p;
     for (int x = 0; x < 64; x++)
@@ -650,17 +798,20 @@ boolean WL_DeserializeSaveGame (const uint8_t *buf, size_t size)
     for (int i = 0; i < NUMAREAS; i++)
         areabyplayer[i] = (boolean)rd_i16_le(&p);
 
-    /* 6. Actors */
+    /* 6. Actors chain */
     InitActorList();
 
-    /* Read player (first actor) */
-    if (p + WL_ACTOR_SIZE > end) return false;
+    objtype *chain_ptrs[MAXACTORS];
+    int chain_count = 0;
+
+    /* Player is the first actor */
+    chain_ptrs[chain_count++] = player;
     player->active = (activetype)rd_i16_le(&p);
     player->ticcount = rd_i16_le(&p);
     player->obclass = (classtype)rd_i16_le(&p);
     player->state = WL_IDToState(rd_u16_le(&p));
     player->flags = rd_u8(&p);
-    rd_u8(&p); /* pad */
+    rd_u8(&p);
     player->distance = rd_i32_le(&p);
     player->dir = (dirtype)rd_i16_le(&p);
     player->x = rd_i32_le(&p);
@@ -668,7 +819,7 @@ boolean WL_DeserializeSaveGame (const uint8_t *buf, size_t size)
     player->tilex = rd_u16_le(&p);
     player->tiley = rd_u16_le(&p);
     player->areanumber = rd_u8(&p);
-    rd_u8(&p); /* pad */
+    rd_u8(&p);
     player->viewx = rd_i16_le(&p);
     player->viewheight = rd_u16_le(&p);
     player->transx = rd_i32_le(&p);
@@ -679,25 +830,26 @@ boolean WL_DeserializeSaveGame (const uint8_t *buf, size_t size)
     player->temp1 = rd_i16_le(&p);
     player->temp2 = rd_i16_le(&p);
     player->temp3 = rd_i16_le(&p);
-    rd_u16_le(&p); /* next */
-    rd_u16_le(&p); /* prev */
+    rd_u16_le(&p);
+    rd_u16_le(&p);
 
-    while (p + WL_ACTOR_SIZE <= end)
+    while (1)
     {
         activetype act = (activetype)rd_i16_le(&p);
         if (act == ac_badobject)
         {
-            p += 58; /* skip remainder of badobject marker */
+            p += 58;
             break;
         }
 
         GetNewActor();
+        chain_ptrs[chain_count++] = new;
         new->active = act;
         new->ticcount = rd_i16_le(&p);
         new->obclass = (classtype)rd_i16_le(&p);
         new->state = WL_IDToState(rd_u16_le(&p));
         new->flags = rd_u8(&p);
-        rd_u8(&p); /* pad */
+        rd_u8(&p);
         new->distance = rd_i32_le(&p);
         new->dir = (dirtype)rd_i16_le(&p);
         new->x = rd_i32_le(&p);
@@ -705,7 +857,7 @@ boolean WL_DeserializeSaveGame (const uint8_t *buf, size_t size)
         new->tilex = rd_u16_le(&p);
         new->tiley = rd_u16_le(&p);
         new->areanumber = rd_u8(&p);
-        rd_u8(&p); /* pad */
+        rd_u8(&p);
         new->viewx = rd_i16_le(&p);
         new->viewheight = rd_u16_le(&p);
         new->transx = rd_i32_le(&p);
@@ -716,11 +868,11 @@ boolean WL_DeserializeSaveGame (const uint8_t *buf, size_t size)
         new->temp1 = rd_i16_le(&p);
         new->temp2 = rd_i16_le(&p);
         new->temp3 = rd_i16_le(&p);
-        rd_u16_le(&p); /* next */
-        rd_u16_le(&p); /* prev */
+        rd_u16_le(&p);
+        rd_u16_le(&p);
     }
 
-    /* Fixup actorat */
+    /* Fixup actorat using chain_ptrs */
     for (int x = 0; x < 64; x++)
     {
         for (int y = 0; y < 64; y++)
@@ -729,8 +881,8 @@ boolean WL_DeserializeSaveGame (const uint8_t *buf, size_t size)
             if (val & 0x8000)
             {
                 int idx = val & ~0x8000;
-                if (idx >= 0 && idx < MAXACTORS)
-                    actorat[x][y] = &objlist[idx];
+                if (idx >= 0 && idx < chain_count)
+                    actorat[x][y] = chain_ptrs[idx];
                 else
                     actorat[x][y] = NULL;
             }
@@ -744,10 +896,7 @@ boolean WL_DeserializeSaveGame (const uint8_t *buf, size_t size)
     /* 7. laststatobj (2 bytes) and statobjlist (3200 bytes) */
     p_start = p;
     uint16_t last_stat_idx = rd_u16_le(&p);
-    if (last_stat_idx < MAXSTATS)
-        laststatobj = &statobjlist[last_stat_idx];
-    else
-        laststatobj = &statobjlist[0];
+    laststatobj = &statobjlist[last_stat_idx];
     checksum = DoChecksum((byte far *)p_start, WL_LASTSTATOBJ_SIZE, checksum);
 
     p_start = p;
@@ -755,7 +904,7 @@ boolean WL_DeserializeSaveGame (const uint8_t *buf, size_t size)
     {
         statobjlist[i].tilex = rd_u8(&p);
         statobjlist[i].tiley = rd_u8(&p);
-        rd_u16_le(&p); /* skip dummy visspot */
+        rd_u16_le(&p);
         statobjlist[i].visspot = &spotvis[statobjlist[i].tilex][statobjlist[i].tiley];
         statobjlist[i].shapenum = rd_i16_le(&p);
         statobjlist[i].flags = rd_u8(&p);
@@ -776,7 +925,7 @@ boolean WL_DeserializeSaveGame (const uint8_t *buf, size_t size)
         doorobjlist[i].tiley = rd_u8(&p);
         doorobjlist[i].vertical = (boolean)rd_i16_le(&p);
         doorobjlist[i].lock = rd_u8(&p);
-        rd_u8(&p); /* pad */
+        rd_u8(&p);
         doorobjlist[i].action = rd_i16_le(&p);
         doorobjlist[i].ticcount = rd_i16_le(&p);
     }

@@ -749,6 +749,184 @@ static int test_file_roundtrip (void)
 }
 
 /* -------------------------------------------------------------------------
+ * Test 6: Actor Holes and Reuse Restoration
+ * ------------------------------------------------------------------------- */
+
+static int test_actor_holes_and_reuse (void)
+{
+    uint8_t buf[65536];
+
+    InitActorList();
+    GetNewActor(); /* slot 1 */
+    GetNewActor(); /* slot 2 */
+
+    objtype *survivor = new;
+    survivor->hitpoints = 77;
+    survivor->state = &s_grdstand;
+    survivor->active = ac_yes;
+
+    /* Simulate removing slot 1 (hole in chain), linking player directly to survivor */
+    player->next = survivor;
+    survivor->prev = player;
+    objcount--;
+
+    memset(actorat, 0, sizeof(actorat));
+    actorat[6][6] = survivor;
+
+    size_t len = WL_SerializeSaveGame(buf, sizeof(buf));
+    CHECK(len > 0);
+
+    /* Verify that on load, survivor is reallocated in sequential slot 1,
+     * and actorat[6][6] correctly points to survivor (slot 1), NOT old slot 2. */
+    CHECK(WL_DeserializeSaveGame(buf, len) == true);
+    CHECK(player->next != NULL);
+    CHECK(player->next->hitpoints == 77);
+    CHECK(player->next->state == &s_grdstand);
+    CHECK(actorat[6][6] == player->next);
+    CHECK((actorat[6][6] - objlist) == 1);
+
+    puts("PASS: actor holes and reuse restoration");
+    return 0;
+}
+
+/* -------------------------------------------------------------------------
+ * Test 7: Truncated Savegame Rejection
+ * ------------------------------------------------------------------------- */
+
+static int test_truncated_savegame (void)
+{
+    uint8_t buf[65536];
+
+    InitActorList();
+    player->active = ac_yes;
+    player->state = &s_player;
+
+    size_t len = WL_SerializeSaveGame(buf, sizeof(buf));
+    CHECK(len > 0);
+
+    /* Test range of truncated lengths */
+    CHECK(WL_DeserializeSaveGame(buf, 0) == false);
+    CHECK(WL_DeserializeSaveGame(buf, 1) == false);
+    CHECK(WL_DeserializeSaveGame(buf, WL_SAVE_MIN_SIZE - 1) == false);
+    CHECK(WL_DeserializeSaveGame(buf, len - 1) == false);
+    CHECK(WL_DeserializeSaveGame(buf, len - 4) == false);
+    CHECK(WL_DeserializeSaveGame(buf, len - 100) == false);
+    CHECK(WL_DeserializeSaveGame(buf, len - WL_TRAILING_SIZE) == false);
+    CHECK(WL_DeserializeSaveGame(buf, len - WL_TRAILING_SIZE + 1) == false);
+
+    /* Full buffer must succeed */
+    CHECK(WL_DeserializeSaveGame(buf, len) == true);
+
+    puts("PASS: truncated save rejection");
+    return 0;
+}
+
+/* -------------------------------------------------------------------------
+ * Test 8: Corrupt Savegame Rejection
+ * ------------------------------------------------------------------------- */
+
+static int test_corrupt_savegame (void)
+{
+    uint8_t buf[65536];
+    uint8_t corrupt[65536];
+
+    InitActorList();
+    player->active = ac_yes;
+    player->state = &s_player;
+    memset(actorat, 0, sizeof(actorat));
+    actorat[5][5] = player;
+
+    size_t len = WL_SerializeSaveGame(buf, sizeof(buf));
+    CHECK(len > 0);
+
+    /* 1. Missing badobject terminator */
+    memcpy(corrupt, buf, len);
+    size_t term_offset = 13877 + 60;
+    corrupt[term_offset] = 1;
+    CHECK(WL_DeserializeSaveGame(corrupt, len) == false);
+
+    /* 2. Invalid actor state ID (> WL_NUM_STATES) */
+    memcpy(corrupt, buf, len);
+    corrupt[13877 + 6] = 0xff;
+    corrupt[13877 + 7] = 0x01; /* ID 511 > 305 */
+    CHECK(WL_DeserializeSaveGame(corrupt, len) == false);
+
+    /* 3. Out-of-bounds statobj coordinates (>= 64) */
+    memcpy(corrupt, buf, len);
+    size_t trailing_start = len - WL_TRAILING_SIZE;
+    corrupt[trailing_start + 2] = 64; /* tx >= 64 */
+    CHECK(WL_DeserializeSaveGame(corrupt, len) == false);
+
+    /* 4. Out-of-bounds pushwall coordinates */
+    memcpy(corrupt, buf, len);
+    size_t pwall_offset = len - WL_CHECKSUM_SIZE - WL_PWALL_SIZE;
+    corrupt[pwall_offset + 2] = 65; /* pw_x >= 64 */
+    CHECK(WL_DeserializeSaveGame(corrupt, len) == false);
+
+    /* 5. Extra garbage appended past valid save */
+    uint8_t extra[65536];
+    memcpy(extra, buf, len);
+    extra[len] = 0xaa;
+    CHECK(WL_DeserializeSaveGame(extra, len + 1) == false);
+
+    puts("PASS: corrupt save rejection");
+    return 0;
+}
+
+/* -------------------------------------------------------------------------
+ * Test 9: Joystick Bound and Presence Validation
+ * ------------------------------------------------------------------------- */
+
+static int test_joystick_bound_validation (void)
+{
+    uint8_t buf[WL_CONFIG_SIZE];
+
+    /* Initialize config */
+    JoysPresent[0] = true;
+    JoysPresent[1] = true;
+    joystickenabled = true;
+    joystickport = 0;
+
+    size_t len = WL_SerializeConfig(buf, sizeof(buf));
+    CHECK(len == WL_CONFIG_SIZE);
+
+    /* Test joystickport >= MaxJoys (e.g. 2, 255) */
+    buf[476] = 2;
+    buf[477] = 0;
+    buf[470] = 1; /* joystickenabled = true */
+    buf[471] = 0;
+    CHECK(WL_DeserializeConfig(buf, len) == true);
+    CHECK(joystickport == 0);
+    CHECK(joystickenabled == false);
+
+    buf[476] = 255;
+    buf[477] = 0;
+    buf[470] = 1;
+    CHECK(WL_DeserializeConfig(buf, len) == true);
+    CHECK(joystickport == 0);
+    CHECK(joystickenabled == false);
+
+    /* Test joystickport = 1 when JoysPresent[1] == false */
+    JoysPresent[1] = false;
+    buf[476] = 1;
+    buf[477] = 0;
+    buf[470] = 1;
+    CHECK(WL_DeserializeConfig(buf, len) == true);
+    CHECK(joystickenabled == false);
+
+    /* Test joystickport = 0 when JoysPresent[0] == true */
+    buf[476] = 0;
+    buf[477] = 0;
+    buf[470] = 1;
+    CHECK(WL_DeserializeConfig(buf, len) == true);
+    CHECK(joystickport == 0);
+    CHECK(joystickenabled == true);
+
+    puts("PASS: joystick bound and presence validation");
+    return 0;
+}
+
+/* -------------------------------------------------------------------------
  * Main
  * ------------------------------------------------------------------------- */
 
@@ -760,6 +938,10 @@ int main (void)
     if (test_config_roundtrip() != 0) return 1;
     if (test_savegame_roundtrip() != 0) return 1;
     if (test_file_roundtrip() != 0) return 1;
+    if (test_actor_holes_and_reuse() != 0) return 1;
+    if (test_truncated_savegame() != 0) return 1;
+    if (test_corrupt_savegame() != 0) return 1;
+    if (test_joystick_bound_validation() != 0) return 1;
 
     puts("ALL SAVE & CONFIG TESTS PASSED!");
     return 0;
