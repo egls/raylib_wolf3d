@@ -419,8 +419,11 @@ void RL_AudioPump(void) {
     uint64_t due;
     if (!audio_open) return;
     clock_gettime(CLOCK_MONOTONIC,&now);
+    /* Allow 1000 ppm of DAC clock drift relative to CLOCK_MONOTONIC.
+     * The queue limit still bounds latency to 80 ms; this cap only prevents
+     * a null/racing sink from advancing synthesis without wall-clock time. */
     due=(uint64_t)(((now.tv_sec-audio_epoch.tv_sec)+
-                   (now.tv_nsec-audio_epoch.tv_nsec)*1e-9)*48000)+AUDIO_AHEAD;
+                   (now.tv_nsec-audio_epoch.tv_nsec)*1e-9)*48000*1.001)+AUDIO_AHEAD;
     r=__atomic_load_n(&audio_read,__ATOMIC_ACQUIRE);
     w=__atomic_load_n(&audio_write,__ATOMIC_RELAXED);
     queued=w-r;
