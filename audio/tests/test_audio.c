@@ -43,6 +43,29 @@ static void contracts(void) {
     sd_audio_stop_effect(s); sd_audio_stop_pcm(s); sd_audio_stop_music(s);
     sd_audio_destroy(s);
 }
+static void placeholder_music(void) {
+    uint8_t placeholder[88]={0}, empty[]={0,0};
+    int16_t out[2000],expected[2000];
+    sd_audio *s=sd_audio_create(44100),*control=sd_audio_create(44100);
+    CHECK(s && control);
+    memcpy(placeholder+2,"DUNGEON.IMF",11);
+    sd_audio_set_register_hook(s,hook,NULL); events=0;
+    CHECK(!sd_audio_music(s,placeholder,sizeof(placeholder),1));
+    CHECK(!sd_audio_music(s,empty,sizeof(empty),0));
+    sd_audio_mix(s,out,1000);
+    CHECK(events==0); /* No tag writes, nor stop writes on rejected starts. */
+    for (unsigned i=0;i<2000;++i) CHECK(out[i]==0);
+    /* Rejection must not stop or replace already playing music. */
+    sd_audio_mix(control,expected,1000);
+    CHECK(sd_audio_music(s,music,sizeof(music),1));
+    CHECK(sd_audio_music(control,music,sizeof(music),1));
+    events=0;
+    CHECK(!sd_audio_music(s,placeholder,sizeof(placeholder),1));
+    CHECK(events==0);
+    sd_audio_mix(s,out,1000); sd_audio_mix(control,expected,1000);
+    CHECK(!memcmp(out,expected,sizeof(out)));
+    sd_audio_destroy(s); sd_audio_destroy(control);
+}
 static void partition(void) {
     int16_t a[12000],b[12000]; sd_audio *x=sd_audio_create(48001),*y=sd_audio_create(48001);
     CHECK(sd_audio_music(x,music,sizeof(music),1)); CHECK(sd_audio_music(y,music,sizeof(music),1));
@@ -68,4 +91,4 @@ static void pcm_pc(void) {
     sd_audio_stop_effect(s); sd_audio_mix(s,out,8); CHECK(out[0]==0);
     sd_audio_destroy(s);
 }
-int main(void) { timing(); contracts(); partition(); pcm_pc(); puts("PASS: tick timing, looping, malformed inputs, priorities, partitioning, PCM, PC"); return 0; }
+int main(void) { timing(); contracts(); placeholder_music(); partition(); pcm_pc(); puts("PASS: tick timing, looping, malformed inputs, zero-length placeholders, priorities, partitioning, PCM, PC"); return 0; }

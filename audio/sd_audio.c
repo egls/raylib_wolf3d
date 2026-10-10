@@ -53,13 +53,12 @@ void sd_audio_stop_music(sd_audio *s) {
     for (i=1; i<9; ++i) reg(s, (uint8_t)(0xb0+i), 0);
 }
 int sd_audio_music(sd_audio *s, const uint8_t *p, size_t n, int loop) {
-    if (!p || n < 4) return 0;
-    if (le16(p)) {
-        size_t len = le16(p);
-        if (len > n-2 || len % 4) return 0;
-        p += 2; n = len;
-    }
-    if (!n || n % 4) return 0;
+    if (!p || n < 2) return 0;
+    size_t len = le16(p);
+    /* Wolf MusicGroup is always length-prefixed. Zero-length shareware
+     * placeholders may contain tags, but those bytes are not IMF events. */
+    if (!len || len > n-2 || len % 4) return 0;
+    p += 2; n = len;
     sd_audio_stop_music(s);
     s->music=p; s->music_len=n; s->music_pos=0;
     s->music_time=0; s->next_event=0; s->loop=loop;

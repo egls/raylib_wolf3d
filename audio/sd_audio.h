@@ -13,9 +13,9 @@ typedef void (*sd_register_hook)(void *user, uint64_t frame, uint8_t reg, uint8_
 sd_audio *sd_audio_create(unsigned sample_rate);
 void sd_audio_destroy(sd_audio *s);
 void sd_audio_set_register_hook(sd_audio *s, sd_register_hook hook, void *user);
-/* IMF type 0 (first register/value word must be zero) or type 1
- * (little-endian length prefix), using the original engine detection. Returns 0 on
- * malformed input; failed starts leave current playback unchanged. */
+/* Length-prefixed Wolf MusicGroup (little-endian event byte length).
+ * Returns 0 for zero-length placeholders or malformed input; failed starts
+ * leave current playback unchanged. Headerless IMF is not accepted. */
 int sd_audio_music(sd_audio *s, const uint8_t *data, size_t bytes, int loop);
 void sd_audio_stop_music(sd_audio *s);
 /* Raw on-disk SoundCommon + instrument/block/data, not host structs.

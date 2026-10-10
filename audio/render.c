@@ -95,7 +95,7 @@ int main(int argc, char **argv) {
         if (!strcmp(argv[2],"music")) {
             if (index>=27) fail("Music index out of range");
             data=chunk(h,d,sounds*3+index);
-            if (!sd_audio_music(s,data.p,data.n,1)) fail("Invalid IMF");
+            if (!sd_audio_music(s,data.p,data.n,1)) fail("Invalid or zero-length music chunk");
         } else {
             if (index>=sounds) fail("Sound index out of range");
             if (!strcmp(argv[2],"adlib")) {

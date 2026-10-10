@@ -57,7 +57,12 @@ The v1.4 shareware AUDIOHED has 289 offsets: 87 PC, 87 AdLib, 87 digitized
 placeholder slots, and 27 music chunks. `WOLFSRC/AUDIOWL1.H` describes earlier
 69-slot data, also recognized by the harness; its constants must not be used
 for the v1.4 data. SoundCommon is a 4-byte LE length plus 2-byte LE priority;
-AdLib adds the 16-byte instrument, one block byte, then frequency bytes. Parsing
+AdLib adds the 16-byte instrument, one block byte, then frequency bytes.
+Music is strictly a length-prefixed `MusicGroup`: a 2-byte LE event byte length,
+then that many IMF event bytes. A zero length is rejected without changing
+current playback, even if trailing bytes contain an `.IMF` tag. The harness
+reports `Invalid or zero-length music chunk`; headerless IMF is unsupported.
+Parsing
 uses bytes rather than packed native structs. PCM indexes refer directly to
 the VSWAP final sound-info table, not logical game SFX numbers. The harness
 joins VSWAP pages according to the original 16-bit sound length; the module
@@ -102,7 +107,11 @@ python3 audio/tests/compare_reference.py "$HOME/wolf3d-data/Wolf4SDL" "$HOME/wol
 The test extracts the **actual** pinned reference functions into a temporary
 program and supplies a Nuked output adapter. It compares every PCM sample for
 music 0 (12 seconds), AdLib 0/24/26, PC 0/24, and digitized 0/1/2; IMF/AdLib
-also compare every register write and frame timestamp. All nine cases passed
+also compare every register write and frame timestamp. The reference adapter
+uses the MusicGroup length without a headerless fallback. Every zero-length
+shareware music placeholder is additionally checked: the reference stays silent
+with only initialization stop writes, and the renderer rejects it with no
+register writes or WAV output. All nine non-placeholder cases passed
 at 44100 Hz, where reference tick divisors are exact. This establishes timing,
 layout, synthesis commands, and resampling equivalence; it does not compare
 Nuked timbre against Wolf4SDL's different MAME/DBOPL emulator or physical OPL2

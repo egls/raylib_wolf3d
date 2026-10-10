@@ -84,9 +84,11 @@ int main(int argc,char **argv) {
  OPL3_Reset(&chip,44100); OPL3_WriteReg(&chip,1,0x20);
  if(!strcmp(argv[1],"music")) {
   alOut(0xbd,0); for(int i=1;i<9;i++) alOut(0xb0+i,0);
+  if(size<2) return 1;
   unsigned len=data[0] | data[1]<<8;
-  sqHack=sqHackPtr=(word *)(void *)(len ? data+2 : data);
-  sqHackLen=sqHackSeqLen=len ? len : size; sqActive=1;
+  if(len>(unsigned)(size-2) || len%4) return 1;
+  sqHack=sqHackPtr=(word *)(void *)(data+2);
+  sqHackLen=sqHackSeqLen=len; sqActive=(len!=0);
  } else if(!strcmp(argv[1],"adlib")) SDL_ALPlaySound((AdLibSound *)(void *)data);
  else if(!strcmp(argv[1],"pc")) { pcLengthLeft=*(uint32_t *)(void *)data; pcSound=data+6; }
  unsigned seconds=(unsigned)atoi(argv[5]);
@@ -176,6 +178,39 @@ def main():
                     raise SystemExit(f'FAIL {kind} {index}: register traces differ')
             print(f'PASS {kind} {index}: {seconds*44100} stereo frames identical, '
                   f'sha256={hashlib.sha256(ours).hexdigest()}')
+        # Wolf MusicGroup length is authoritative, including registered-only
+        # tags in shareware chunks. Reference has no events; our API rejects.
+        placeholders = 0
+        for index in range(27):
+            raw = d[offsets[261+index]:offsets[262+index]]
+            if len(raw) < 2 or struct.unpack_from('<H', raw)[0] != 0:
+                continue
+            (tmp / 'chunk').write_bytes(raw)
+            subprocess.run([str(tmp / 'reference'), 'music', str(tmp / 'chunk'),
+                            str(tmp / 'ref.raw'), str(tmp / 'ref.csv'), '1'],
+                           check=True)
+            if any((tmp / 'ref.raw').read_bytes()):
+                raise SystemExit(f'FAIL placeholder {index}: reference not silent')
+            with (tmp / 'ref.csv').open() as f:
+                writes = list(csv.reader(f))
+            expected = [['0', str(reg), '0']
+                        for reg in [0xbd, *range(0xb1, 0xb9)]]
+            if writes != expected:
+                raise SystemExit(f'FAIL placeholder {index}: reference tag writes')
+            wav_path = tmp / 'placeholder.wav'
+            result = subprocess.run(
+                [str(args.renderer.resolve()), str(args.data), 'music',
+                 str(index), '120', str(wav_path), '--trace',
+                 str(tmp / 'out.csv')], capture_output=True, text=True)
+            if (result.returncode != 1 or
+                    'zero-length music chunk' not in result.stderr or
+                    (tmp / 'out.csv').read_bytes() or wav_path.exists()):
+                raise SystemExit(f'FAIL placeholder {index}: not cleanly rejected')
+            placeholders += 1
+        if not placeholders:
+            raise SystemExit('FAIL: no shareware placeholder cases exercised')
+        print(f'PASS: {placeholders} shareware music placeholders: '
+              'reference silent; renderer rejects without register writes')
     print('PASS: actual Wolf4SDL IMF/AdLib/PC/PCM routines; '
           'same Nuked output adapter, no device capture')
 
