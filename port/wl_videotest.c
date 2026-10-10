@@ -88,6 +88,11 @@ static long Expand (const byte *in, long inlen, byte *out, long outlen)
 	return o;
 }
 
+static uint32_t ReadLE32 (const byte *p)
+{
+	return p[0] | (p[1] << 8) | (p[2] << 16) | ((uint32_t)p[3] << 24);
+}
+
 static byte *GetChunk (int c, long *len)
 {
 	long	off = ChunkOffset(c), end = ChunkOffset(c + 1), n;
@@ -95,7 +100,7 @@ static byte *GetChunk (int c, long *len)
 
 	if (off < 0 || off == 0xffffff || end < off)
 		return NULL;
-	n = *(uint32_t *)(grdata + off);		/* expanded length (little endian) */
+	n = ReadLE32(grdata + off);		/* expanded length (little endian) */
 	if (n <= 0 || n > 70000)
 		return NULL;
 	out = malloc(n);
@@ -131,7 +136,7 @@ static byte *FindFullscreenPic (int nth)
 	 * every chunk it starts with its expanded length */
 	{
 		long off = ChunkOffset(0), end = ChunkOffset(1);
-		long n = *(uint32_t *)(grdata + off);
+		long n = ReadLE32(grdata + off);
 
 		pt = malloc(n);
 		plen = Expand(grdata + off + 4, end - off - 4, pt, n);
