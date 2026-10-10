@@ -216,6 +216,12 @@ if(BUILD_TESTING)
     $<TARGET_FILE:raylib_wolf3d> ${WOLF3D_TEST_DATA} ${CMAKE_CURRENT_BINARY_DIR}/persist_check)
   set_tests_properties(persist_check PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED" TIMEOUT 600)
 
+  # The persistence streams and paths on their own: no data, no display (WOLF-18).
+  add_executable(wolf_persist_test tests/persist_test.c port/wl_persist.c)
+  target_include_directories(wolf_persist_test PRIVATE port WOLFSRC)
+  target_compile_options(wolf_persist_test PRIVATE ${WOLF3D_WARNINGS} ${WOLF3D_GAME_FLAGS})
+  add_test(NAME core_persist COMMAND wolf_persist_test)
+
   # ---------------------------------------------------------------------------
   # Tests (ctest): the raylib keyboard translation against a fake raylib, no display needed.
   # ---------------------------------------------------------------------------
@@ -230,7 +236,7 @@ if(BUILD_TESTING)
 
   option(WOLF3D_CORE_SANITIZERS "Use ASan/UBSan on headless core tests" OFF)
   if(WOLF3D_CORE_SANITIZERS AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-    foreach(t wolf_core_data_test wolf_codec_test wolf_render_test rl_keys_test)
+    foreach(t wolf_core_data_test wolf_codec_test wolf_render_test wolf_persist_test rl_keys_test)
       target_compile_options(${t} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
       target_link_options(${t} PRIVATE -fsanitize=address,undefined)
     endforeach()
