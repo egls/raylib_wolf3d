@@ -42,8 +42,9 @@
 //	Internal variables
 #define	ConfigVersion	1
 
-static	char		*ParmStrings[] = {"TEDLEVEL","NOWAIT"},
-					*ParmStrings2[] = {"COMP","NOCOMP"};
+// WOLF-7: nil-terminated; US_CheckParm scans until a nil entry
+static	char		*ParmStrings[] = {"TEDLEVEL","NOWAIT",nil},
+					*ParmStrings2[] = {"COMP","NOCOMP",nil};
 static	boolean		US_Started;
 
 		boolean		Button0,Button1,
@@ -243,7 +244,7 @@ US_CheckParm(char *parm,char **strings)
 			*p,*s;
 	int		i;
 
-	while (!isalpha(*parm))	// Skip non-alphas
+	while (*parm && !isalpha(*parm))	// Skip non-alphas (WOLF-7: stop at the end)
 		parm++;
 
 	for (i = 0;*strings && **strings;i++)
@@ -290,25 +291,27 @@ US_SetPrintRoutines(void (*measure)(char far *,word *,word *),void (*print)(char
 void
 US_Print(char far *s)
 {
-	char	c,far *se;
+	// WOLF-7: copy each line out; string literals are read-only now
+	char	line[256];
+	size_t	n;
 	word	w,h;
 
 	while (*s)
 	{
-		se = s;
-		while ((c = *se) && (c != '\n'))
-			se++;
-		*se = '\0';
+		n = strcspn(s,"\n");
+		if (n >= sizeof(line))
+			n = sizeof(line) - 1;
+		memcpy(line,s,n);
+		line[n] = '\0';
 
-		USL_MeasureString(s,&w,&h);
+		USL_MeasureString(line,&w,&h);
 		px = PrintX;
 		py = PrintY;
-		USL_DrawString(s);
+		USL_DrawString(line);
 
-		s = se;
-		if (c)
+		s += n;
+		if (*s == '\n')
 		{
-			*se = c;
 			s++;
 
 			PrintX = WindowX;
@@ -413,23 +416,24 @@ US_CPrintLine(char far *s)
 void
 US_CPrint(char far *s)
 {
-	char	c,far *se;
+	// WOLF-7: callers pass string literals, which are read-only now, so each
+	// line is copied out instead of being terminated in place.
+	char	line[256];
+	size_t	n;
 
 	while (*s)
 	{
-		se = s;
-		while ((c = *se) && (c != '\n'))
-			se++;
-		*se = '\0';
+		n = strcspn(s,"\n");
+		if (n >= sizeof(line))
+			n = sizeof(line) - 1;
+		memcpy(line,s,n);
+		line[n] = '\0';
 
-		US_CPrintLine(s);
+		US_CPrintLine(line);
 
-		s = se;
-		if (c)
-		{
-			*se = c;
+		s += n;
+		if (*s == '\n')
 			s++;
-		}
 	}
 }
 
@@ -607,21 +611,13 @@ US_LineInput(int x,int y,char *buf,char *def,boolean escok,
 		if (cursorvis)
 			USL_XORICursor(x,y,s,cursor);
 
-	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-	asm	pushf
-	asm	cli
-#endif
-
+		// WOLF-7: was pushf/cli ... popf around the reads so the keyboard ISR
+		// couldn't change them halfway; key events now arrive only in
+		// IN_PumpEvents (from VW_UpdateScreen at the bottom of this loop)
 		sc = LastScan;
 		LastScan = sc_None;
 		c = LastASCII;
 		LastASCII = key_None;
-
-	PORT_ASM();	// WOLF-2: 16-bit inline asm fenced off below
-#if 0
-	asm	popf
-#endif
 
 		switch (sc)
 		{
@@ -666,7 +662,7 @@ US_LineInput(int x,int y,char *buf,char *def,boolean escok,
 		case sc_BackSpace:
 			if (cursor)
 			{
-				strcpy(s + cursor - 1,s + cursor);
+				memmove(s + cursor - 1,s + cursor,strlen(s + cursor) + 1);	// WOLF-7: strcpy can't overlap
 				cursor--;
 				redraw = true;
 			}
@@ -676,7 +672,7 @@ US_LineInput(int x,int y,char *buf,char *def,boolean escok,
 		case sc_Delete:
 			if (s[cursor])
 			{
-				strcpy(s + cursor,s + cursor + 1);
+				memmove(s + cursor,s + cursor + 1,strlen(s + cursor + 1) + 1);	// WOLF-7: strcpy can't overlap
 				redraw = true;
 			}
 			c = key_None;

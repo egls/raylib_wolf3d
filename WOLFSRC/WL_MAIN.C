@@ -1,6 +1,7 @@
 // WL_MAIN.C
 
 #include "WL_DEF.H"
+#include "wl_persist.h"	// WOLF-7: config/save file location and format
 #pragma hdrstop
 
 
@@ -86,40 +87,102 @@ char	configname[13]="CONFIG.";
 ====================
 */
 
+// WOLF-7: the config is written field by field, little-endian, with fixed
+// sizes (see port/wl_persist.h), to $XDG_CONFIG_HOME/raylib_wolf3d/.
+
+static void WriteInts (wl_stream *s, int *v, int n)
+{
+	while (n--)
+		WS_W16 (s,(word)*v++);
+}
+
+static void ReadInts (wl_stream *s, int *v, int n)
+{
+	while (n--)
+		*v++ = WS_RS16 (s);
+}
+
+static boolean ReadConfigFile (SDMode *sd, SMMode *sm, SDSMode *sds)
+{
+	wl_stream	s;
+	HighScore	scores[MaxScores];
+	char		magic[8];
+	int			file,i,n,ok,v[4+4+NUMBUTTONS+4+4+2];	// 4 flags, then the ints below
+
+	if ( (file = open(WL_UserFile(configname),O_BINARY | O_RDONLY)) == -1)
+		return false;
+	WS_Init (&s);
+	ok = WS_ReadFile (file,&s);
+	close(file);
+
+	WS_RBytes (&s,magic,sizeof(magic));
+	ok = ok && !memcmp(magic,WL_CONFIG_MAGIC,sizeof(magic))
+		&& WS_R16 (&s) == WL_CONFIG_VERSION;
+
+	for (i=0;i<MaxScores;i++)
+	{
+		WS_RBytes (&s,scores[i].name,MaxHighName+1);
+		scores[i].name[MaxHighName] = 0;
+		scores[i].score = WS_RS32 (&s);
+		scores[i].completed = WS_R16 (&s);
+		scores[i].episode = WS_R16 (&s);
+	}
+	*sd = WS_R16 (&s);
+	*sm = WS_R16 (&s);
+	*sds = WS_R16 (&s);
+	v[0] = WS_R8 (&s);			// mouseenabled
+	v[1] = WS_R8 (&s);			// joystickenabled
+	v[2] = WS_R8 (&s);			// joypadenabled
+	v[3] = WS_R8 (&s);			// joystickprogressive
+	i = WS_RS16 (&s);			// joystickport
+	ReadInts (&s,v+4,4+NUMBUTTONS+4+4+2);
+
+	ok = ok && !s.bad
+		&& *sd <= sdm_AdLib && *sm <= smm_AdLib && *sds <= sds_SoundBlaster
+		&& i >= 0 && i <= 1;
+	// scan codes index Keyboard[], button mappings index buttonstate[]
+	for (n=4;n<8+NUMBUTTONS;n++)
+		ok = ok && v[n] >= 0 && v[n] < NumCodes;
+	for (n=8+NUMBUTTONS;n<16+NUMBUTTONS;n++)
+		ok = ok && v[n] >= bt_nobutton && v[n] < NUMBUTTONS;
+	WS_Free (&s);
+	if (!ok)
+	{
+		fprintf (stderr,"raylib_wolf3d: ignoring invalid %s\n",WL_UserFile(configname));
+		return false;
+	}
+
+	memcpy (Scores,scores,sizeof(scores));
+	mouseenabled = v[0];
+	joystickenabled = v[1];
+	joypadenabled = v[2];
+	joystickprogressive = v[3];
+	joystickport = i;
+	memcpy (dirscan,v+4,sizeof(dirscan));
+	memcpy (buttonscan,v+8,sizeof(buttonscan));
+	memcpy (buttonmouse,v+8+NUMBUTTONS,sizeof(buttonmouse));
+	memcpy (buttonjoy,v+12+NUMBUTTONS,sizeof(buttonjoy));
+	viewsize = v[16+NUMBUTTONS];
+	mouseadjustment = v[17+NUMBUTTONS];
+	if (viewsize < 4 || viewsize > 19)
+		viewsize = 15;
+	if (mouseadjustment < 0 || mouseadjustment > 9)
+		mouseadjustment = 5;
+	return true;
+}
+
 void ReadConfig(void)
 {
-	int                     file;
 	SDMode          sd;
 	SMMode          sm;
 	SDSMode         sds;
 
 
-	if ( (file = open(configname,O_BINARY | O_RDONLY)) != -1)
+	if (ReadConfigFile (&sd,&sm,&sds))
 	{
 	//
 	// valid config file
 	//
-		read(file,Scores,sizeof(HighScore) * MaxScores);
-
-		read(file,&sd,sizeof(sd));
-		read(file,&sm,sizeof(sm));
-		read(file,&sds,sizeof(sds));
-
-		read(file,&mouseenabled,sizeof(mouseenabled));
-		read(file,&joystickenabled,sizeof(joystickenabled));
-		read(file,&joypadenabled,sizeof(joypadenabled));
-		read(file,&joystickprogressive,sizeof(joystickprogressive));
-		read(file,&joystickport,sizeof(joystickport));
-
-		read(file,&dirscan,sizeof(dirscan));
-		read(file,&buttonscan,sizeof(buttonscan));
-		read(file,&buttonmouse,sizeof(buttonmouse));
-		read(file,&buttonjoy,sizeof(buttonjoy));
-
-		read(file,&viewsize,sizeof(viewsize));
-		read(file,&mouseadjustment,sizeof(mouseadjustment));
-
-		close(file);
 
 		if (sd == sdm_AdLib && !AdLibPresent && !SoundBlasterPresent)
 		{
@@ -191,35 +254,48 @@ void ReadConfig(void)
 
 void WriteConfig(void)
 {
-	int                     file;
+	int                     file,i;
+	wl_stream		s;
 
-	file = open(configname,O_CREAT | O_BINARY | O_WRONLY,
-				S_IREAD | S_IWRITE | S_IFREG);
+	WS_Init (&s);
+	WS_WBytes (&s,WL_CONFIG_MAGIC,8);
+	WS_W16 (&s,WL_CONFIG_VERSION);
+
+	for (i=0;i<MaxScores;i++)
+	{
+		WS_WBytes (&s,Scores[i].name,MaxHighName+1);
+		WS_W32 (&s,(longword)Scores[i].score);
+		WS_W16 (&s,Scores[i].completed);
+		WS_W16 (&s,Scores[i].episode);
+	}
+
+	WS_W16 (&s,SoundMode);
+	WS_W16 (&s,MusicMode);
+	WS_W16 (&s,DigiMode);
+
+	WS_W8 (&s,mouseenabled);
+	WS_W8 (&s,joystickenabled);
+	WS_W8 (&s,joypadenabled);
+	WS_W8 (&s,joystickprogressive);
+	WS_W16 (&s,joystickport);
+
+	WriteInts (&s,dirscan,4);
+	WriteInts (&s,buttonscan,NUMBUTTONS);
+	WriteInts (&s,buttonmouse,4);
+	WriteInts (&s,buttonjoy,4);
+
+	WriteInts (&s,&viewsize,1);
+	WriteInts (&s,&mouseadjustment,1);
+
+	file = open(WL_UserFile(configname),O_CREAT | O_TRUNC | O_BINARY | O_WRONLY,0644);
 
 	if (file != -1)
 	{
-		write(file,Scores,sizeof(HighScore) * MaxScores);
-
-		write(file,&SoundMode,sizeof(SoundMode));
-		write(file,&MusicMode,sizeof(MusicMode));
-		write(file,&DigiMode,sizeof(DigiMode));
-
-		write(file,&mouseenabled,sizeof(mouseenabled));
-		write(file,&joystickenabled,sizeof(joystickenabled));
-		write(file,&joypadenabled,sizeof(joypadenabled));
-		write(file,&joystickprogressive,sizeof(joystickprogressive));
-		write(file,&joystickport,sizeof(joystickport));
-
-		write(file,&dirscan,sizeof(dirscan));
-		write(file,&buttonscan,sizeof(buttonscan));
-		write(file,&buttonmouse,sizeof(buttonmouse));
-		write(file,&buttonjoy,sizeof(buttonjoy));
-
-		write(file,&viewsize,sizeof(viewsize));
-		write(file,&mouseadjustment,sizeof(mouseadjustment));
-
+		if (!WS_WriteFile (file,&s))
+			fprintf (stderr,"raylib_wolf3d: could not write %s\n",WL_UserFile(configname));
 		close(file);
 	}
+	WS_Free (&s);
 }
 
 
@@ -316,115 +392,218 @@ long DoChecksum(byte far *source,unsigned size,long checksum)
 =
 = SaveTheGame
 =
+= WOLF-7: written field by field, little-endian (see port/wl_persist.h).
+= Pointers are stored as indices: actor states into the state table,
+= actorat actors by their objlist slot, statics by their position.  The
+= file is the 32-byte name written by the menu, then:
+=
+=   magic, version, gamestate, LevelRatios, tilemap, actorat, areaconnect,
+=   areabyplayer, actors, laststatobj, statobjlist, doorposition,
+=   doorobjlist, pushwall state, FNV-1a checksum of everything before it
+=
 ==================
 */
 
+#define SAVE_ACTOR		0x8000		// actorat: objlist slot follows in the low bits
+
+static void SaveActor (wl_stream *s, objtype *ob)
+{
+	WS_W8 (s,ob->active);
+	WS_W16 (s,ob->ticcount);
+	WS_W16 (s,ob->obclass);
+	WS_W16 (s,WL_StateIndex (ob->state));
+	WS_W8 (s,ob->flags);
+	WS_W32 (s,(longword)ob->distance);
+	WS_W16 (s,ob->dir);
+	WS_W32 (s,ob->x);
+	WS_W32 (s,ob->y);
+	WS_W16 (s,ob->tilex);
+	WS_W16 (s,ob->tiley);
+	WS_W8 (s,ob->areanumber);
+	WS_W16 (s,ob->viewx);
+	WS_W16 (s,ob->viewheight);
+	WS_W32 (s,ob->transx);
+	WS_W32 (s,ob->transy);
+	WS_W16 (s,ob->angle);
+	WS_W16 (s,ob->hitpoints);
+	WS_W32 (s,(longword)ob->speed);
+	WS_W16 (s,ob->temp1);
+	WS_W16 (s,ob->temp2);
+	WS_W16 (s,ob->temp3);
+	WS_W16 (s,ob - objlist);	// slot, for actorat
+}
+
+static int LoadActor (wl_stream *s, objtype *ob)
+{
+	int	state;
+
+	ob->active = (signed char)WS_R8 (s);
+	ob->ticcount = WS_RS16 (s);
+	ob->obclass = WS_R16 (s);
+	state = WS_RS16 (s);
+	ob->state = WL_StateFromIndex (state);
+	ob->flags = WS_R8 (s);
+	ob->distance = WS_RS32 (s);
+	ob->dir = WS_R16 (s);
+	ob->x = WS_RS32 (s);
+	ob->y = WS_RS32 (s);
+	ob->tilex = WS_R16 (s);
+	ob->tiley = WS_R16 (s);
+	ob->areanumber = WS_R8 (s);
+	ob->viewx = WS_RS16 (s);
+	ob->viewheight = WS_R16 (s);
+	ob->transx = WS_RS32 (s);
+	ob->transy = WS_RS32 (s);
+	ob->angle = WS_RS16 (s);
+	ob->hitpoints = WS_RS16 (s);
+	ob->speed = WS_RS32 (s);
+	ob->temp1 = WS_RS16 (s);
+	ob->temp2 = WS_RS16 (s);
+	ob->temp3 = WS_RS16 (s);
+	if (ob->tilex >= MAPSIZE || ob->tiley >= MAPSIZE || (state >= 0 && !ob->state))
+		s->bad = 1;
+	return WS_R16 (s);			// the slot it had when saved
+}
+
+static void SaveGameState (wl_stream *s)
+{
+	int	i;
+
+	WS_WBytes (s,WL_SAVE_MAGIC,8);
+	WS_W16 (s,WL_SAVE_VERSION);
+
+	WS_W32 (s,gamestate.difficulty);	WS_W32 (s,gamestate.mapon);
+	WS_W32 (s,gamestate.oldscore);		WS_W32 (s,gamestate.score);
+	WS_W32 (s,gamestate.nextextra);		WS_W32 (s,gamestate.lives);
+	WS_W32 (s,gamestate.health);		WS_W32 (s,gamestate.ammo);
+	WS_W32 (s,gamestate.keys);			WS_W32 (s,gamestate.bestweapon);
+	WS_W32 (s,gamestate.weapon);		WS_W32 (s,gamestate.chosenweapon);
+	WS_W32 (s,gamestate.faceframe);		WS_W32 (s,gamestate.attackframe);
+	WS_W32 (s,gamestate.attackcount);	WS_W32 (s,gamestate.weaponframe);
+	WS_W32 (s,gamestate.episode);		WS_W32 (s,gamestate.secretcount);
+	WS_W32 (s,gamestate.treasurecount);	WS_W32 (s,gamestate.killcount);
+	WS_W32 (s,gamestate.secrettotal);	WS_W32 (s,gamestate.treasuretotal);
+	WS_W32 (s,gamestate.killtotal);		WS_W32 (s,gamestate.TimeCount);
+	WS_W32 (s,gamestate.killx);			WS_W32 (s,gamestate.killy);
+	WS_W32 (s,gamestate.victoryflag);
+
+	for (i=0;i<8;i++)
+	{
+		WS_W32 (s,LevelRatios[i].kill);
+		WS_W32 (s,LevelRatios[i].secret);
+		WS_W32 (s,LevelRatios[i].treasure);
+		WS_W32 (s,LevelRatios[i].time);
+	}
+}
+
+static void LoadGameState (wl_stream *s)
+{
+	int	i;
+
+	gamestate.difficulty = WS_RS32 (s);		gamestate.mapon = WS_RS32 (s);
+	gamestate.oldscore = WS_RS32 (s);		gamestate.score = WS_RS32 (s);
+	gamestate.nextextra = WS_RS32 (s);		gamestate.lives = WS_RS32 (s);
+	gamestate.health = WS_RS32 (s);			gamestate.ammo = WS_RS32 (s);
+	gamestate.keys = WS_RS32 (s);			gamestate.bestweapon = WS_RS32 (s);
+	gamestate.weapon = WS_RS32 (s);			gamestate.chosenweapon = WS_RS32 (s);
+	gamestate.faceframe = WS_RS32 (s);		gamestate.attackframe = WS_RS32 (s);
+	gamestate.attackcount = WS_RS32 (s);	gamestate.weaponframe = WS_RS32 (s);
+	gamestate.episode = WS_RS32 (s);		gamestate.secretcount = WS_RS32 (s);
+	gamestate.treasurecount = WS_RS32 (s);	gamestate.killcount = WS_RS32 (s);
+	gamestate.secrettotal = WS_RS32 (s);	gamestate.treasuretotal = WS_RS32 (s);
+	gamestate.killtotal = WS_RS32 (s);		gamestate.TimeCount = WS_RS32 (s);
+	gamestate.killx = WS_RS32 (s);			gamestate.killy = WS_RS32 (s);
+	gamestate.victoryflag = WS_RS32 (s);
+
+	for (i=0;i<8;i++)
+	{
+		LevelRatios[i].kill = WS_RS32 (s);
+		LevelRatios[i].secret = WS_RS32 (s);
+		LevelRatios[i].treasure = WS_RS32 (s);
+		LevelRatios[i].time = WS_RS32 (s);
+	}
+}
+
 boolean SaveTheGame(int file,int x,int y)
 {
-	struct diskfree_t dfree;
-	long avail,size,checksum;
-	objtype *ob,nullobj;
+	wl_stream	s;
+	objtype		*ob;
+	statobj_t	*st;
+	doorobj_t	*door;
+	uintptr_t	v;
+	int			i,n;
+	boolean		ok;
 
+	WS_Init (&s);
 
-	if (_dos_getdiskfree(0,&dfree))
-	  Quit("Error in _dos_getdiskfree call");
+	DiskFlopAnim(x,y);
+	SaveGameState (&s);
 
-	avail = (long)dfree.avail_clusters *
-			dfree.bytes_per_sector *
-			dfree.sectors_per_cluster;
+	DiskFlopAnim(x,y);
+	WS_WBytes (&s,tilemap,sizeof(tilemap));
+	for (i=0;i<MAPSIZE*MAPSIZE;i++)
+	{
+		v = (uintptr_t)(&actorat[0][0])[i];
+		if (v < 256)
+			WS_W16 (&s,v);				// empty, wall or door number
+		else
+			WS_W16 (&s,SAVE_ACTOR | ((objtype *)v - objlist));
+	}
 
-	size = 0;
-	for (ob = player; ob ; ob=ob->next)
-	  size += sizeof(*ob);
-	size += sizeof(nullobj);
+	WS_WBytes (&s,areaconnect,sizeof(areaconnect));
+	for (i=0;i<NUMAREAS;i++)
+		WS_W8 (&s,areabyplayer[i]);
 
-	size += sizeof(gamestate) +
-			sizeof(LRstruct)*8 +
-			sizeof(tilemap) +
-			sizeof(actorat) +
-			sizeof(laststatobj) +
-			sizeof(statobjlist) +
-			sizeof(doorposition) +
-			sizeof(pwallstate) +
-			sizeof(pwallx) +
-			sizeof(pwally) +
-			sizeof(pwalldir) +
-			sizeof(pwallpos);
+	DiskFlopAnim(x,y);
+	for (n=0,ob = player ; ob ; ob=ob->next)
+		n++;
+	WS_W16 (&s,n);
+	for (ob = player ; ob ; ob=ob->next)
+		SaveActor (&s,ob);
 
-	if (avail < size)
+	DiskFlopAnim(x,y);
+	WS_W16 (&s,laststatobj - statobjlist);
+	for (st = statobjlist ; st < &statobjlist[MAXSTATS] ; st++)
+	{
+		WS_W8 (&s,st->tilex);
+		WS_W8 (&s,st->tiley);
+		WS_W16 (&s,st->shapenum);
+		WS_W8 (&s,st->flags);
+		WS_W8 (&s,st->itemnumber);
+	}
+
+	DiskFlopAnim(x,y);
+	for (i=0;i<MAXDOORS;i++)
+		WS_W16 (&s,doorposition[i]);
+	for (door = doorobjlist ; door < &doorobjlist[MAXDOORS] ; door++)
+	{
+		WS_W8 (&s,door->tilex);
+		WS_W8 (&s,door->tiley);
+		WS_W8 (&s,door->vertical);
+		WS_W8 (&s,door->lock);
+		WS_W8 (&s,door->action);
+		WS_W16 (&s,door->ticcount);
+	}
+
+	WS_W16 (&s,pwallstate);
+	WS_W16 (&s,pwallx);
+	WS_W16 (&s,pwally);
+	WS_W16 (&s,pwalldir);
+	WS_W16 (&s,pwallpos);
+
+	//
+	// WRITE OUT CHECKSUM
+	//
+	WS_W32 (&s,WS_Checksum (&s,0,s.len));
+
+	ok = WS_WriteFile (file,&s);
+	WS_Free (&s);
+	if (!ok)
 	{
 	 Message(STR_NOSPACE1"\n"
 			 STR_NOSPACE2);
 	 return false;
 	}
-
-	checksum = 0;
-
-
-	DiskFlopAnim(x,y);
-	CA_FarWrite (file,(void far *)&gamestate,sizeof(gamestate));
-	checksum = DoChecksum((byte far *)&gamestate,sizeof(gamestate),checksum);
-
-	DiskFlopAnim(x,y);
-#ifdef SPEAR
-	CA_FarWrite (file,(void far *)&LevelRatios[0],sizeof(LRstruct)*20);
-	checksum = DoChecksum((byte far *)&LevelRatios[0],sizeof(LRstruct)*20,checksum);
-#else
-	CA_FarWrite (file,(void far *)&LevelRatios[0],sizeof(LRstruct)*8);
-	checksum = DoChecksum((byte far *)&LevelRatios[0],sizeof(LRstruct)*8,checksum);
-#endif
-
-	DiskFlopAnim(x,y);
-	CA_FarWrite (file,(void far *)tilemap,sizeof(tilemap));
-	checksum = DoChecksum((byte far *)tilemap,sizeof(tilemap),checksum);
-	DiskFlopAnim(x,y);
-	CA_FarWrite (file,(void far *)actorat,sizeof(actorat));
-	checksum = DoChecksum((byte far *)actorat,sizeof(actorat),checksum);
-
-	CA_FarWrite (file,(void far *)areaconnect,sizeof(areaconnect));
-	CA_FarWrite (file,(void far *)areabyplayer,sizeof(areabyplayer));
-
-	for (ob = player ; ob ; ob=ob->next)
-	{
-	 DiskFlopAnim(x,y);
-	 CA_FarWrite (file,(void far *)ob,sizeof(*ob));
-	}
-	nullobj.active = ac_badobject;          // end of file marker
-	DiskFlopAnim(x,y);
-	CA_FarWrite (file,(void far *)&nullobj,sizeof(nullobj));
-
-
-
-	DiskFlopAnim(x,y);
-	CA_FarWrite (file,(void far *)&laststatobj,sizeof(laststatobj));
-	checksum = DoChecksum((byte far *)&laststatobj,sizeof(laststatobj),checksum);
-	DiskFlopAnim(x,y);
-	CA_FarWrite (file,(void far *)statobjlist,sizeof(statobjlist));
-	checksum = DoChecksum((byte far *)statobjlist,sizeof(statobjlist),checksum);
-
-	DiskFlopAnim(x,y);
-	CA_FarWrite (file,(void far *)doorposition,sizeof(doorposition));
-	checksum = DoChecksum((byte far *)doorposition,sizeof(doorposition),checksum);
-	DiskFlopAnim(x,y);
-	CA_FarWrite (file,(void far *)doorobjlist,sizeof(doorobjlist));
-	checksum = DoChecksum((byte far *)doorobjlist,sizeof(doorobjlist),checksum);
-
-	DiskFlopAnim(x,y);
-	CA_FarWrite (file,(void far *)&pwallstate,sizeof(pwallstate));
-	checksum = DoChecksum((byte far *)&pwallstate,sizeof(pwallstate),checksum);
-	CA_FarWrite (file,(void far *)&pwallx,sizeof(pwallx));
-	checksum = DoChecksum((byte far *)&pwallx,sizeof(pwallx),checksum);
-	CA_FarWrite (file,(void far *)&pwally,sizeof(pwally));
-	checksum = DoChecksum((byte far *)&pwally,sizeof(pwally),checksum);
-	CA_FarWrite (file,(void far *)&pwalldir,sizeof(pwalldir));
-	checksum = DoChecksum((byte far *)&pwalldir,sizeof(pwalldir),checksum);
-	CA_FarWrite (file,(void far *)&pwallpos,sizeof(pwallpos));
-	checksum = DoChecksum((byte far *)&pwallpos,sizeof(pwallpos),checksum);
-
-	//
-	// WRITE OUT CHECKSUM
-	//
-	CA_FarWrite (file,(void far *)&checksum,sizeof(checksum));
 
 	return(true);
 }
@@ -434,109 +613,249 @@ boolean SaveTheGame(int file,int x,int y)
 /*
 ==================
 =
+= SaveGameValid
+=
+= WOLF-7: true if file (positioned after the 32-byte name) holds a save
+= game in this port's format with a matching checksum
+=
+==================
+*/
+
+#define RANGE(v,lo,hi)	((v) >= (lo) && (v) <= (hi))
+
+//
+// SaveLayoutValid: reads the whole body the way LoadTheGame does, into
+// throwaway variables, and checks every value that later indexes an array
+// or picks a map, state or sprite.  Changes no game state.
+//
+static boolean SaveLayoutValid (wl_stream *s)
+{
+	int		i,n,v,ok = 1;
+	int32_t	g[27];
+
+	s->pos = 8+2;
+
+	for (i=0;i<27;i++)
+		g[i] = WS_RS32 (s);
+	// difficulty, mapon, ..., lives, health, ammo, keys, best/weapon/chosen,
+	// faceframe, attackframe, attackcount, weaponframe, episode (see SaveGameState)
+	ok &= RANGE(g[0],gd_baby,gd_hard);
+	ok &= RANGE(g[16],0,5) && RANGE(g[1],0,9);
+	ok &= RANGE(g[16]*10+g[1],0,NUMMAPS-1) && mapheaderseg[g[16]*10+g[1]] != NULL;
+	ok &= RANGE(g[5],0,99) && RANGE(g[6],0,100) && RANGE(g[7],0,99);
+	ok &= RANGE(g[9],wp_knife,wp_chaingun) && RANGE(g[10],-1,wp_chaingun)
+		&& RANGE(g[11],wp_knife,wp_chaingun);
+	ok &= RANGE(g[12],0,3) && RANGE(g[13],0,13) && RANGE(g[15],0,4);
+	for (i=0;i<8*4;i++)
+		WS_R32 (s);							// LevelRatios: any value
+
+	for (i=0;i<MAPSIZE*MAPSIZE;i++)
+	{
+		v = WS_R8 (s);						// tilemap: doors index doorobjlist
+		if (v & 0x80)
+			ok &= (v & 0x3f) < MAXDOORS;
+	}
+	for (i=0;i<MAPSIZE*MAPSIZE;i++)
+	{
+		v = WS_R16 (s);						// actorat
+		if (v & SAVE_ACTOR)
+			ok &= (v & ~SAVE_ACTOR) < MAXACTORS;
+		else
+			ok &= v < 256;
+	}
+	for (i=0;i<NUMAREAS*NUMAREAS+NUMAREAS;i++)
+		WS_R8 (s);							// areaconnect, areabyplayer
+
+	n = WS_R16 (s);
+	ok &= RANGE(n,1,MAXACTORS);
+	for (i=0;i<n && ok && !s->bad;i++)
+	{
+		v = (signed char)WS_R8 (s);	ok &= RANGE(v,ac_badobject,ac_allways);
+		WS_R16 (s);						// ticcount
+		v = WS_R16 (s);				ok &= RANGE(v,nothing,sparkobj);
+		v = WS_RS16 (s);			ok &= RANGE(v,0,wl_numstates-1);
+		WS_R8 (s);						// flags
+		WS_R32 (s);						// distance
+		v = WS_R16 (s);				ok &= RANGE(v,east,nodir);
+		WS_R32 (s); WS_R32 (s);			// x, y
+		v = WS_R16 (s);				ok &= v < MAPSIZE;
+		v = WS_R16 (s);				ok &= v < MAPSIZE;
+		v = WS_R8 (s);				ok &= v < NUMAREAS;
+		WS_R16 (s); WS_R16 (s);			// viewx, viewheight
+		WS_R32 (s); WS_R32 (s);			// transx, transy
+		v = WS_RS16 (s);			ok &= RANGE(v,0,ANGLES-1);
+		WS_R16 (s);						// hitpoints
+		WS_R32 (s);						// speed
+		WS_R16 (s); WS_R16 (s); WS_R16 (s);	// temp1-3
+		v = WS_R16 (s);				ok &= v < MAXACTORS;	// slot
+	}
+
+	v = WS_R16 (s);					ok &= v <= MAXSTATS;
+	for (i=0;i<MAXSTATS;i++)
+	{
+		v = WS_R8 (s);				ok &= v < MAPSIZE;
+		v = WS_R8 (s);				ok &= v < MAPSIZE;
+		v = WS_RS16 (s);			ok &= RANGE(v,-1,PMSoundStart-PMSpriteStart-1);
+		WS_R8 (s); WS_R8 (s);			// flags, itemnumber
+	}
+
+	for (i=0;i<MAXDOORS;i++)
+		WS_R16 (s);							// doorposition
+	for (i=0;i<MAXDOORS;i++)
+	{
+		v = WS_R8 (s);				ok &= v < MAPSIZE;
+		v = WS_R8 (s);				ok &= v < MAPSIZE;
+		WS_R8 (s); WS_R8 (s);			// vertical, lock
+		v = WS_R8 (s);				ok &= v <= dr_closing;
+		WS_R16 (s);						// ticcount
+	}
+
+	WS_R16 (s);								// pwallstate
+	v = WS_R16 (s);					ok &= v < MAPSIZE;
+	v = WS_R16 (s);					ok &= v < MAPSIZE;
+	v = WS_RS16 (s);				ok &= RANGE(v,0,3);
+	v = WS_R16 (s);					ok &= v < 64;
+
+	ok &= !s->bad && s->pos == s->len - 4;	// exactly the body, then the checksum
+	s->pos = 0;
+	s->bad = 0;
+	return ok;
+}
+
+static boolean CheckSaveStream (wl_stream *s)
+{
+	return s->len >= 8+2+4
+		&& !memcmp(s->buf,WL_SAVE_MAGIC,8)
+		&& (s->buf[8] | s->buf[9]<<8) == WL_SAVE_VERSION
+		&& WS_Checksum (s,0,s->len-4) ==
+			(s->buf[s->len-4] | s->buf[s->len-3]<<8 |
+			(longword)s->buf[s->len-2]<<16 | (longword)s->buf[s->len-1]<<24)
+		&& SaveLayoutValid (s);
+}
+
+boolean SaveGameValid (int file)
+{
+	wl_stream	s;
+	boolean		ok;
+
+	WS_Init (&s);
+	ok = WS_ReadFile (file,&s) && CheckSaveStream (&s);
+	WS_Free (&s);
+	return ok;
+}
+
+/*
+==================
+=
 = LoadTheGame
+=
+= WOLF-7: returns false, changing nothing, if the file isn't a valid save
+= (the DOS version loaded a bad file anyway and docked the player instead)
 =
 ==================
 */
 
 boolean LoadTheGame(int file,int x,int y)
 {
-	long checksum,oldchecksum;
-	objtype *ob,nullobj;
+	wl_stream	s;
+	objtype		*ob;
+	statobj_t	*st;
+	doorobj_t	*door;
+	objtype		*byslot[MAXACTORS];
+	word		at[MAPSIZE*MAPSIZE];
+	int			i,n,slot;
 
-
-	checksum = 0;
+	WS_Init (&s);
+	if (!WS_ReadFile (file,&s) || !CheckSaveStream (&s))
+	{
+		WS_Free (&s);
+		Message(STR_SAVECHT1"\n"
+				STR_SAVECHT2"\n"
+				STR_SAVECHT3"\n"
+				STR_SAVECHT4);
+		IN_ClearKeysDown();
+		IN_Ack();
+		return false;
+	}
+	s.pos = 8+2;
+	s.len -= 4;
 
 	DiskFlopAnim(x,y);
-	CA_FarRead (file,(void far *)&gamestate,sizeof(gamestate));
-	checksum = DoChecksum((byte far *)&gamestate,sizeof(gamestate),checksum);
-
-	DiskFlopAnim(x,y);
-#ifdef SPEAR
-	CA_FarRead (file,(void far *)&LevelRatios[0],sizeof(LRstruct)*20);
-	checksum = DoChecksum((byte far *)&LevelRatios[0],sizeof(LRstruct)*20,checksum);
-#else
-	CA_FarRead (file,(void far *)&LevelRatios[0],sizeof(LRstruct)*8);
-	checksum = DoChecksum((byte far *)&LevelRatios[0],sizeof(LRstruct)*8,checksum);
-#endif
+	LoadGameState (&s);
 
 	DiskFlopAnim(x,y);
 	SetupGameLevel ();
 
 	DiskFlopAnim(x,y);
-	CA_FarRead (file,(void far *)tilemap,sizeof(tilemap));
-	checksum = DoChecksum((byte far *)tilemap,sizeof(tilemap),checksum);
-	DiskFlopAnim(x,y);
-	CA_FarRead (file,(void far *)actorat,sizeof(actorat));
-	checksum = DoChecksum((byte far *)actorat,sizeof(actorat),checksum);
+	WS_RBytes (&s,tilemap,sizeof(tilemap));
+	for (i=0;i<MAPSIZE*MAPSIZE;i++)
+		at[i] = WS_R16 (&s);
 
-	CA_FarRead (file,(void far *)areaconnect,sizeof(areaconnect));
-	CA_FarRead (file,(void far *)areabyplayer,sizeof(areabyplayer));
+	WS_RBytes (&s,areaconnect,sizeof(areaconnect));
+	for (i=0;i<NUMAREAS;i++)
+		areabyplayer[i] = WS_R8 (&s);
 
-
+	for (i=0;i<MAXACTORS;i++)
+		byslot[i] = &objlist[i];		// stale actorat entries keep their slot
 
 	InitActorList ();
 	DiskFlopAnim(x,y);
-	CA_FarRead (file,(void far *)player,sizeof(*player));
-
-	while (1)
+	n = WS_R16 (&s);
+	if (n < 1 || n > MAXACTORS)
+		s.bad = 1;
+	for (i=0;i<n && !s.bad;i++)
 	{
-	 DiskFlopAnim(x,y);
-		CA_FarRead (file,(void far *)&nullobj,sizeof(nullobj));
-		if (nullobj.active == ac_badobject)
-			break;
-		GetNewActor ();
-	 // don't copy over the links
-		memcpy (new,&nullobj,sizeof(nullobj)-4);
+		if (i)
+			GetNewActor ();
+		ob = i ? new : player;
+		slot = LoadActor (&s,ob);
+		if (slot < MAXACTORS)
+			byslot[slot] = ob;
 	}
 
-
-
-	DiskFlopAnim(x,y);
-	CA_FarRead (file,(void far *)&laststatobj,sizeof(laststatobj));
-	checksum = DoChecksum((byte far *)&laststatobj,sizeof(laststatobj),checksum);
-	DiskFlopAnim(x,y);
-	CA_FarRead (file,(void far *)statobjlist,sizeof(statobjlist));
-	checksum = DoChecksum((byte far *)statobjlist,sizeof(statobjlist),checksum);
-
-	DiskFlopAnim(x,y);
-	CA_FarRead (file,(void far *)doorposition,sizeof(doorposition));
-	checksum = DoChecksum((byte far *)doorposition,sizeof(doorposition),checksum);
-	DiskFlopAnim(x,y);
-	CA_FarRead (file,(void far *)doorobjlist,sizeof(doorobjlist));
-	checksum = DoChecksum((byte far *)doorobjlist,sizeof(doorobjlist),checksum);
-
-	DiskFlopAnim(x,y);
-	CA_FarRead (file,(void far *)&pwallstate,sizeof(pwallstate));
-	checksum = DoChecksum((byte far *)&pwallstate,sizeof(pwallstate),checksum);
-	CA_FarRead (file,(void far *)&pwallx,sizeof(pwallx));
-	checksum = DoChecksum((byte far *)&pwallx,sizeof(pwallx),checksum);
-	CA_FarRead (file,(void far *)&pwally,sizeof(pwally));
-	checksum = DoChecksum((byte far *)&pwally,sizeof(pwally),checksum);
-	CA_FarRead (file,(void far *)&pwalldir,sizeof(pwalldir));
-	checksum = DoChecksum((byte far *)&pwalldir,sizeof(pwalldir),checksum);
-	CA_FarRead (file,(void far *)&pwallpos,sizeof(pwallpos));
-	checksum = DoChecksum((byte far *)&pwallpos,sizeof(pwallpos),checksum);
-
-	CA_FarRead (file,(void far *)&oldchecksum,sizeof(oldchecksum));
-
-	if (oldchecksum != checksum)
+	for (i=0;i<MAPSIZE*MAPSIZE;i++)
 	{
-	 Message(STR_SAVECHT1"\n"
-			 STR_SAVECHT2"\n"
-			 STR_SAVECHT3"\n"
-			 STR_SAVECHT4);
-
-	 IN_ClearKeysDown();
-	 IN_Ack();
-
-	 gamestate.score = 0;
-	 gamestate.lives = 1;
-	 gamestate.weapon =
-	   gamestate.chosenweapon =
-	   gamestate.bestweapon = wp_pistol;
-	 gamestate.ammo = 8;
+		if (at[i] & SAVE_ACTOR)
+			(&actorat[0][0])[i] = byslot[(at[i] & ~SAVE_ACTOR) % MAXACTORS];
+		else
+			(&actorat[0][0])[i] = (objtype *)(uintptr_t)at[i];
 	}
+
+	DiskFlopAnim(x,y);
+	n = WS_R16 (&s);
+	laststatobj = &statobjlist[n <= MAXSTATS ? n : 0];
+	for (st = statobjlist ; st < &statobjlist[MAXSTATS] ; st++)
+	{
+		st->tilex = WS_R8 (&s) % MAPSIZE;
+		st->tiley = WS_R8 (&s) % MAPSIZE;
+		st->visspot = &spotvis[st->tilex][st->tiley];
+		st->shapenum = WS_RS16 (&s);
+		st->flags = WS_R8 (&s);
+		st->itemnumber = WS_R8 (&s);
+	}
+
+	DiskFlopAnim(x,y);
+	for (i=0;i<MAXDOORS;i++)
+		doorposition[i] = WS_R16 (&s);
+	for (door = doorobjlist ; door < &doorobjlist[MAXDOORS] ; door++)
+	{
+		door->tilex = WS_R8 (&s);
+		door->tiley = WS_R8 (&s);
+		door->vertical = WS_R8 (&s);
+		door->lock = WS_R8 (&s);
+		door->action = WS_R8 (&s);
+		door->ticcount = WS_RS16 (&s);
+	}
+
+	pwallstate = WS_R16 (&s);
+	pwallx = WS_R16 (&s);
+	pwally = WS_R16 (&s);
+	pwalldir = WS_RS16 (&s);
+	pwallpos = WS_R16 (&s);
+
+	if (s.bad || s.pos != s.len)		// can't happen: SaveLayoutValid walked the same layout
+		Quit ("LoadTheGame: save file doesn't match its own layout");
+	WS_Free (&s);
 
 	return true;
 }
@@ -753,7 +1072,7 @@ void FinishSignon (void)
 {
 
 #ifndef SPEAR
-	VW_Bar (0,189,300,11,peekb(0xa000,0));
+	VW_Bar (0,189,300,11,vl_vram[0]);	// WOLF-7: was peekb(0xa000,0), pixel 0 of plane 0
 	WindowX = 0;
 	WindowW = 320;
 	PrintY = 190;
@@ -773,7 +1092,7 @@ void FinishSignon (void)
 		IN_Ack ();
 
 	#ifndef JAPAN
-	VW_Bar (0,189,300,11,peekb(0xa000,0));
+	VW_Bar (0,189,300,11,vl_vram[0]);	// WOLF-7: was peekb(0xa000,0), pixel 0 of plane 0
 
 	PrintY = 190;
 	SETFONTCOLOR(10,4);
@@ -1537,7 +1856,12 @@ int main (int argc, char *argv[])	// WOLF-2: was void main (void)
 
 	Patch386 ();
 
+	if (MS_CheckParm ("demotest") || MS_CheckParm ("savetest"))
+		NoWait = true;		// WOLF-7: no "Press a key" on the signon screen
+
 	InitGame ();
+
+	WL_DemoTest ();		// WOLF-7: returns unless -demotest was given
 
 	DemoLoop();
 

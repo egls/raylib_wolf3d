@@ -317,12 +317,13 @@ void VWB_Vlin (int y1, int y2, int x, int color)
 void VH_UpdateScreen (void)
 {
 	int		bx,row;
+	byte	*u = &update[0][0];		// flat UPDATEWIDE*UPDATEHIGH blocks
 
 	for (bx=UPDATEWIDE*UPDATEHIGH-1;bx>=0;bx--)
 	{
-		if (!update[0][bx])
+		if (!u[bx])
 			continue;
-		update[0][bx] = 0;
+		u[bx] = 0;
 
 		for (row=0;row<16;row++)
 		{
@@ -334,6 +335,7 @@ void VH_UpdateScreen (void)
 		}
 	}
 	VL_Refresh (true);
+	IN_PumpEvents ();	// WOLF-7: loops like Confirm's poll Keyboard[] between screen updates
 }
 
 void VW_UpdateScreen (void)

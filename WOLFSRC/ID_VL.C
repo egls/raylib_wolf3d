@@ -453,8 +453,9 @@ void VL_FadeIn (int start, int end, byte far *palette, int steps)
 	{
 		for (j=start;j<=end;j++)
 		{
-			delta = palette[j]-palette1[0][j];
-			palette2[0][j] = palette1[0][j] + delta * i / steps;
+			// WOLF-7: index the flat 768 bytes (palette1[0][j] runs past row 0)
+			delta = palette[j]-(&palette1[0][0])[j];
+			(&palette2[0][0])[j] = (&palette1[0][0])[j] + delta * i / steps;
 		}
 
 		VL_WaitVBL(1);
