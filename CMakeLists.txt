@@ -92,7 +92,16 @@ set(WOLF3D_PORT_SOURCES
   port/wl_data.c
   port/wl_raycast.c)
 
-set(WOLF3D_WARNINGS -Wall -fsigned-char)
+# Borland C's char was signed, so the build pins -fsigned-char (plain char is
+# unsigned on ARM).  WOLF3D_UNSIGNED_CHAR builds with -funsigned-char instead,
+# to check that the code no longer depends on it (WOLF-19).
+option(WOLF3D_UNSIGNED_CHAR "Build with -funsigned-char (portability check)" OFF)
+if(WOLF3D_UNSIGNED_CHAR)
+  set(WOLF3D_CHAR_FLAG -funsigned-char)
+else()
+  set(WOLF3D_CHAR_FLAG -fsigned-char)
+endif()
+set(WOLF3D_WARNINGS -Wall ${WOLF3D_CHAR_FLAG})
 # The id code defines globals in headers (e.g. menuitems in WL_MENU.H) and
 # relied on the DOS linker merging them; keep that behaviour.
 set(WOLF3D_GAME_FLAGS -fcommon)
@@ -147,10 +156,10 @@ if(BUILD_TESTING)
   add_executable(wolf_core_data_test tests/core_data_test.c
     WOLFSRC/ID_MM.C WOLFSRC/ID_PM.C WOLFSRC/ID_CA.C WOLFSRC/WL_SCALE.C port/wl_data.c)
   target_include_directories(wolf_core_data_test PRIVATE port WOLFSRC)
-  target_compile_options(wolf_core_data_test PRIVATE -Wall -Wextra -fsigned-char -fcommon)
+  target_compile_options(wolf_core_data_test PRIVATE -Wall -Wextra ${WOLF3D_CHAR_FLAG} -fcommon)
   add_executable(wolf_codec_test tests/codec_test.c port/wl_data.c)
   target_include_directories(wolf_codec_test PRIVATE port)
-  target_compile_options(wolf_codec_test PRIVATE -Wall -Wextra -fsigned-char)
+  target_compile_options(wolf_codec_test PRIVATE -Wall -Wextra ${WOLF3D_CHAR_FLAG})
   add_executable(wolf_render_test tests/render_test.c WOLFSRC/WL_DRAW.C WOLFSRC/WL_STATE.C
     WOLFSRC/WL_SCALE.C WOLFSRC/WOLFHACK.C WOLFSRC/ID_MM.C port/wl_raycast.c port/wl_data.c port/asm_stubs.c)
   target_include_directories(wolf_render_test PRIVATE port WOLFSRC)
