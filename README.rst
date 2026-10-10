@@ -1,3 +1,6 @@
+.. image:: docs/images/title-menu.png
+   :alt: Wolfenstein 3D raylib port – title menu
+
 Wolfenstein 3D
 ==============
 
