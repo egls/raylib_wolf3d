@@ -45,6 +45,7 @@ jobs:
           set +e
           ./build/raylib_wolf3d -data "$RUNNER_TEMP/nodata" ; rc=$?
           set -e
+          echo "exit code: $rc"
           test "$rc" = 2
           # Empty placeholder files get past the data check, open the window
           # under Xvfb and must stop with a clean "not ported yet" (exit 3).
@@ -57,5 +58,6 @@ jobs:
             ./build/raylib_wolf3d -data "$RUNNER_TEMP/fake" 2> stderr.txt ; rc=$?
           set -e
           cat stderr.txt
+          echo "exit code: $rc"
           test "$rc" = 3
           grep -q 'not ported yet' stderr.txt
