@@ -1,9 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
 project(raylib_wolf3d LANGUAGES C)
 
-# Stage 3 (WOLF-3, PR #1) adds a standalone audio/ project. Once it is on
-# master, enable it here and link wolf_audio into raylib_wolf3d.
-option(WOLF3D_WITH_AUDIO "Build the audio/ engine (WOLF-3)" OFF)
+# The portable sound manager always links the standalone audio engine.
+option(WOLF3D_WITH_AUDIO "Build the audio/ engine (required for the game)" ON)
 option(WOLF3D_USE_SYSTEM_RAYLIB "Prefer an installed raylib 5.5 over FetchContent" ON)
 
 if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
@@ -94,15 +93,6 @@ set(WOLF3D_PORT_SOURCES
   port/wl_demotest.c
   port/wl_persist.c)
 
-# TEMPORARY (WOLF-7): ID_SD.C still stops at its DOS sound hardware code until
-# WOLF-6 lands.  port/sd_silent.c is a no-sound Sound Manager built instead of
-# it so the game can run.  Remove this block when WOLF-6 is merged.
-option(WOLF3D_SILENT_SD "Build port/sd_silent.c instead of WOLFSRC/ID_SD.C" ON)
-if(WOLF3D_SILENT_SD)
-  list(REMOVE_ITEM WOLF3D_GAME_SOURCES WOLFSRC/ID_SD.C)
-  list(APPEND WOLF3D_PORT_SOURCES port/sd_silent.c)
-endif()
-
 # Borland C's char was signed, so the build pins -fsigned-char (plain char is
 # unsigned on ARM).  WOLF3D_UNSIGNED_CHAR builds with -funsigned-char instead,
 # to check that the code no longer depends on it (WOLF-19).
@@ -169,6 +159,10 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(wolf3d_raylib PRIVATE ${WOLF3D_WARNINGS})
 endif()
 
+if(NOT WOLF3D_WITH_AUDIO)
+  message(FATAL_ERROR "The game requires the audio engine; use -nosound at runtime")
+endif()
+
 # ASan/UBSan for the game itself (the "asan" preset turns this on).
 option(WOLF3D_SANITIZERS "Build raylib_wolf3d with ASan/UBSan" OFF)
 if(WOLF3D_SANITIZERS AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
@@ -177,6 +171,7 @@ if(WOLF3D_SANITIZERS AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
 endif()
 
 if(WOLF3D_WITH_AUDIO)
+  target_compile_definitions(wolf3d_raylib PRIVATE WOLF3D_AUDIO_BACKEND)
   add_subdirectory(audio)
   target_link_libraries(raylib_wolf3d PRIVATE wolf_audio)
 endif()
@@ -241,4 +236,27 @@ if(BUILD_TESTING)
       target_link_options(${t} PRIVATE -fsanitize=address,undefined)
     endforeach()
   endif()
+endif()
+
+if(BUILD_TESTING)
+  foreach(t wolf_sd_test wolf_sd_device)
+    add_executable(${t} tests/sd_integration_test.c WOLFSRC/ID_SD.C
+      WOLFSRC/ID_MM.C WOLFSRC/ID_PM.C WOLFSRC/ID_CA.C port/wl_data.c)
+    target_include_directories(${t} PRIVATE port WOLFSRC)
+    target_compile_options(${t} PRIVATE ${WOLF3D_WARNINGS} ${WOLF3D_GAME_FLAGS} -UNDEBUG)
+    target_link_libraries(${t} PRIVATE wolf_audio)
+  endforeach()
+  target_compile_definitions(wolf_sd_device PRIVATE SD_DEVICE)
+  target_link_libraries(wolf_sd_device PRIVATE wolf3d_raylib)
+  add_test(NAME sound_manager COMMAND wolf_sd_test "${WOLF3D_TEST_DATA}")
+  set_tests_properties(sound_manager PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 30)
+endif()
+if(BUILD_TESTING)
+  add_executable(wolf_audio_ring_test tests/audio_ring_test.c port/id_raylib.c)
+  target_include_directories(wolf_audio_ring_test PRIVATE port
+    $<TARGET_PROPERTY:raylib,INTERFACE_INCLUDE_DIRECTORIES>)
+  target_compile_definitions(wolf_audio_ring_test PRIVATE WOLF3D_AUDIO_BACKEND)
+  target_compile_options(wolf_audio_ring_test PRIVATE -Wall -UNDEBUG)
+  target_link_libraries(wolf_audio_ring_test PRIVATE m)
+  add_test(NAME audio_ring COMMAND wolf_audio_ring_test)
 endif()

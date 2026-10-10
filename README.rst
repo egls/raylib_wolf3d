@@ -13,7 +13,8 @@ replaced by ``port/``, and only ``port/id_raylib.c`` includes ``raylib.h``.
 ``PORTING.md`` lists every non-portable piece and the stage that replaces it.
 The shareware (WL1) game is playable: signon, title, menus, E1M1 and the
 other shareware levels, doors, combat, death and restart, save/load and quit.
-Sound is silent until WOLF-6 lands (``port/sd_silent.c``).  Anything still
+Sound plays through raylib (AdLib music and effects, PC speaker and digitized
+sounds); ``-nosound`` / ``WOLF3D_NOSOUND=1`` mute it.  Anything still
 unported stops with ``not ported yet: <name>`` (exit code 3).
 
 Only the shareware episode (Wolfenstein 3D v1.4, ``*.WL1``) is supported.
@@ -226,6 +227,12 @@ skips with code 77 when the external directory is absent; set
 E1M1 plane CRC32s, wall/sprite/title CRC32s, all ten maps, all graphics/audio
 chunks, every resident sprite at several scales, and cache/purge/shutdown
 cycles. SHA-256 verification stays in ``scripts/fetch_shareware.sh``.
+
+The WOLF-6 Sound Manager drives the Nuked OPL engine and 7042 Hz VSWAP
+samples through a raylib AudioStream. ``-nosound`` / ``WOLF3D_NOSOUND=1``
+disable all audio; ``-nomusic`` / ``WOLF3D_NOMUSIC=1`` disable music only.
+Audio integration tests and device recordings are described in
+``audio/README.md``.
 
 ``demo_sync`` (see above) needs the data and ``xvfb-run``, and skips without
 them.

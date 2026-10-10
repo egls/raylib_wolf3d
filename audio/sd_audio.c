@@ -18,7 +18,7 @@ struct sd_audio {
     const uint8_t *music, *adlib, *pc, *pcm;
     size_t music_len, music_pos, adlib_len, pc_len, pcm_len, pcm_frames;
     unsigned block, pc_value, pc_frequency;
-    int loop;
+    int loop, paused, pcm_pc;
     sd_register_hook hook;
     void *user;
 };
@@ -60,7 +60,7 @@ int sd_audio_music(sd_audio *s, const uint8_t *p, size_t n, int loop) {
     if (!len || len > n-2 || len % 4) return 0;
     p += 2; n = len;
     sd_audio_stop_music(s);
-    s->music=p; s->music_len=n; s->music_pos=0;
+    s->music=p; s->music_len=n; s->music_pos=0; s->paused=0;
     s->music_time=0; s->next_event=0; s->loop=loop;
     return 1;
 }
@@ -96,7 +96,7 @@ int sd_audio_pcm(sd_audio *s, const uint8_t *p, size_t n, unsigned priority, uns
     if (n > 64000000) return 0;
     size_t dest=(size_t)((float)n*(float)s->rate/7042.0f);
     if (!dest) return 0;
-    s->pcm=p; s->pcm_len=n; s->pcm_frames=dest; s->pcm_pos=0; s->pcm_priority=priority; s->left=l; s->right=r;
+    s->pcm_pc=0; s->pcm=p; s->pcm_len=n; s->pcm_frames=dest; s->pcm_pos=0; s->pcm_priority=priority; s->left=l; s->right=r;
     return 1;
 }
 static void music_tick(sd_audio *s) {
@@ -109,7 +109,7 @@ static void music_tick(sd_audio *s) {
             if (!--s->adlib_len) { s->adlib=NULL; s->priority=0; reg(s,0xb0,0); }
         }
     }
-    if (!s->music) return;
+    if (!s->music || s->paused) return;
     while (s->music_pos<s->music_len && s->next_event<=s->music_time) {
         const uint8_t *p=s->music+s->music_pos;
         s->next_event=s->music_time+le16(p+2);
@@ -144,17 +144,26 @@ void sd_audio_mix(sd_audio *s, int16_t *out, size_t frames) {
             else {
                 /* Wolf4SDL GetSample / SD_PrepareSound: three-point quadratic
                  * interpolation, zero outside the source, clipped to int16. */
-                float at=(float)s->pcm_len*(float)s->pcm_pos/(float)s->pcm_frames;
-                size_t pos=(size_t)at;
-                if (pos>=s->pcm_len) { pos=s->pcm_len-1; at=(float)pos; }
-                float f=at-(float)pos;
-                float a=pos ? (float)((int)s->pcm[pos-1]-128) : 0;
-                float b=(float)((int)s->pcm[pos]-128);
-                float c=pos+1<s->pcm_len ? (float)((int)s->pcm[pos+1]-128) : 0;
-                float val=a*f*(f-1)/2-b*(f*f-1)+c*(f+1)*f/2;
-                pcm=clip((int)(val*256));
-                ++s->pcm_pos;
-                if (s->pcm_pos==s->pcm_frames) s->pcm_priority=0;
+                if (s->pcm_pc) {
+                    /* ID_SD_A.ASM pcdtab: only bit 7 drives port 0x61,
+                     * one byte per extreme ISR tick (7000 Hz). */
+                    size_t pos=s->pcm_pos*7000/s->rate;
+                    pcm=(s->pcm[pos]&128) ? 8192 : -8192;
+                    ++s->pcm_pos;
+                    if (s->pcm_pos==s->pcm_frames) s->pcm_priority=0;
+                } else {
+                    float at=(float)s->pcm_len*(float)s->pcm_pos/(float)s->pcm_frames;
+                    size_t pos=(size_t)at;
+                    if (pos>=s->pcm_len) { pos=s->pcm_len-1; at=(float)pos; }
+                    float f=at-(float)pos;
+                    float a=pos ? (float)((int)s->pcm[pos-1]-128) : 0;
+                    float b=(float)((int)s->pcm[pos]-128);
+                    float c=pos+1<s->pcm_len ? (float)((int)s->pcm[pos+1]-128) : 0;
+                    float val=a*f*(f-1)/2-b*(f*f-1)+c*(f+1)*f/2;
+                    pcm=clip((int)(val*256));
+                    ++s->pcm_pos;
+                    if (s->pcm_pos==s->pcm_frames) s->pcm_priority=0;
+                }
             }
         }
         out[i*2]=clip(fm[0]+pc+pcm*(int)(15-s->left)/15);
@@ -162,4 +171,28 @@ void sd_audio_mix(sd_audio *s, int16_t *out, size_t frames) {
         ++s->frame; ++s->pc_phase;
         s->music_clock+=MUSIC_HZ; s->pc_clock+=140;
     }
+}
+
+int sd_audio_effect_playing(const sd_audio *s) { return s->adlib || s->pc; }
+int sd_audio_pcm_playing(const sd_audio *s) { return s->pcm && s->pcm_pos < s->pcm_frames; }
+void sd_audio_pcm_position(sd_audio *s, unsigned l, unsigned r) {
+    if (l <= 15 && r <= 15 && (l != 15 || r != 15)) { s->left=l; s->right=r; }
+}
+
+void sd_audio_register(sd_audio *s, uint8_t r, uint8_t v) { reg(s,r,v); }
+
+void sd_audio_music_pause(sd_audio *s, int paused) {
+    unsigned i;
+    s->paused=paused;
+    if (paused) {
+        reg(s,0xbd,0);
+        for (i=1;i<9;++i) reg(s,(uint8_t)(0xb0+i),0);
+    }
+}
+
+int sd_audio_pc_pcm(sd_audio *s, const uint8_t *p, size_t n) {
+    if (!sd_audio_pcm(s,p,n,0,0,0)) return 0;
+    s->pcm_pc=1;
+    s->pcm_frames=(n*(uint64_t)s->rate+6999)/7000;
+    return 1;
 }

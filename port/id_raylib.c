@@ -3,6 +3,9 @@
  * raylib.h (see id_raylib.h).
  */
 #include <math.h>
+#include <stdint.h>
+#include <string.h>
+#include <time.h>
 
 #include "raylib.h"
 
@@ -227,6 +230,7 @@ int RL_JoyButtons (void)
 
 void RL_PumpEvents (void)
 {
+	RL_AudioPump();
 	if (!window_open)
 		return;
 	PollKeyboard();
@@ -305,6 +309,7 @@ int RL_OpenWindow (int width, int height, const char *title)
 
 void RL_Present (const unsigned char *rgba)
 {
+	RL_AudioPump();
 	int		w, h;
 	float	s, dw, dh;
 
@@ -357,6 +362,7 @@ void RL_Hold (int ms)
 	end = GetTime() + ms / 1000.0;
 	while (GetTime() < end && !WindowShouldClose())
 	{
+		RL_AudioPump();
 		BeginDrawing();
 		ClearBackground(BLACK);
 		EndDrawing();
@@ -379,3 +385,88 @@ int RL_WindowIsOpen (void)
 {
 	return window_open;
 }
+
+/* SPSC: game thread owns write/mixing; raylib audio thread owns read.
+ * GCC atomics work with the legacy C99 build, including on ARM. Never take a
+ * game/cache lock in the callback. The ring contains 16-bit stereo frames. */
+#ifdef WOLF3D_AUDIO_BACKEND
+#define AUDIO_RING 8192u
+#define AUDIO_AHEAD 3840u /* 80 ms at 48 kHz */
+static short audio_ring[AUDIO_RING*2];
+static unsigned audio_read, audio_write;
+static AudioStream audio_stream;
+static int audio_open;
+static void (*audio_mixer)(short *, unsigned);
+static struct timespec audio_epoch;
+static uint64_t audio_generated;
+static void WolfAudioCallback(void *buffer, unsigned frames) {
+    short *out=buffer;
+    unsigned r=__atomic_load_n(&audio_read,__ATOMIC_RELAXED);
+    unsigned w=__atomic_load_n(&audio_write,__ATOMIC_ACQUIRE);
+    unsigned n=w-r, i;
+    if (n>frames) n=frames;
+    for (i=0;i<n;++i) {
+        out[i*2]=audio_ring[((r+i)%AUDIO_RING)*2];
+        out[i*2+1]=audio_ring[((r+i)%AUDIO_RING)*2+1];
+    }
+    memset(out+n*2,0,(frames-n)*2*sizeof(*out));
+    __atomic_store_n(&audio_read,r+n,__ATOMIC_RELEASE);
+}
+void RL_AudioPump(void) {
+    struct timespec now;
+    short samples[512*2];
+    unsigned r,w,queued,n;
+    uint64_t due;
+    if (!audio_open) return;
+    clock_gettime(CLOCK_MONOTONIC,&now);
+    /* Allow 1000 ppm of DAC clock drift relative to CLOCK_MONOTONIC.
+     * The queue limit still bounds latency to 80 ms; this cap only prevents
+     * a null/racing sink from advancing synthesis without wall-clock time. */
+    due=(uint64_t)(((now.tv_sec-audio_epoch.tv_sec)+
+                   (now.tv_nsec-audio_epoch.tv_nsec)*1e-9)*48000*1.001)+AUDIO_AHEAD;
+    r=__atomic_load_n(&audio_read,__ATOMIC_ACQUIRE);
+    w=__atomic_load_n(&audio_write,__ATOMIC_RELAXED);
+    queued=w-r;
+    while (queued<AUDIO_AHEAD && audio_generated<due) {
+        n=AUDIO_AHEAD-queued;
+        if (n>512) n=512;
+        if (n>due-audio_generated) n=(unsigned)(due-audio_generated);
+        audio_mixer(samples,n);
+        for (unsigned i=0;i<n;++i) {
+            audio_ring[((w+i)%AUDIO_RING)*2]=samples[i*2];
+            audio_ring[((w+i)%AUDIO_RING)*2+1]=samples[i*2+1];
+        }
+        w+=n; queued+=n; audio_generated+=n;
+        __atomic_store_n(&audio_write,w,__ATOMIC_RELEASE);
+    }
+}
+int RL_AudioOpen(void (*mixer)(short *, unsigned)) {
+    if (audio_open) return 1;
+    /* Require actual lock-free 32-bit atomics on the target. */
+    if (!__atomic_always_lock_free(sizeof(unsigned),0)) return 0;
+    InitAudioDevice();
+    if (!IsAudioDeviceReady()) { CloseAudioDevice(); return 0; }
+    SetAudioStreamBufferSizeDefault(512);
+    audio_stream=LoadAudioStream(48000,16,2);
+    if (!IsAudioStreamValid(audio_stream)) { CloseAudioDevice(); return 0; }
+    audio_read=audio_write=0; audio_generated=0; audio_mixer=mixer;
+    clock_gettime(CLOCK_MONOTONIC,&audio_epoch);
+    audio_open=1;
+    RL_AudioPump();
+    SetAudioStreamCallback(audio_stream,WolfAudioCallback);
+    PlayAudioStream(audio_stream);
+    return 1;
+}
+void RL_AudioClose(void) {
+    if (!audio_open) return;
+    StopAudioStream(audio_stream);
+    UnloadAudioStream(audio_stream);
+    CloseAudioDevice();
+    audio_open=0; audio_mixer=NULL;
+}
+#else
+/* Keyboard tests link a fake video/input raylib with no audio device. */
+int RL_AudioOpen(void (*mixer)(short *, unsigned)) { (void)mixer; return 0; }
+void RL_AudioPump(void) { }
+void RL_AudioClose(void) { }
+#endif

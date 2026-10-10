@@ -148,3 +148,57 @@ README explicitly offers the original engine under GPL v2 as an alternative
 to the id limited-use license. No Wolf4SDL source is vendored here. When
 redistributing a linked binary, provide corresponding audio/Nuked source and
 build instructions so the library can be modified and the executable rebuilt.
+
+## Integrated Sound Manager / raylib stream (WOLF-6)
+
+The game always links `wolf_audio`. `ID_SD.C` preserves effect/digi priorities,
+mode switches and positional attenuation, and copies host-layout cached sounds
+into the engine's on-disk layout. Borrowed engine buffers are owned by ID_SD;
+cache purges cannot invalidate playback. Music off/on pauses/resumes its cursor.
+PC digitized mode uses the original ASM `pcdtab` bit 7 at 7000 Hz; synthesized
+PC effects use 140 Hz note updates. SoundSource is not advertised.
+
+`port/id_raylib.c` owns the only raylib AudioStream (48 kHz, signed 16-bit stereo).
+The game thread pumps/mixes into a lock-free SPSC ring from presentation, input,
+`SD_Poll` and sound wait loops. The callback only copies PCM, emitting silence
+on underrun. Target queued audio is 3840 frames (80 ms); synthesis is also capped
+by the monotonic wall clock, so a null sink cannot run the sequencer ahead.
+Controls take effect after already queued samples, up to 80 ms plus device
+latency. `TimeCount` continues to use the independent 70 Hz monotonic timer.
+
+```sh
+cmake -S . -B build -DWOLF3D_WITH_AUDIO=ON -DBUILD_TESTING=ON
+cmake --build build -j4
+ctest --test-dir build --output-on-failure
+WOLF3D_DATA="$HOME/wolf3d-data/shareware" WOLF3D_NOSOUND=1 \
+  timeout 15s xvfb-run -a build/raylib_wolf3d
+python3 scripts/record_audio.py build/wolf_sd_device \
+  "$HOME/wolf3d-data/shareware" capture.wav
+ffmpeg -y -i capture.wav -lavfi \
+  'showspectrumpic=s=1200x600:legend=1:scale=log' -frames:v 1 spectrum.png
+```
+
+The capture helper creates a private PulseAudio/PipeWire null sink, records its
+monitor, runs the real cache -> ID_SD -> raylib stream harness for 20 wall-clock
+seconds, and tears down its recorder and sink before returning. Title music
+`NAZI_NOR_MUS` plays for 12 seconds, followed by AdLib/PC `SHOOTSND`, then VSWAP
+entries 0 and 1 in left/right channels. Capture timing includes a short leading
+silence and device latency. These are actual game data and API paths, not an
+interactive game-loop recording: master `96b3148` still has unrelated startup
+blockers (`US_CheckParm` for arguments and `peekb` without arguments). Menu/UI
+and gameplay recording require WOLF-7. No game data or recordings are committed.
+
+`sound_manager` checks cache serialization against independently read raw audio,
+completion, synthesized/digi/shared-PC priorities, stereo, digi with effects
+off, music switching and forced silence. `audio_ring` checks callback ordering,
+wraparound, underrun silence, null-sink pacing and teardown without a device.
+
+```sh
+cmake -S . -B build-sd-sanitize -DCMAKE_BUILD_TYPE=Debug \
+  -DCMAKE_C_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer' \
+  -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined'
+cmake --build build-sd-sanitize -j4 --target \
+  wolf_sd_test wolf_audio_ring_test wolf_audio_test
+ctest --test-dir build-sd-sanitize \
+  -R 'audio_contract|sound_manager|audio_ring' --output-on-failure
+```

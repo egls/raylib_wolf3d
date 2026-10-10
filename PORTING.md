@@ -246,16 +246,13 @@ Palette: `VL_SetPalette/GetPalette/SetColor/FillPalette/FadeIn/FadeOut` keep the
 
 ## First playable (WOLF-7)
 
-### Temporary silent Sound Manager
+### Sound
 
-`port/sd_silent.c` is built **instead of** `WOLFSRC/ID_SD.C` while
-`WOLF3D_SILENT_SD` is ON (the default).  It is a machine with a PC speaker
-and nothing else, unplugged: modes are accepted and remembered, nothing plays,
-`SD_SoundPlaying()` is always 0.  Delete it and the CMake option when WOLF-6
-is merged.  Known coupling to keep in mind: `UpdateFace` (WL_AGENT.C) skips
-its `US_RndT()` calls while `GETGATLINGSND` plays, so sound timing can move
-the random sequence after a chaingun pickup (none of the four demos picks one
-up).
+`port/sd_silent.c`, the temporary no-sound Sound Manager used while WOLF-6 was
+open, is gone: `WOLFSRC/ID_SD.C` (WOLF-6) is built again.  Known coupling to
+keep in mind: `UpdateFace` (WL_AGENT.C) skips its `US_RndT()` calls while
+`GETGATLINGSND` plays, so sound timing can move the random sequence after a
+chaingun pickup (none of the four demos picks one up).
 
 ### Crash and correctness fixes found by running the game (ASan/UBSan)
 

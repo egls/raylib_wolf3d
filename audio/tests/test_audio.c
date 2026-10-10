@@ -91,4 +91,28 @@ static void pcm_pc(void) {
     sd_audio_stop_effect(s); sd_audio_mix(s,out,8); CHECK(out[0]==0);
     sd_audio_destroy(s);
 }
-int main(void) { timing(); contracts(); placeholder_music(); partition(); pcm_pc(); puts("PASS: tick timing, looping, malformed inputs, zero-length placeholders, priorities, partitioning, PCM, PC"); return 0; }
+static void music_pause(void) {
+    sd_audio *s=sd_audio_create(44100); int16_t out[2000];
+    sd_audio_set_register_hook(s,hook,NULL);
+    CHECK(sd_audio_music(s,music,sizeof(music),1)); events=0;
+    sd_audio_mix(s,out,1); CHECK(events==1);
+    sd_audio_music_pause(s,1); events=0;
+    for (int i=0;i<44;++i) sd_audio_mix(s,out,1000);
+    CHECK(events==0);
+    sd_audio_music_pause(s,0); sd_audio_mix(s,out,500);
+    CHECK(events>0 && event_reg[0]==0x40); /* cursor retained, not restarted */
+    sd_audio_destroy(s);
+}
+static void pc_digitized(void) {
+    uint8_t bits[]={0,127,128,255};
+    int16_t out[16];
+    sd_audio *s=sd_audio_create(7000);
+    CHECK(sd_audio_pc_pcm(s,bits,sizeof(bits)));
+    sd_audio_mix(s,out,4);
+    CHECK(out[0]==-8192 && out[2]==-8192 && out[4]==8192 && out[6]==8192);
+    CHECK(!sd_audio_pcm_playing(s));
+    sd_audio_mix(s,out,4);
+    for (int i=0;i<8;++i) CHECK(out[i]==0);
+    sd_audio_destroy(s);
+}
+int main(void) { music_pause(); pc_digitized(); timing(); contracts(); placeholder_music(); partition(); pcm_pc(); puts("PASS: tick timing, looping, malformed inputs, zero-length placeholders, priorities, partitioning, PCM, PC"); return 0; }
