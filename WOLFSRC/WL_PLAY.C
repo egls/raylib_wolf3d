@@ -499,8 +499,8 @@ void PollControls (void)
 			buttonbits >>= 1;
 		}
 
-		controlx = *demoptr++;
-		controly = *demoptr++;
+		controlx = (signed char)*demoptr++;	// WOLF-19: signed deltas; plain char is unsigned on ARM
+		controly = (signed char)*demoptr++;
 
 		if (demoptr == lastdemoptr)
 			playstate = ex_completed;		// demo is done

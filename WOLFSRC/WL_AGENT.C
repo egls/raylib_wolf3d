@@ -62,7 +62,7 @@ long	playerxmove,playerymove;
 
 struct atkinf
 {
-	char	tics,attack,frame;		// attack is 1 for gun, 2 for knife
+	signed char	tics,attack,frame;	// attack is 1 for gun, 2 for knife (WOLF-19: -1 ends the sequence, so not plain char)
 } attackinfo[4][14] =
 
 {
