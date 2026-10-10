@@ -197,7 +197,7 @@ extern	SDSMode		DigiMode;
 extern	SMMode		MusicMode;
 extern	boolean		DigiPlaying;
 extern	int			DigiMap[];
-extern	volatile longword	TimeCount;					// Global time in ticks
+extern	_Atomic longword	TimeCount;					// Global time in ticks
 
 // Function prototypes
 extern	void	SD_Startup(void),

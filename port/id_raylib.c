@@ -101,7 +101,9 @@ static void SyncKeys (void)
 		if (k->tapped && !k->down && !down)
 		{
 			/* pressed and released between two polls: report both */
-			if (!(k->key == KEY_ENTER && (IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT))))
+			if (k->key == KEY_ENTER && (IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT)))
+				RL_ToggleFullscreen();		/* a quick Alt+Enter tap still toggles */
+			else
 			{
 				PushKey(k->scan, k->ext, 1);
 				PushKey(k->scan, k->ext, 0);

@@ -58,7 +58,7 @@ static void *TimerThread (void *arg)
 		due = (longword)WL_TickClock();
 		while (done < due)
 		{
-			__atomic_add_fetch(&TimeCount, 1, __ATOMIC_RELAXED);
+			TimeCount++;			// _Atomic: the game thread reads and resets it concurrently
 			done++;
 		}
 		WL_SleepUntilTick(done + 1);

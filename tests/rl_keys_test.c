@@ -156,6 +156,7 @@ int main (void)
 	queue[queued++] = KEY_ENTER;
 	RL_PumpEvents();
 	Empty();
+	CHECK(toggles == 2);
 	down[KEY_LEFT_ALT] = 0;
 	RL_PumpEvents();
 	Expect(0x38, 0, 0);
