@@ -900,12 +900,7 @@ static int test_corrupt_savegame (void)
     corrupt[ACTORAT + 2] = 0x05; corrupt[ACTORAT + 3] = 0x80; /* 0x8000 | 5 >= 1 actor */
     CHECK(WL_DeserializeSaveGame(corrupt, len) == false);
 
-    /* 6. Invalid door index in tilemap (> MAXDOORS) */
-    memcpy(corrupt, buf, len);
-    corrupt[66 + 80] = 0xff; /* door index 127 >= MAXDOORS */
-    CHECK(WL_DeserializeSaveGame(corrupt, len) == false);
-
-    /* 7. Out-of-bounds statobj coordinates (>= 64) */
+    /* 6. Out-of-bounds statobj coordinates (>= 64) */
     memcpy(corrupt, buf, len);
     size_t trailing_start = len - WL_TRAILING_SIZE;
     corrupt[trailing_start + 2] = 64; /* tx >= 64 */
@@ -981,6 +976,55 @@ static int test_joystick_bound_validation (void)
 }
 
 /* -------------------------------------------------------------------------
+ * Test 10: Pushwall Move Save Roundtrip
+ * ------------------------------------------------------------------------- */
+
+static int test_pushwall_move_save_roundtrip (void)
+{
+    uint8_t buf[65536];
+
+    InitActorList();
+    player->active = ac_yes;
+    player->state = &s_player;
+    player->tilex = 5;
+    player->tiley = 5;
+    player->areanumber = 0;
+
+    memset(actorat, 0, sizeof(actorat));
+    memset(tilemap, 0, sizeof(tilemap));
+    actorat[5][5] = player;
+
+    /* Mid-move pushwall exactly as WL_ACT1.C:793/892 leaves it */
+    pwallstate = 20;
+    pwallx = 10;
+    pwally = 10;
+    pwalldir = di_north;
+    pwallpos = 20;
+    tilemap[10][10] = 5 | 0xc0;
+
+    size_t len = WL_SerializeSaveGame(buf, sizeof(buf));
+    CHECK(len > 0);
+
+    /* Reset state */
+    pwallstate = pwallx = pwally = pwalldir = pwallpos = 0;
+    memset(tilemap, 0, sizeof(tilemap));
+
+    /* Deserialize */
+    CHECK(WL_DeserializeSaveGame(buf, len) == true);
+
+    /* Verify restored pushwall state */
+    CHECK(pwallstate == 20);
+    CHECK(pwallx == 10);
+    CHECK(pwally == 10);
+    CHECK(pwalldir == di_north);
+    CHECK(pwallpos == 20);
+    CHECK(tilemap[10][10] == (5 | 0xc0));
+
+    puts("PASS: pushwall move save roundtrip");
+    return 0;
+}
+
+/* -------------------------------------------------------------------------
  * Main
  * ------------------------------------------------------------------------- */
 
@@ -996,6 +1040,7 @@ int main (void)
     if (test_truncated_savegame() != 0) return 1;
     if (test_corrupt_savegame() != 0) return 1;
     if (test_joystick_bound_validation() != 0) return 1;
+    if (test_pushwall_move_save_roundtrip() != 0) return 1;
 
     puts("ALL SAVE & CONFIG TESTS PASSED!");
     return 0;

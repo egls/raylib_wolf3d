@@ -1680,6 +1680,7 @@ int CP_SaveGame(int quick)
 					memset(input32, 0, sizeof(input32));
 					size_t inlen = strlen(input);
 					if (inlen > 31) inlen = 31;
+					memcpy(input32, input, inlen);
 					ssize_t wr = write(handle, input32, 32);
 					lseek(handle,32,SEEK_SET);
 

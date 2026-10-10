@@ -635,8 +635,12 @@ boolean WL_DeserializeSaveGame (const uint8_t *buf, size_t size)
     for (int i = 0; i < 64 * 64; i++)
     {
         uint8_t tile = rd_u8(&v);
-        if ((tile & 0x80) && (tile & 0x7f) >= MAXDOORS)
-            return false;
+        if ((tile & 0xc0) == 0x80)
+        {
+            uint8_t doornum = tile & 0x3f;
+            if (doornum >= MAXDOORS)
+                return false;
+        }
     }
 
     /* 4. actorat (8192 bytes) - deferred until actor count is known */
