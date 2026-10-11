@@ -178,6 +178,15 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+  # Headless timer/startup/path coverage, including the native Windows timer.
+  add_executable(wolf_platform_test tests/platform_test.c
+    port/wl_timer.c port/wl_platform.c port/wl_persist.c)
+  target_include_directories(wolf_platform_test PRIVATE port WOLFSRC)
+  target_link_libraries(wolf_platform_test PRIVATE Threads::Threads)
+  add_test(NAME core_platform COMMAND Python3::Interpreter -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/platform_check.py $<TARGET_FILE:wolf_platform_test>)
+  set_tests_properties(core_platform PROPERTIES TIMEOUT 30)
+
   add_executable(wolf_core_data_test tests/core_data_test.c
     WOLFSRC/ID_MM.C WOLFSRC/ID_PM.C WOLFSRC/ID_CA.C WOLFSRC/WL_SCALE.C port/wl_data.c)
   target_include_directories(wolf_core_data_test PRIVATE port WOLFSRC)

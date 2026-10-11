@@ -329,3 +329,25 @@ leaked it (found by LeakSanitizer in the `asan` preset).
 - The shareware order/end text screen on quit (`Quit` exits directly).
 - `WL_DEBUG.C` debug keys that touch VGA memory (`MK_FP(0xa000,...)`) or
   `bioskey`; virtual-reality helmet input (`peek`, int 60h).
+
+## Windows timer and file paths (WOLF-33)
+
+`wl_timer.c` uses QueryPerformanceCounter, a CRT timer thread, and high-resolution
+waitable timers on Windows 11. The POSIX monotonic-clock implementation remains
+in use on Linux. Both advance the atomic 70 Hz TimeCount after game resets.
+
+In PowerShell, pass `-data "C:\Games\Wolf shareware"`, or set
+`$env:WOLF3D_DATA` to the external shareware v1.4 directory. Config and saves
+use `%APPDATA%/raylib_wolf3d` (`LOCALAPPDATA` fallback), resolved before changing
+the working directory to the assets. Linux retains its XDG config location.
+
+The headless `core_platform` CTest needs no game data or display. To run it
+independently with MinGW from the repository root:
+
+```powershell
+gcc -std=gnu99 -Iport -IWOLFSRC tests/platform_test.c port/wl_timer.c port/wl_platform.c port/wl_persist.c -o build-platform-test.exe
+python tests/platform_check.py build-platform-test.exe
+```
+
+The harness supplies a fake window and empty asset placeholders; it tests
+startup and paths, not game data validity or rendering.
