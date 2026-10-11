@@ -7,9 +7,11 @@
 #ifdef WOLF3D_REGISTERED
 #include "VERSION.H"
 #define WOLF3D_DATA_EXT "WL6"
+#define WOLF3D_PROGRAM_NAME "wolf3d-wl6"
 #else
 #include "WOLF1VER.H"
 #define WOLF3D_DATA_EXT "WL1"
+#define WOLF3D_PROGRAM_NAME "raylib_wolf3d"
 #endif
 
 //--------------------------------------------------------------------------

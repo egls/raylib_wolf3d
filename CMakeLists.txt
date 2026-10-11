@@ -194,6 +194,18 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+  add_test(NAME registered_stub_guard COMMAND Python3::Interpreter -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/registered_stub_guard.py
+    ${CMAKE_C_COMPILER} ${CMAKE_CURRENT_SOURCE_DIR})
+  set_tests_properties(registered_stub_guard PROPERTIES TIMEOUT 30)
+  add_executable(wolf_boss_key_test tests/boss_key_test.c WOLFSRC/WL_MENU.C)
+  target_include_directories(wolf_boss_key_test PRIVATE port WOLFSRC)
+  target_compile_definitions(wolf_boss_key_test PRIVATE WOLF3D_REGISTERED)
+  target_compile_options(wolf_boss_key_test PRIVATE ${WOLF3D_WARNINGS} ${WOLF3D_GAME_FLAGS}
+    -UNDEBUG -ffunction-sections -fdata-sections)
+  target_link_options(wolf_boss_key_test PRIVATE -Wl,--gc-sections)
+  add_test(NAME registered_boss_key COMMAND wolf_boss_key_test)
+  set_tests_properties(registered_boss_key PROPERTIES TIMEOUT 5)
   add_executable(wolf_wl6_layout tests/wl6_layout.c)
   target_include_directories(wolf_wl6_layout PRIVATE port WOLFSRC)
   target_compile_definitions(wolf_wl6_layout PRIVATE WOLF3D_REGISTERED)

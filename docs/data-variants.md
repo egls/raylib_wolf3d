@@ -62,12 +62,23 @@ must choose the script before instantiating a fresh Emscripten runtime:
 
 No registered data is committed, fetched, bundled, or sent to a server.
 
+## Registered shortcuts
+
+F1 retains the GoodTimes boss-key behaviour: it hides the framebuffer and mutes
+music until Escape, pumping input and yielding throughout the wait, then restores
+video/music. Holding M at startup opens the jukebox; its initial page is selected
+from the portable tick counter instead of DOS time services.
+
 ## Agent checks (synthetic data only)
 
 `synthetic_wl6` derives counts from a C probe including WOLFSRC headers, generates
 an inert Huffman dictionary, picture/font chunks, 60 uniform maps, silent audio
 and a minimal VSWAP, then runs the actual native executable's `-datacheck`.
-It also tests truncated/mismatched tables and invalid offsets. These fixtures
+It also tests truncated/mismatched tables and invalid offsets. `registered_boss_key`
+exercises the actual F1 routine with scripted input and no game assets.
+`registered_stub_guard` preprocesses every WOLFSRC C source as WL1 and WL6 and
+rejects added references to remaining NOTPORTED compatibility/assembly stubs.
+This is a conservative source guard, not a complete runtime reachability proof. These fixtures
 are not playable game assets and contain no registered data.
 
 For a browser check of the same loader, use an installed Playwright with Chromium:

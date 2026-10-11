@@ -36,7 +36,7 @@ void WL_NotPorted (const char *what, const char *file, int line)
 	const char *slash = strrchr(file, '/');
 
 	fflush(stdout);
-	fprintf(stderr, "raylib_wolf3d: not ported yet: %s (%s:%d)\n",
+	fprintf(stderr, WOLF3D_PROGRAM_NAME ": not ported yet: %s (%s:%d)\n",
 		what, slash ? slash + 1 : file, line);
 	// WOLF3D_NOTPORTED_HOLD_MS keeps the window up, e.g. for screenshots
 	RL_Hold(env_int("WOLF3D_NOTPORTED_HOLD_MS"));
@@ -58,7 +58,7 @@ static const char *WL_FindDataDir (int argc, char **argv)
 		{
 			if (i + 1 >= argc)
 			{
-				fprintf(stderr, "raylib_wolf3d: -data needs a directory\n");
+				fprintf(stderr, WOLF3D_PROGRAM_NAME ": -data needs a directory\n");
 				exit(2);
 			}
 			dir = argv[i + 1];
@@ -80,21 +80,21 @@ void WL_PlatformStartup (int argc, char **argv)
 
 	if (chdir(dir))
 	{
-		fprintf(stderr, "raylib_wolf3d: can't use data directory '%s': %s\n",
+		fprintf(stderr, WOLF3D_PROGRAM_NAME ": can't use data directory '%s': %s\n",
 			dir, strerror(errno));
 		exit(2);
 	}
 	for (i = 0; i < sizeof(data_files) / sizeof(data_files[0]); i++)
 		if (access(data_files[i], R_OK))
 		{
-			fprintf(stderr, "raylib_wolf3d: %s not found in '%s'.\n"
+			fprintf(stderr, WOLF3D_PROGRAM_NAME ": %s not found in '%s'.\n"
 				"Use the matching " WOLF3D_DATA_EXT " data set and pass "
 				"-data <dir> or set WOLF3D_DATA.\n", data_files[i], dir);
 			exit(2);
 		}
 
     /* Headless structural check: no renderer, audio device or game/config writes. */
-    for (i = 1; i < (unsigned)argc; i++)
+    for (i = 1; i < (unsigned)argc; i++) {
         if (!strcmp(argv[i], "-datacheck")) {
             unsigned chunk;
             MM_Startup();
@@ -112,10 +112,11 @@ void WL_PlatformStartup (int argc, char **argv)
             printf("PASS: " WOLF3D_DATA_EXT " structural data check\n");
             exit(0);
         }
+    }
 
 	if (!RL_OpenWindow(WL_WINDOW_W, WL_WINDOW_H, "Wolfenstein 3-D (raylib)"))
 	{
-		fprintf(stderr, "raylib_wolf3d: could not open a window\n");
+		fprintf(stderr, WOLF3D_PROGRAM_NAME ": could not open a window\n");
 		exit(2);
 	}
 	WL_TimerStart();		// 70 Hz TimeCount, replaces the PIT interrupt

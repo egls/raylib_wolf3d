@@ -642,10 +642,12 @@ void CP_ReadThis(void)
 void BossKey(void)
 {
 	SD_MusicOff();
-	_AX = 3;
-	geninterrupt(0x10);
-	printf("C>");
+	/* Hide the game in the existing framebuffer; there is no DOS text mode. */
+	VW_Bar(0, 0, 320, 200, 0);
+	VW_UpdateScreen();
+	IN_ClearKeysDown();
 	while (!Keyboard[sc_Escape])
+		IN_SpinWait(); /* Pumps input and yields on native and web. */
 	IN_ClearKeysDown();
 
 	SD_MusicOn();

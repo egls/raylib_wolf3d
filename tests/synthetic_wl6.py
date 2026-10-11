@@ -91,6 +91,7 @@ def run(game, root, success):
     else:
         assert result.returncode in (1, 2), result.stderr  # no signal/crash
         assert result.stderr.strip(), 'Missing diagnostic'
+        assert ('wolf3d-wl6:' if game == registered else 'raylib_wolf3d:') in result.stderr
     return result.stderr
 
 
