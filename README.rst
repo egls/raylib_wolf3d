@@ -101,6 +101,49 @@ Alt + Enter                Toggle fullscreen (this port; never reaches the game)
 The mouse works as in the original (move/turn and buttons).  The original
 Pause key is not mapped by this port yet.
 
+Windows
+-------
+
+Target: Windows 11 x64, built from PowerShell.  Only the shareware (WL1) data
+is supported, as on Linux.
+
+Build with MSYS2 MinGW-w64 (``pacman -S mingw-w64-x86_64-gcc
+mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja mingw-w64-x86_64-python``; put
+``C:\msys64\mingw64\bin`` on ``PATH``)::
+
+    cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+    cmake --build build
+
+raylib 5.5 is fetched and linked statically unless a matching one is
+installed.  ``ctest --test-dir build --output-on-failure`` runs the tests;
+those that need the WL1 data skip without it.
+
+Get the data (checked by SHA-256, kept outside the repository) and run::
+
+    scripts\fetch_shareware.ps1        # -> %USERPROFILE%\wolf3d-data\shareware
+    build\raylib_wolf3d.exe -data $env:USERPROFILE\wolf3d-data\shareware
+
+If scripts are blocked, run ``powershell -ExecutionPolicy Bypass -File
+scripts\fetch_shareware.ps1`` (or ``Set-ExecutionPolicy -Scope CurrentUser
+RemoteSigned``).
+
+The Windows release package is
+``raylib_wolf3d-VERSION-windows-x64.zip``: ``raylib_wolf3d.exe``, the
+non-system runtime DLLs it needs (for MinGW ``libwinpthread-1.dll`` and
+possibly ``libgcc_s_seh-1.dll``), ``run.ps1``, ``scripts\fetch_shareware.ps1``
+and ``doc\`` (README, ``SOURCE.txt``, ``licenses\``).  It contains no game
+data.  Unzip it anywhere and run ``.\run.ps1``: on first run it downloads and
+verifies the shareware data, then starts the game (extra arguments are passed
+through; ``WOLF3D_DATA`` overrides the data directory).  Windows SmartScreen
+may warn about the unsigned ``.exe``; choose "More info", "Run anyway".
+Build the zip locally after a build with::
+
+    scripts\package.ps1 -BuildDir build -OutDir dist 0.0.0-local
+
+``package.ps1`` finds the DLLs with ``objdump`` (MinGW) or ``dumpbin`` (MSVC
+Developer PowerShell) and fails if one cannot be found (``-DllDir`` adds
+search directories).  The zip's SHA-256 goes to ``dist\SHA256SUMS-windows``.
+
 Command-line options
 --------------------
 
