@@ -497,3 +497,13 @@ LICENCE.DOC
   ANY OTHER COMMUNICATIONS BETWEEN ID AND YOU RELATING TO THE SUBJECT MATTER 
   OF THIS AGREEMENT 
   
+
+Registered data variant (WL6)
+-----------------------------
+
+Both native and web configurations also build ``wolf3d-wl6``. It uses the
+original registered headers and accepts the 149-graphics-chunk WL6 layout;
+registered files must be supplied by their owner at runtime and are never
+bundled. The existing ``raylib_wolf3d`` target remains the shareware build.
+See ``docs/data-variants.md`` for the web shell's ``variants.json`` contract,
+synthetic checks, supported layout and the owner's gameplay checklist.

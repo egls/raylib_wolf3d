@@ -54,32 +54,42 @@ endif()
 
 set(WOLF3D_SHELL ${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html)
 
-set_target_properties(raylib_wolf3d PROPERTIES
-  SUFFIX .html
-  LINK_DEPENDS "${WOLF3D_SHELL};${WOLF3D_WEB_DATA_FILES}")
+function(wolf3d_configure_web target)
+  # Registered assets are supplied by the owner at runtime, never preloaded.
+  if(target STREQUAL "wolf3d-wl6")
+    set(WOLF3D_WEB_PRELOAD)
+    set(WOLF3D_WEB_DATA_FILES)
+  endif()
+  set_target_properties(${target} PROPERTIES
+    SUFFIX .html
+    LINK_DEPENDS "${WOLF3D_SHELL};${WOLF3D_WEB_DATA_FILES}")
 
-# ASYNCIFY lets the game keep its nested blocking loops (menus, IN_Ack,
-# fades, intermissions, demos): emscripten_sleep() in the frame and input
-# pump unwinds to the browser and resumes there.  ASYNCIFY_STACK_SIZE holds
-# the unwound call stack.  Indirect calls stay instrumented: menu items,
-# PM_Preload's progress callback and actor think functions reach a yield
-# through function pointers.  (ASYNCIFY_IGNORE_INDIRECT would save about
-# 120 KB of the 150 KB ASYNCIFY adds to the .wasm, but a missed blocking
-# path then traps at run time.)
-set(WOLF3D_WEB_ASYNCIFY -sASYNCIFY -sASYNCIFY_STACK_SIZE=65536)
+  # ASYNCIFY lets the game keep its nested blocking loops (menus, IN_Ack,
+  # fades, intermissions, demos): emscripten_sleep() in the frame and input
+  # pump unwinds to the browser and resumes there.  ASYNCIFY_STACK_SIZE holds
+  # the unwound call stack.  Indirect calls stay instrumented: menu items,
+  # PM_Preload's progress callback and actor think functions reach a yield
+  # through function pointers.  (ASYNCIFY_IGNORE_INDIRECT would save about
+  # 120 KB of the 150 KB ASYNCIFY adds to the .wasm, but a missed blocking
+  # path then traps at run time.)
+  set(WOLF3D_WEB_ASYNCIFY -sASYNCIFY -sASYNCIFY_STACK_SIZE=65536)
 
-target_link_options(raylib_wolf3d PRIVATE
-  ${WOLF3D_WEB_ASYNCIFY}
-  -sUSE_GLFW=3
-  -sINITIAL_MEMORY=64MB
-  -sALLOW_MEMORY_GROWTH=1
-  -sSTACK_SIZE=1MB
-  -sENVIRONMENT=web
-  # The page starts the game from a click (focus, pointer lock and, in a
-  # later stage, the audio context need a user gesture).
-  -sINVOKE_RUN=0
-  # Quit and errors end the program; the page then shows its overlay.
-  -sEXIT_RUNTIME=1
-  -sEXPORTED_RUNTIME_METHODS=callMain,FS,ENV
-  --shell-file ${WOLF3D_SHELL}
-  ${WOLF3D_WEB_PRELOAD})
+  target_link_options(${target} PRIVATE
+    ${WOLF3D_WEB_ASYNCIFY}
+    -sUSE_GLFW=3
+    -sINITIAL_MEMORY=64MB
+    -sALLOW_MEMORY_GROWTH=1
+    -sSTACK_SIZE=1MB
+    -sENVIRONMENT=web
+    # The page starts the game from a click (focus, pointer lock and, in a
+    # later stage, the audio context need a user gesture).
+    -sINVOKE_RUN=0
+    # Quit and errors end the program; the page then shows its overlay.
+    -sEXIT_RUNTIME=1
+    -sEXPORTED_RUNTIME_METHODS=callMain,FS,ENV
+    --shell-file ${WOLF3D_SHELL}
+    ${WOLF3D_WEB_PRELOAD})
+
+endfunction()
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/web/variants.json
+               ${CMAKE_CURRENT_BINARY_DIR}/variants.json COPYONLY)

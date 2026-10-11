@@ -32,7 +32,7 @@ void PM_Startup(void) {
     snprintf(name, sizeof name, "%s%s", PageFileName, dot && dot[1] ? "" : extension);
     fd = open(name, O_RDONLY | O_BINARY);
     if (fd < 0)
-        Quit("Can't open VSWAP.WL1");
+        Quit("Can't open VSWAP." WOLF3D_DATA_EXT);
     filesize = filelength(fd);
     exact(fd, h, 6);
     ChunksInFile = WL_ReadLE16(h);

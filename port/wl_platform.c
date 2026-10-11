@@ -2,7 +2,7 @@
  * wl_platform.c - process startup for the port: argv globals, the game data
  * directory, the window, and the "not ported yet" exit path.
  */
-#include "wl_compat.h"
+#include "ID_HEADS.H"
 #include "id_raylib.h"
 #include "wl_timer.h"
 
@@ -13,11 +13,11 @@
 int		_argc;
 char	**_argv;
 
-/* Files the shareware v1.4 build opens from the data directory. */
-static const char *wl1_files[] =
+/* Each binary accepts only its compiled data layout. */
+static const char *data_files[] =
 {
-	"AUDIOHED.WL1", "AUDIOT.WL1", "GAMEMAPS.WL1", "MAPHEAD.WL1",
-	"VGADICT.WL1", "VGAGRAPH.WL1", "VGAHEAD.WL1", "VSWAP.WL1"
+	"AUDIOHED." WOLF3D_DATA_EXT, "AUDIOT." WOLF3D_DATA_EXT, "GAMEMAPS." WOLF3D_DATA_EXT, "MAPHEAD." WOLF3D_DATA_EXT,
+	"VGADICT." WOLF3D_DATA_EXT, "VGAGRAPH." WOLF3D_DATA_EXT, "VGAHEAD." WOLF3D_DATA_EXT, "VSWAP." WOLF3D_DATA_EXT
 };
 
 static int env_int (const char *name)
@@ -84,14 +84,34 @@ void WL_PlatformStartup (int argc, char **argv)
 			dir, strerror(errno));
 		exit(2);
 	}
-	for (i = 0; i < sizeof(wl1_files) / sizeof(wl1_files[0]); i++)
-		if (access(wl1_files[i], R_OK))
+	for (i = 0; i < sizeof(data_files) / sizeof(data_files[0]); i++)
+		if (access(data_files[i], R_OK))
 		{
 			fprintf(stderr, "raylib_wolf3d: %s not found in '%s'.\n"
-				"Get the shareware data with scripts/fetch_shareware.sh and pass "
-				"-data <dir> or set WOLF3D_DATA.\n", wl1_files[i], dir);
+				"Use the matching " WOLF3D_DATA_EXT " data set and pass "
+				"-data <dir> or set WOLF3D_DATA.\n", data_files[i], dir);
 			exit(2);
 		}
+
+    /* Headless structural check: no renderer, audio device or game/config writes. */
+    for (i = 1; i < (unsigned)argc; i++)
+        if (!strcmp(argv[i], "-datacheck")) {
+            unsigned chunk;
+            MM_Startup();
+            CA_Startup();
+            PM_Startup();
+            for (chunk = 0; chunk < NUMMAPS; chunk++)
+                if (mapheaderseg[chunk]) CA_CacheMap(chunk);
+            for (chunk = 0; chunk < NUMCHUNKS; chunk++)
+                if (grstarts[chunk] >= 0) CA_CacheGrChunk(chunk);
+            for (chunk = 0; chunk < NUMSNDCHUNKS; chunk++)
+                CA_CacheAudioChunk(chunk);
+            PM_Shutdown();
+            CA_Shutdown();
+            MM_Shutdown();
+            printf("PASS: " WOLF3D_DATA_EXT " structural data check\n");
+            exit(0);
+        }
 
 	if (!RL_OpenWindow(WL_WINDOW_W, WL_WINDOW_H, "Wolfenstein 3-D (raylib)"))
 	{

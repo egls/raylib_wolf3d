@@ -4,7 +4,13 @@
 // WOLF-2: Borland/DOS headers replaced by the portable compatibility layer
 #include "wl_compat.h"
 #define __ID_GLOB__
-#include "WOLF1VER.H"	// WOLF-2: shareware v1.4 (WL1) build, was VERSION.H
+#ifdef WOLF3D_REGISTERED
+#include "VERSION.H"
+#define WOLF3D_DATA_EXT "WL6"
+#else
+#include "WOLF1VER.H"
+#define WOLF3D_DATA_EXT "WL1"
+#endif
 
 //--------------------------------------------------------------------------
 
@@ -25,7 +31,11 @@ extern	char		far signon;
 #ifndef SPEAR
 
 // Apogee shareware v1.4 graphics/audio chunk layout.
+#ifdef WOLF3D_REGISTERED
+#include "GFXV_WL6.H"
+#else
 #include "GFXV_WL14.H"
+#endif
 #include "AUDIOWL6.H"
 #include "MAPSWL6.H"
 

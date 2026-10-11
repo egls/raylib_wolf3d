@@ -65,7 +65,9 @@ void CP_NewGameMenu(int item) { (void)item; CP_NewGame(); }
 void CP_SoundMenu(int item) { (void)item; CP_Sound(); }
 void CP_ControlMenu(int item) { (void)item; CP_Control(); }
 void CP_ChangeViewMenu(int item) { (void)item; CP_ChangeView(); }
+#if !defined(GOODTIMES) && !defined(SPEAR)
 void CP_ReadThisMenu(int item) { (void)item; CP_ReadThis(); }
+#endif
 void CP_ViewScoresMenu(int item) { (void)item; CP_ViewScores(); }
 static void MouseSensitivityMenu(int item) { (void)item; MouseSensitivity(); }
 void CustomControlsMenu(int item) { (void)item; CustomControls(); }

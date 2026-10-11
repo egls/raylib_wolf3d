@@ -1,0 +1,4 @@
+{
+  "WL1": {"script": "raylib_wolf3d.js", "wasm": "raylib_wolf3d.wasm", "data": "raylib_wolf3d.data"},
+  "WL6": {"script": "wolf3d-wl6.js", "wasm": "wolf3d-wl6.wasm", "data": null}
+}
