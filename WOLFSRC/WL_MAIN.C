@@ -294,6 +294,7 @@ void WriteConfig(void)
 		if (!WS_WriteFile (file,&s))
 			fprintf (stderr,"raylib_wolf3d: could not write %s\n",WL_UserFile(configname));
 		close(file);
+		WL_UserFilesChanged ();	// WOLF-43
 	}
 	WS_Free (&s);
 }

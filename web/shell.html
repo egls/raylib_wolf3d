@@ -8,29 +8,58 @@
   html, body { margin: 0; height: 100%; background: #000; color: #ddd;
                font: 15px/1.4 system-ui, sans-serif; overflow: hidden;
                overscroll-behavior: none; }
+  a { color: #e88; }
   /* raylib sizes the canvas to the window; the game letterboxes to 4:3. */
   #canvas { display: block; outline: none; image-rendering: pixelated; }
   #overlay { position: fixed; inset: 0; display: flex; align-items: center;
-             justify-content: center; background: rgba(0, 0, 0, .85); }
+             justify-content: center; background: rgba(0, 0, 0, .85);
+             overflow-y: auto; }
   .hidden { display: none !important; }
-  #panel { width: min(30em, 90vw); text-align: center; }
+  #panel { width: min(34em, 92vw); margin: auto; padding: 1em 0; text-align: center; }
   h1 { margin: 0 0 .6em; font-size: 2em; color: #c33; letter-spacing: .06em; }
   #bar { height: .6em; margin: 1em 0; border: 1px solid #555; }
   #fill { height: 100%; width: 0; background: #c33; }
   #status { min-height: 1.4em; white-space: pre-wrap; }
-  #status.error { color: #f66; text-align: left; font-family: monospace; }
-  #play { margin: 1em 0; padding: .5em 2em; font-size: 1.3em; cursor: pointer;
-          background: #c33; color: #fff; border: 0; border-radius: 4px; }
-  #play:disabled { background: #555; cursor: default; }
-  small { color: #888; }
+  #status.error, #datamsg.error { color: #f66; }
+  #status.error { text-align: left; font-family: monospace; }
+  #datamsg { min-height: 1.4em; margin: .4em 0; white-space: pre-wrap; }
+  button { font: inherit; cursor: pointer; color: #fff; background: #444;
+           border: 0; border-radius: 4px; padding: .3em .9em; margin: .2em; }
+  button:disabled { background: #333; color: #777; cursor: default; }
+  #play { margin: .8em 0; padding: .5em 2em; font-size: 1.3em; background: #c33; }
+  #play:disabled { background: #555; }
+  small { color: #999; }
+  #panel p { margin: .6em 0; }
   #hint { position: fixed; top: .6em; left: 50%; transform: translateX(-50%);
           padding: .3em .8em; background: rgba(0, 0, 0, .7); border-radius: 4px;
           pointer-events: none; }
+  /* In-game buttons, top right, over the game's border, not its status bar. */
+  #toolbar { position: fixed; right: .4em; top: .4em; opacity: .55; }
+  #toolbar:hover { opacity: 1; }
+  #toolbar button { background: rgba(60, 60, 60, .9); font-size: 13px; }
+  #help { position: fixed; right: .4em; top: 2.6em; width: min(24em, 90vw);
+          padding: .6em .9em; background: rgba(20, 20, 20, .95);
+          border: 1px solid #555; border-radius: 4px; font-size: 13px; }
+  #drop { position: fixed; inset: 0; display: flex; align-items: center;
+          justify-content: center; background: rgba(120, 20, 20, .6);
+          font-size: 1.6em; pointer-events: none; }
 </style>
 </head>
 <body>
 <canvas id="canvas" tabindex="-1"></canvas>
 <div id="hint" class="hidden">Click to capture the mouse</div>
+
+<div id="toolbar" class="hidden">
+  <button id="tbload" title="Load your own game data">Load your own game data</button>
+  <button id="tbfull" title="Fullscreen (Alt+Enter)">Fullscreen</button>
+  <button id="tbhelp" title="Controls">?</button>
+</div>
+<div id="help" class="hidden">
+  <b>Controls</b><br>
+  Arrows move, Ctrl fires, Space opens doors, Alt strafes, Shift runs,
+  1&ndash;4 pick a weapon, Esc is the menu (save and load are there).
+  Click the game to use the mouse; Esc lets go. Alt+Enter: fullscreen.
+</div>
 
 <div id="overlay">
   <div id="panel">
@@ -38,13 +67,34 @@
     <div id="bar"><div id="fill"></div></div>
     <div id="status">Loading…</div>
     <button id="play" disabled>Click to play</button>
+    <div id="datainfo"><small id="dataname"></small></div>
+    <div>
+      <button id="load" disabled>Load your own game data</button>
+      <button id="useshare" class="hidden">Use shareware data</button>
+      <button id="useuser" class="hidden">Use my game data</button>
+      <button id="forget" class="hidden">Forget my data</button>
+      <button id="full">Fullscreen</button>
+    </div>
+    <div id="datamsg"></div>
+    <p><small>Your own data: pick the eight files (VSWAP, MAPHEAD, GAMEMAPS,
+      VGAHEAD, VGADICT, VGAGRAPH, AUDIOHED, AUDIOT) or drop them or their
+      folder on this page. They are kept in this browser (IndexedDB) and never
+      leave it; nothing is uploaded.</small></p>
     <p><small>Arrows move, Ctrl fires, Space opens doors, Alt strafes,
-      Shift runs, Esc is the menu. Click the game to use the mouse
-      (Esc lets go). Alt+Enter: fullscreen.</small></p>
-    <p><small>Shareware episode 1. Sound is not in the browser version
-      yet.</small></p>
+      Shift runs, Esc is the menu (save and load are there). Click the game
+      to use the mouse (Esc lets go). Alt+Enter: fullscreen. Saves and
+      settings stay in this browser.</small></p>
+    <p><small>Wolfenstein 3-D &copy; 1992 id Software. Shareware episode 1
+      is bundled. Port on <a href="https://www.raylib.com/">raylib</a> with
+      the <a href="https://github.com/nukeykt/Nuked-OPL3">Nuked OPL3</a>
+      emulator. <a href="https://github.com/raydelto/raylib_wolf3d">Source on
+      GitHub</a> &middot;
+      <a href="https://github.com/raydelto/raylib_wolf3d#licenses">licences</a>.
+      Sound is not in the browser version yet.</small></p>
   </div>
 </div>
+<div id="drop" class="hidden">Drop your game data files or folder</div>
+<input id="picker" type="file" multiple class="hidden">
 
 <script>
 (function () {
@@ -54,13 +104,37 @@
   var statusEl = document.getElementById('status');
   var play = document.getElementById('play');
   var hint = document.getElementById('hint');
-  var DATADIR = '/wolf3d/data';      // web/web.cmake preloads the WL1 files here
-  var CONFIGDIR = '/wolf3d/config';  // config and saves (MEMFS for now)
+  var datamsg = document.getElementById('datamsg');
+  var picker = document.getElementById('picker');
+  var $ = function (id) { return document.getElementById(id); };
+
+  // web/web.cmake preloads the bundled shareware WL1 files to SHAREDIR.
+  // USERDIR holds the player's own files and CONFROOT the config, saves
+  // and scores, one directory per data set; both are IDBFS (IndexedDB).
+  var SHAREDIR = '/wolf3d/shareware';
+  var USERDIR = '/wolf3d/user';
+  var CONFROOT = '/wolf3d/config';
+  // XDG_CONFIG_HOME: the C library reads the environment before
+  // onRuntimeInitialized, where the data set is known, so it is a link
+  // that then points to that set's directory under CONFROOT.
+  var CONFLINK = '/wolf3d/home';
+  var BASES = ['VSWAP', 'MAPHEAD', 'GAMEMAPS', 'VGAHEAD', 'VGADICT',
+               'VGAGRAPH', 'AUDIOHED', 'AUDIOT'];
+  // The engine is built for this layout (gfxv_wl1.h, audiowl1.h): header
+  // sizes of other versions mean other chunk tables.  Shareware v1.4 values.
+  var EXACT = { MAPHEAD: 402, VGADICT: 1024, VGAHEAD: 471, AUDIOHED: 1156 };
+  var MINSIZE = { VSWAP: 100000, GAMEMAPS: 1000, VGAGRAPH: 100000, AUDIOT: 10000 };
+  var PREFKEY = 'raylib_wolf3d.data';
+
   var running = false;
   var failed = false;
+  var ready = false;
+  var persist = false;       // IndexedDB works
+  var dataset = null;        // 'shareware' or 'user'
   var lastlines = [];
 
-  // ?args=... adds command-line options, e.g. ?args=-tedlevel%200
+  // ?data=shareware|user picks the data set; ?args=... adds command-line
+  // options, e.g. ?args=-nowait or ?args=-tedlevel%200
   var query = new URLSearchParams(location.search);
 
   function setStatus(text, error) {
@@ -68,13 +142,39 @@
     statusEl.className = error ? 'error' : '';
   }
 
+  function setDataMsg(text, error) {
+    datamsg.textContent = text;
+    datamsg.className = error ? 'error' : '';
+  }
+
+  function getPref() {
+    try { return localStorage.getItem(PREFKEY); } catch (e) { return null; }
+  }
+
+  function setPref(v) {
+    try { localStorage.setItem(PREFKEY, v); } catch (e) {}
+  }
+
+  // Reload with the given data set (null: the default) and the same ?args.
+  function restart(data) {
+    var q = new URLSearchParams(location.search);
+    if (data)
+      q.set('data', data);
+    else
+      q.delete('data');
+    var s = q.toString();
+    location.href = location.pathname + (s ? '?' + s : '');
+  }
+
   function showOverlay(text, error) {
     running = false;
     hint.classList.add('hidden');
+    $('toolbar').classList.add('hidden');
+    $('help').classList.add('hidden');
     if (document.pointerLockElement)
       document.exitPointerLock();
     overlay.classList.remove('hidden');
-    document.getElementById('bar').classList.add('hidden');
+    $('bar').classList.add('hidden');
     setStatus(text, error);
     play.textContent = 'Play again';
     play.disabled = false;
@@ -87,9 +187,307 @@
       lastlines.shift();
   }
 
+  // ---- IndexedDB ----------------------------------------------------------
+
+  // FS.syncfs must not overlap; a write during a sync starts another.
+  var syncing = false, syncAgain = false, syncDone = [];
+  function syncOut(done) {
+    if (done)
+      syncDone.push(done);
+    if (!persist) {
+      syncDone.splice(0).forEach(function (f) { f(); });
+      return;
+    }
+    if (syncing) {
+      syncAgain = true;
+      return;
+    }
+    syncing = true;
+    var waiting = syncDone.splice(0);
+    Module.FS.syncfs(false, function (err) {
+      syncing = false;
+      if (err)
+        console.warn('raylib_wolf3d: could not save to IndexedDB: ' + err);
+      waiting.forEach(function (f) { f(err); });
+      if (syncAgain || syncDone.length) {
+        syncAgain = false;
+        syncOut();
+      }
+    });
+  }
+
+  function exists(path) {
+    return Module.FS.analyzePath(path).exists;
+  }
+
+  function hasUserData() {
+    return exists(USERDIR + '/VSWAP.WL1') && exists(USERDIR + '/SET.TXT');
+  }
+
+  function userSetId() {
+    try {
+      return Module.FS.readFile(USERDIR + '/SET.TXT', { encoding: 'utf8' }).trim();
+    } catch (e) {
+      return 'unknown';
+    }
+  }
+
+  function clearUserDir() {
+    Module.FS.readdir(USERDIR).forEach(function (name) {
+      if (name !== '.' && name !== '..')
+        Module.FS.unlink(USERDIR + '/' + name);   // open files stay readable
+    });
+  }
+
+  // ---- your own data --------------------------------------------------------
+
+  // FNV-1a over the files: names the config/save directory of a data set.
+  function fnv(h, bytes) {
+    for (var i = 0; i < bytes.length; i++) {
+      h ^= bytes[i];
+      h = Math.imul(h, 16777619) >>> 0;
+    }
+    return h;
+  }
+
+  // files: [{name, size, file}].  Returns {error} or {ext, files: {BASE: file}}.
+  function checkSet(files) {
+    var found = {}, exts = {}, other = {};
+    files.forEach(function (f) {
+      var name = f.name.replace(/^.*[\\/]/, '').toUpperCase();
+      var dot = name.lastIndexOf('.');
+      if (dot < 0)
+        return;
+      var base = name.slice(0, dot), ext = name.slice(dot + 1);
+      if (BASES.indexOf(base) < 0)
+        return;
+      exts[ext] = true;
+      if (!found[ext])
+        found[ext] = {};
+      if (!found[ext][base])
+        found[ext][base] = f.file;
+    });
+    var list = Object.keys(exts);
+    if (!list.length)
+      return { error: 'No Wolfenstein 3-D data files found. Pick these eight: ' +
+               BASES.join(', ') + ' (.WL1).' };
+    if (exts.SOD || exts.SDM)
+      return { error: 'Spear of Destiny data (.SOD/.SDM) is not supported.' };
+    if (list.length > 1)
+      return { error: 'These files are from more than one set (.' + list.join(', .') +
+               '). Load one set at a time.' };
+    var ext = list[0];
+    if (ext === 'WL6')
+      return { error: 'Registered data (.WL6) support is coming soon. This page ' +
+               'plays shareware data (.WL1) for now.' };
+    if (ext !== 'WL1')
+      return { error: 'Files ending in .' + ext + ' are not supported. Use the ' +
+               'shareware .WL1 files.' };
+    var set = found[ext];
+    var missing = BASES.filter(function (b) { return !set[b]; });
+    if (missing.length)
+      return { error: 'Missing ' + missing.map(function (b) { return b + '.' + ext; })
+               .join(', ') + '. All eight files are needed.' };
+    for (var i = 0; i < BASES.length; i++) {
+      var b = BASES[i], size = set[b].size;
+      if (b in EXACT && size !== EXACT[b])
+        return { error: b + '.' + ext + ' is ' + size + ' bytes; this game needs ' +
+                 EXACT[b] + '. These files are probably from another version ' +
+                 '(shareware v1.4 is supported).' };
+      if (b in MINSIZE && size < MINSIZE[b])
+        return { error: b + '.' + ext + ' is only ' + size + ' bytes; it looks ' +
+                 'damaged or cut short.' };
+      if (size > 64 * 1024 * 1024)
+        return { error: b + '.' + ext + ' is too large to be Wolfenstein 3-D data.' };
+    }
+    return { ext: ext, files: set };
+  }
+
+  // Check, copy to USERDIR, save to IndexedDB, restart with it.
+  function loadUserData(files) {
+    if (!ready) {
+      setDataMsg('Wait until the page has loaded, then try again.', true);
+      return;
+    }
+    var set = checkSet(files);
+    if (set.error) {
+      setDataMsg(set.error, true);
+      showLoadError(set.error);
+      return;
+    }
+    // Switching sets mid-game reloads the page, and only stored files
+    // survive that.  The game cannot be restarted in place.
+    if (running && !persist) {
+      var msg = 'This browser cannot store your game data, so it cannot be ' +
+                'switched in during a game. Reload the page and load the files ' +
+                'before you press Play.';
+      setDataMsg(msg, true);
+      alert(msg);
+      return;
+    }
+    if (running && !confirm('Restart the game with this data? An unsaved game is lost.'))
+      return;
+    setDataMsg('Reading your files…');
+    Promise.all(BASES.map(function (b) {
+      return set.files[b].arrayBuffer().then(function (buf) {
+        return [b, new Uint8Array(buf)];
+      });
+    })).then(function (parts) {
+      var h = 2166136261;
+      clearUserDir();
+      parts.forEach(function (p) {
+        h = fnv(h, p[1]);
+        Module.FS.writeFile(USERDIR + '/' + p[0] + '.' + set.ext, p[1]);
+      });
+      Module.FS.writeFile(USERDIR + '/SET.TXT', set.ext.toLowerCase() + '-' +
+                          ('0000000' + h.toString(16)).slice(-8) + '\n');
+      syncOut(function (err) {
+        if (persist && !err) {
+          setPref('user');
+          restart('user');
+          return;
+        }
+        // Not stored: a reload would lose the files.
+        if (running) {
+          var msg = 'Your game data could not be stored in this browser (' + err +
+                    '), so the game cannot restart with it. Reload the page and ' +
+                    'load the files before you press Play.';
+          setDataMsg(msg, true);
+          alert(msg);
+          return;
+        }
+        // Before Play: switch to the files in memory, for this visit only.
+        useData('user');
+        failed = false;
+        setStatus('Ready. (This browser cannot keep your data or saves.)');
+        play.disabled = false;
+        play.onclick = start;
+        setDataMsg('Your data is loaded for this visit only; this browser could ' +
+                   'not store it.');
+      });
+    }).catch(function (e) {
+      setDataMsg('Could not read the files: ' + e, true);
+    });
+  }
+
+  // An error while the game runs: show it without stopping the game.
+  function showLoadError(text) {
+    if (running)
+      alert(text);
+  }
+
+  // Files from a drop, folders included (one level of nesting is typical).
+  function readEntries(entry, out) {
+    return new Promise(function (resolve) {
+      if (entry.isFile) {
+        entry.file(function (f) { out.push({ name: f.name, size: f.size, file: f }); resolve(); },
+                   function () { resolve(); });
+      } else if (entry.isDirectory) {
+        var reader = entry.createReader(), all = [];
+        (function next() {
+          reader.readEntries(function (batch) {
+            if (!batch.length) {
+              Promise.all(all.map(function (e) { return readEntries(e, out); })).then(resolve);
+              return;
+            }
+            all = all.concat(Array.prototype.slice.call(batch));
+            next();
+          }, function () { resolve(); });
+        })();
+      } else {
+        resolve();
+      }
+    });
+  }
+
+  function fileList(list) {
+    return Array.prototype.map.call(list, function (f) {
+      return { name: f.name, size: f.size, file: f };
+    });
+  }
+
+  function pick() {
+    picker.value = '';
+    picker.click();
+  }
+
+  picker.addEventListener('change', function () {
+    if (picker.files.length)
+      loadUserData(fileList(picker.files));
+  });
+
+  var dragDepth = 0;
+  window.addEventListener('dragenter', function (e) {
+    if (e.dataTransfer && Array.prototype.indexOf.call(e.dataTransfer.types, 'Files') >= 0) {
+      dragDepth++;
+      $('drop').classList.remove('hidden');
+    }
+  });
+  window.addEventListener('dragleave', function () {
+    if (--dragDepth <= 0) {
+      dragDepth = 0;
+      $('drop').classList.add('hidden');
+    }
+  });
+  window.addEventListener('dragover', function (e) { e.preventDefault(); });
+  window.addEventListener('drop', function (e) {
+    e.preventDefault();
+    dragDepth = 0;
+    $('drop').classList.add('hidden');
+    var items = e.dataTransfer.items, out = [];
+    if (items && items.length && items[0].webkitGetAsEntry) {
+      var entries = Array.prototype.map.call(items, function (it) { return it.webkitGetAsEntry(); })
+        .filter(Boolean);
+      Promise.all(entries.map(function (en) { return readEntries(en, out); }))
+        .then(function () { loadUserData(out); });
+    } else {
+      loadUserData(fileList(e.dataTransfer.files));
+    }
+  });
+
+  function fullscreen() {
+    if (document.fullscreenElement)
+      document.exitFullscreen();
+    else
+      document.documentElement.requestFullscreen().catch(function () {});
+  }
+
+  $('load').onclick = pick;
+  $('tbload').onclick = pick;
+  $('full').onclick = fullscreen;
+  $('tbfull').onclick = function () { fullscreen(); canvas.focus(); };
+  $('tbhelp').onclick = function () { $('help').classList.toggle('hidden'); canvas.focus(); };
+  $('useshare').onclick = function () { setPref('shareware'); restart(null); };
+  $('useuser').onclick = function () { setPref('user'); restart('user'); };
+  $('forget').onclick = function () {
+    if (!confirm('Forget your game data? Your saves stay in this browser.'))
+      return;
+    clearUserDir();
+    setPref('shareware');
+    syncOut(function () { restart(null); });
+  };
+
+  // ---- game -----------------------------------------------------------------
+
+  // Which data set runs: ?data= first, then the last choice on this page,
+  // else the bundled shareware.
+  function chooseData() {
+    var want = query.get('data') || getPref();
+    var user = hasUserData();
+    var share = exists(SHAREDIR + '/VSWAP.WL1');
+    if (want === 'user' && user)
+      return 'user';
+    if (want === 'user' && query.get('data') === 'user')
+      setDataMsg('No game data of your own is stored in this browser; using ' +
+                 'the shareware data.', true);
+    if (share)
+      return 'shareware';
+    return user ? 'user' : null;
+  }
+
   function gameArgs() {
     // No web audio yet (WOLF-40 stage 2): the silent path of ID_SD.
-    var args = ['-data', DATADIR, '-nosound'];
+    var args = ['-data', dataset === 'user' ? USERDIR : SHAREDIR, '-nosound'];
     (query.get('args') || '').split(/\s+/).filter(Boolean)
       .forEach(function (a) { args.push(a); });
     return args;
@@ -100,8 +498,30 @@
       return;
     running = true;
     overlay.classList.add('hidden');
+    $('toolbar').classList.remove('hidden');
     canvas.focus();
     Module.callMain(gameArgs());
+  }
+
+  function updateDataButtons() {
+    var user = hasUserData();
+    $('useshare').classList.toggle('hidden', dataset !== 'user');
+    $('useuser').classList.toggle('hidden', !(user && dataset !== 'user'));
+    $('forget').classList.toggle('hidden', !user);
+    $('dataname').textContent = dataset === 'user'
+      ? 'Playing your own data (' + userSetId() + ').'
+      : 'Playing the bundled shareware data (v1.4).';
+  }
+
+  // Saves, config and scores of each data set stay apart.
+  function useData(set) {
+    dataset = set;
+    var confdir = CONFROOT + '/' + (set === 'user' ? 'user-' + userSetId() : 'shareware');
+    Module.FS.mkdirTree(confdir);
+    if (exists(CONFLINK))
+      Module.FS.unlink(CONFLINK);
+    Module.FS.symlink(confdir, CONFLINK);
+    updateDataButtons();
   }
 
   var Module = window.Module = {
@@ -117,22 +537,43 @@
         setStatus(text.replace(/\s*\(.*\)$/, '…'));
     },
     preRun: [function () {
-      Module.FS.mkdirTree(CONFIGDIR);
-      Module.ENV.XDG_CONFIG_HOME = CONFIGDIR;
+      var FS = Module.FS;
+      FS.mkdirTree(CONFROOT);
+      FS.mkdirTree(USERDIR);
+      Module.ENV.XDG_CONFIG_HOME = CONFLINK;
+      var IDBFS = FS.filesystems && FS.filesystems.IDBFS;
+      if (!IDBFS || !window.indexedDB)
+        return;
+      FS.mount(IDBFS, {}, CONFROOT);
+      FS.mount(IDBFS, {}, USERDIR);
+      Module.addRunDependency('idbfs');
+      FS.syncfs(true, function (err) {
+        if (err)
+          console.warn('raylib_wolf3d: IndexedDB is not available, saves last ' +
+                       'until the page is closed: ' + err);
+        persist = !err;
+        Module.removeRunDependency('idbfs');
+      });
     }],
     onRuntimeInitialized: function () {
       fill.style.width = '100%';
-      if (!Module.FS.analyzePath(DATADIR + '/VSWAP.WL1').exists) {
+      ready = true;
+      $('load').disabled = false;
+      dataset = chooseData();
+      if (!dataset) {
         failed = true;
-        setStatus('This build has no game data. Build it with the shareware ' +
-                  'files (see README, "WebAssembly build").', true);
+        setStatus('This build has no game data. Load your own shareware ' +
+                  'files, or build it with them (see README, "WebAssembly ' +
+                  'build").', true);
         return;
       }
-      setStatus('Ready.');
+      useData(dataset);
+      setStatus(persist ? 'Ready.' : 'Ready. (This browser cannot keep saves.)');
       play.disabled = false;
       play.onclick = start;
     },
     onExit: function (status) {
+      syncOut();
       if (status)
         showOverlay('The game stopped (exit code ' + status + ').\n\n' +
                     lastlines.join('\n'), true);
@@ -143,18 +584,32 @@
       failed = true;
       showOverlay('The game crashed: ' + what + '\n\n' + lastlines.join('\n'), true);
     },
+    // port/wl_persist.c calls this after it writes the config, a save or scores.
+    wolfSyncFS: function () { syncOut(); },
     wolfWantsPointer: 0
   };
 
+  // Saves are synced as they are written; this catches anything left.
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden' && ready)
+      syncOut();
+  });
+  window.addEventListener('pagehide', function () {
+    if (ready)
+      syncOut();
+  });
+
   // Pointer lock needs a click; the game says when it wants the mouse.
   canvas.addEventListener('click', function () {
+    $('help').classList.add('hidden');
     if (running && Module.wolfWantsPointer && document.pointerLockElement !== canvas)
       canvas.requestPointerLock();
   });
   canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
   setInterval(function () {
-    hint.classList.toggle('hidden', !(running && Module.wolfWantsPointer
-                                      && document.pointerLockElement !== canvas));
+    var locked = document.pointerLockElement === canvas;
+    hint.classList.toggle('hidden', !(running && Module.wolfWantsPointer && !locked));
+    $('toolbar').classList.toggle('hidden', !running || locked);
   }, 250);
 
   // Keep the browser's own shortcuts (F1 help, F3 find, F5 reload, Tab,
@@ -168,10 +623,7 @@
     if (!running)
       return;
     if (e.key === 'Enter' && e.altKey) {
-      if (document.fullscreenElement)
-        document.exitFullscreen();
-      else
-        document.documentElement.requestFullscreen().catch(function () {});
+      fullscreen();
       e.preventDefault();
       return;
     }

@@ -2,9 +2,22 @@
  * wl_platform.c - process startup for the port: argv globals, the game data
  * directory, the window, and the "not ported yet" exit path.
  */
+#ifdef _WIN32
+#include <direct.h>
+/* MinGW aliases this DOS name to its CRT struct; keep the game type. */
+#undef diskfree_t
+#include <io.h>
+#define WL_CHDIR _chdir
+#define WL_ACCESS(path) _access((path), 4)
+#else
+#define WL_CHDIR chdir
+#define WL_ACCESS(path) access((path), R_OK)
+#endif
+
 #include "ID_HEADS.H"
 #include "id_raylib.h"
 #include "wl_timer.h"
+#include "wl_persist.h"
 
 #define WL_WINDOW_W		960		// 4:3, 3x the 320x200 frame; resizable, letterboxed
 #define WL_WINDOW_H		720
@@ -34,6 +47,9 @@ static void WL_Shutdown (void)
 void WL_NotPorted (const char *what, const char *file, int line)
 {
 	const char *slash = strrchr(file, '/');
+	const char *backslash = strrchr(file, '\\');
+	if (backslash && (!slash || backslash > slash))
+		slash = backslash;
 
 	fflush(stdout);
 	fprintf(stderr, WOLF3D_PROGRAM_NAME ": not ported yet: %s (%s:%d)\n",
@@ -61,7 +77,7 @@ static const char *WL_FindDataDir (int argc, char **argv)
 				fprintf(stderr, WOLF3D_PROGRAM_NAME ": -data needs a directory\n");
 				exit(2);
 			}
-			dir = argv[i + 1];
+			dir = argv[++i];
 		}
 	if (!dir)
 		dir = getenv("WOLF3D_DATA");
@@ -78,14 +94,18 @@ void WL_PlatformStartup (int argc, char **argv)
 	_argc = argc;
 	_argv = argv;
 
-	if (chdir(dir))
+#ifdef _WIN32
+	/* Cache an absolute writable path before switching to the asset directory. */
+	(void)WL_UserFile("CONFIG.WL1");
+#endif
+	if (WL_CHDIR(dir))
 	{
 		fprintf(stderr, WOLF3D_PROGRAM_NAME ": can't use data directory '%s': %s\n",
 			dir, strerror(errno));
 		exit(2);
 	}
 	for (i = 0; i < sizeof(data_files) / sizeof(data_files[0]); i++)
-		if (access(data_files[i], R_OK))
+		if (WL_ACCESS(data_files[i]))
 		{
 			fprintf(stderr, WOLF3D_PROGRAM_NAME ": %s not found in '%s'.\n"
 				"Use the matching " WOLF3D_DATA_EXT " data set and pass "

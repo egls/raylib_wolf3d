@@ -1585,11 +1585,12 @@ static boolean WriteSaveFile(char *name,char *title,int x,int y)
 	if (handle != -1)
 	{
 		ok=write(handle,header,32) == 32 && SaveTheGame(handle,x,y);
-		ok=fsync(handle) == 0 && ok;
+		ok=WL_Fsync(handle) == 0 && ok;
 		ok=close(handle) == 0 && ok;
-		ok=ok && rename(tmp,path) == 0;
+		ok=ok && WL_ReplaceFile(tmp,path) == 0;
 		if (!ok)
 			unlink(tmp);
+		WL_UserFilesChanged();	// WOLF-43
 	}
 	if (!ok)
 	{
@@ -3157,6 +3158,11 @@ void CleanupControlPanel(void)
 #endif
 
 	fontnumber = 0;
+
+#ifdef __EMSCRIPTEN__
+	// WOLF-43: a browser tab is closed, not quit, so keep the options now
+	WriteConfig();
+#endif
 }
 
 
