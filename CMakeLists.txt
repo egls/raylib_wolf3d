@@ -156,6 +156,9 @@ else()
   set(WOLF3D_GAME_FLAGS -fcommon)
   set(WOLF3D_COMMON_FLAG -fcommon)
   set(WOLF3D_SECTION_FLAGS -ffunction-sections -fdata-sections)
+  if(WIN32 AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    list(APPEND WOLF3D_SECTION_FLAGS -fno-asynchronous-unwind-tables -fno-unwind-tables)
+  endif()
   set(WOLF3D_NODEBUG_OFF -UNDEBUG)
 endif()
 # GCC 14+ turned these into errors; the id code (and the DOS-era stubs) still trip them.
@@ -286,7 +289,9 @@ if(BUILD_TESTING)
   target_link_options(wolf_render_test PRIVATE ${WOLF3D_GC_LINK})
   target_link_libraries(wolf_render_test PRIVATE ${WOLF3D_LIBM})
   add_test(NAME core_renderer COMMAND wolf_render_test)
-  if(DEFINED ENV{HOME})
+  if(WIN32)
+    set(WOLF3D_DEFAULT_DATA "$ENV{USERPROFILE}/wolf3d-data/shareware")
+  elseif(DEFINED ENV{HOME} AND NOT "$ENV{HOME}" STREQUAL "")
     set(WOLF3D_DEFAULT_DATA "$ENV{HOME}/wolf3d-data/shareware")
   else()
     set(WOLF3D_DEFAULT_DATA "$ENV{USERPROFILE}/wolf3d-data/shareware")
@@ -309,6 +314,12 @@ if(BUILD_TESTING)
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/persist_check.py
     $<TARGET_FILE:raylib_wolf3d> ${WOLF3D_TEST_DATA} ${CMAKE_CURRENT_BINARY_DIR}/persist_check)
   set_tests_properties(persist_check PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED" TIMEOUT 600)
+
+  # No-data smoke test: missing data returns 2, empty placeholder files return 1 (VSWAP short read)
+  add_test(NAME smoke_nodata COMMAND Python3::Interpreter -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_check.py
+    $<TARGET_FILE:raylib_wolf3d>)
+  set_tests_properties(smoke_nodata PROPERTIES TIMEOUT 30)
 
   # The persistence streams and paths on their own: no data, no display (WOLF-18).
   add_executable(wolf_persist_test tests/persist_test.c port/wl_persist.c)

@@ -12,7 +12,12 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#ifndef _WIN32
 #include <sys/wait.h>
+#else
+int _mkdir(const char *path);
+int _rmdir(const char *path);
+#endif
 #include <unistd.h>
 
 #include "WL_DEF.H"
@@ -36,7 +41,11 @@ static statetype s_one, s_two, s_three, s_unknown;
 statetype *const wl_states[] = {&s_one, &s_two, &s_three};
 const int wl_numstates = sizeof(wl_states) / sizeof(wl_states[0]);
 
+#ifndef _WIN32
 static char tmpdir[] = "/tmp/wl_persist_testXXXXXX";
+#else
+static char tmpdir[1024];
+#endif
 
 /* every width writes exactly its bytes, low byte first, and reads them back */
 static void test_layout(void) {
@@ -123,13 +132,13 @@ static void test_file_roundtrip(void) {
         WS_W32(&out, (uint32_t)(i * 2654435761u));
     CHECK(out.len == 80000);
 
-    fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_BINARY, 0644);
     CHECK(fd != -1);
     CHECK(write(fd, "header", 6) == 6);
     CHECK(WS_WriteFile(fd, &out));
     CHECK(close(fd) == 0);
 
-    fd = open(path, O_RDONLY);
+    fd = open(path, O_RDONLY | O_BINARY);
     CHECK(fd != -1);
     CHECK(lseek(fd, 6, SEEK_SET) == 6); /* like a save after its 32-byte name */
     WS_Init(&in);
@@ -142,7 +151,7 @@ static void test_file_roundtrip(void) {
     CHECK(!in.bad && in.pos == in.len);
 
     /* reading into a used stream starts over */
-    fd = open(path, O_RDONLY);
+    fd = open(path, O_RDONLY | O_BINARY);
     CHECK(WS_ReadFile(fd, &in));
     close(fd);
     CHECK(in.len == out.len + 6 && in.pos == 0 && memcmp(in.buf, "header", 6) == 0);
@@ -184,6 +193,7 @@ static void test_states(void) {
     printf("PASS: state index table\n");
 }
 
+#ifndef _WIN32
 /* WL_UserFile caches its directory, so each environment runs in a child */
 static void user_file_case(const char *xdg, const char *home, const char *expect_dir) {
     pid_t pid = fork();
@@ -228,18 +238,47 @@ static void test_user_file(void) {
     user_file_case("relative/dir", home, dir);
     printf("PASS: XDG config directory\n");
 }
+#else
+/* Note: On Windows, test_user_file acts as a smoke check verifying that the
+ * returned path contains 'raylib_wolf3d' and 'CONFIG.WL1'. Environment variable
+ * precedence (e.g. %APPDATA% vs fallback) is not isolated across processes here
+ * because WL_UserFile caches its directory in a static buffer without POSIX fork;
+ * this is a known test coverage gap. */
+static void test_user_file(void) {
+    const char *path = WL_UserFile("CONFIG.WL1");
+    CHECK(path != NULL);
+    CHECK(strstr(path, "raylib_wolf3d") != NULL);
+    CHECK(strstr(path, "CONFIG.WL1") != NULL);
+    printf("PASS: Windows user directory\n");
+}
+#endif
 
 int main(void) {
+#ifndef _WIN32
     char cmd[sizeof(tmpdir) + 16];
 
     CHECK(mkdtemp(tmpdir) != NULL);
+#else
+    const char *temp = getenv("TEMP");
+    if (!temp || !*temp) temp = getenv("TMP");
+    if (!temp || !*temp) temp = ".";
+    snprintf(tmpdir, sizeof(tmpdir), "%s/wl_persist_%u", temp, (unsigned)getpid());
+    _mkdir(tmpdir);
+#endif
     test_layout();
     test_short_reads();
     test_file_roundtrip();
     test_checksum();
     test_states();
     test_user_file();
+#ifndef _WIN32
     snprintf(cmd, sizeof(cmd), "rm -rf %s", tmpdir);
     CHECK(system(cmd) == 0);
+#else
+    char roundtrip_file[sizeof(tmpdir) + 32];
+    snprintf(roundtrip_file, sizeof(roundtrip_file), "%s/roundtrip", tmpdir);
+    unlink(roundtrip_file);
+    CHECK(_rmdir(tmpdir) == 0);
+#endif
     return 0;
 }
