@@ -11,6 +11,9 @@
 
 #include "WL_DEF.H"
 #include "wl_persist.h"
+#ifdef __EMSCRIPTEN__
+#include <emscripten/em_asm.h>
+#endif
 
 #define WL_APPDIR	"raylib_wolf3d"
 
@@ -41,6 +44,14 @@ const char *WL_UserFile (const char *name)
 	}
 	snprintf(path, sizeof(path), "%s/%s", dir, name);
 	return path;
+}
+
+void WL_UserFilesChanged (void)
+{
+#ifdef __EMSCRIPTEN__
+	// web/shell.html: the directory is on IDBFS, FS.syncfs() writes it out
+	EM_ASM({ if (Module.wolfSyncFS) Module.wolfSyncFS(); });
+#endif
 }
 
 /* ---- streams ------------------------------------------------------------ */

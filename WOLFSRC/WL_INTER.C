@@ -1260,6 +1260,11 @@ void	CheckHighScore (long score,word other)
 		IN_UserInput(500);
 	}
 
+#ifdef __EMSCRIPTEN__
+	// WOLF-43: the scores live in the config; a browser tab is closed, not quit
+	if (n != -1)
+		WriteConfig ();
+#endif
 }
 
 
