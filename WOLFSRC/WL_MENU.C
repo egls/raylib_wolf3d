@@ -65,7 +65,9 @@ void CP_NewGameMenu(int item) { (void)item; CP_NewGame(); }
 void CP_SoundMenu(int item) { (void)item; CP_Sound(); }
 void CP_ControlMenu(int item) { (void)item; CP_Control(); }
 void CP_ChangeViewMenu(int item) { (void)item; CP_ChangeView(); }
+#if !defined(GOODTIMES) && !defined(SPEAR)
 void CP_ReadThisMenu(int item) { (void)item; CP_ReadThis(); }
+#endif
 void CP_ViewScoresMenu(int item) { (void)item; CP_ViewScores(); }
 static void MouseSensitivityMenu(int item) { (void)item; MouseSensitivity(); }
 void CustomControlsMenu(int item) { (void)item; CustomControls(); }
@@ -640,10 +642,12 @@ void CP_ReadThis(void)
 void BossKey(void)
 {
 	SD_MusicOff();
-	_AX = 3;
-	geninterrupt(0x10);
-	printf("C>");
+	/* Hide the game in the existing framebuffer; there is no DOS text mode. */
+	VW_Bar(0, 0, 320, 200, 0);
+	VW_UpdateScreen();
+	IN_ClearKeysDown();
 	while (!Keyboard[sc_Escape])
+		IN_SpinWait(); /* Pumps input and yields on native and web. */
 	IN_ClearKeysDown();
 
 	SD_MusicOn();

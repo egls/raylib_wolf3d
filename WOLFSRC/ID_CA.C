@@ -1,4 +1,4 @@
-/* WL1 cache manager: disk bytes are never native structs or pointers. */
+/* Portable cache manager: disk bytes are never native structs or pointers. */
 #include "ID_HEADS.H"
 #include "wl_data.h"
 #include <stddef.h>
@@ -23,7 +23,7 @@ static word rlewtag;
 static SDMode oldsoundmode = sdm_Off;
 static boolean started;
 void (*drawcachebox)(char *, unsigned), (*updatecachebox)(void), (*finishcachebox)(void);
-static void bad(void) { Quit("CA: invalid or truncated WL1 data"); }
+static void bad(void) { Quit("CA: invalid, mismatched or truncated " WOLF3D_DATA_EXT " data"); }
 boolean CA_FarRead(int fd, byte *p, long len) {
     if (len < 0)
         return false;
@@ -217,7 +217,7 @@ void CA_Startup(void) {
     if (started)
         return;
     if (!extension[0])
-        strcpy(extension, "WL1");
+        strcpy(extension, WOLF3D_DATA_EXT);
     b = whole(gdictname, &n);
     if (n != 1024 && n != 1020)
         bad();
@@ -237,6 +237,19 @@ void CA_Startup(void) {
     }
     free(b);
     grhandle = openfile(gfilename);
+    {
+        int32_t previous = -1;
+        long end = filelength(grhandle);
+        for (i = 0; i <= NUMCHUNKS; i++) {
+            if (grstarts[i] < 0)
+                continue;
+            if (grstarts[i] < previous || grstarts[i] > end)
+                bad();
+            previous = grstarts[i];
+        }
+        if (grstarts[NUMCHUNKS] < 0)
+            bad();
+    }
     p = graphics(STRUCTPIC, &n);
     if (n != NUMPICS * 4)
         bad();
@@ -245,6 +258,9 @@ void CA_Startup(void) {
     for (i = 0; i < NUMPICS; i++) {
         pictable[i].width = WL_ReadLE16(p + 4 * i);
         pictable[i].height = WL_ReadLE16(p + 4 * i + 2);
+        if (!pictable[i].width || pictable[i].width > 320 ||
+            !pictable[i].height || pictable[i].height > 200)
+            bad();
     }
     free(p);
     b = whole(mheadname, &n);
@@ -256,8 +272,12 @@ void CA_Startup(void) {
         uint32_t off = WL_ReadLE32(b + 2 + i * 4);
         maptype *h;
         size_t j;
-        if (off == 0xffffffff || !off)
+        if (off == 0xffffffff || !off) {
+#ifdef WOLF3D_REGISTERED
+            bad(); /* All six episodes need their ten maps. */
+#endif
             continue;
+        }
         p = readpart(maphandle, off, 38);
         MM_GetPtr((memptr *)&mapheaderseg[i], sizeof(maptype));
         MM_SetLock((memptr *)&mapheaderseg[i], true);
@@ -272,6 +292,12 @@ void CA_Startup(void) {
         free(p);
         if (h->width != 64 || h->height != 64)
             bad();
+        for (j = 0; j < MAPPLANES; j++) {
+            long end = filelength(maphandle);
+            if (h->planelength[j] < 2 || h->planestart[j] > end ||
+                h->planelength[j] > end - h->planestart[j])
+                bad();
+        }
     }
     free(b);
     for (i = 0; i < MAPPLANES; i++) {
@@ -287,6 +313,10 @@ void CA_Startup(void) {
         audiostarts[i] = WL_ReadLE32(b + 4 * i);
     free(b);
     audiohandle = openfile(afilename);
+    for (i = 0; i <= NUMSNDCHUNKS; i++)
+        if (audiostarts[i] > filelength(audiohandle) ||
+            (i && audiostarts[i] < audiostarts[i - 1]))
+            bad();
     mapon = -1;
     ca_levelbit = 1;
     ca_levelnum = 0;
@@ -331,9 +361,23 @@ void CA_CacheGrChunk(int chunk) {
     if (grstarts[chunk] < 0)
         return;
     p = graphics(chunk, &len);
+    if (chunk >= STARTPICS && chunk < STARTPICM &&
+        len != (size_t)pictable[chunk - STARTPICS].width * pictable[chunk - STARTPICS].height)
+        bad();
     if (chunk >= STARTFONT && chunk < STARTFONTM) {
         if (len < 770)
             bad();
+        {
+            size_t height = WL_ReadLE16(p);
+            if (!height || height > 200)
+                bad();
+            for (i = 0; i < 256; i++) {
+                size_t offset = WL_ReadLE16(p + 2 + i * 2);
+                size_t pixels = height * p[514 + i];
+                if (offset > len || pixels > len - offset)
+                    bad();
+            }
+        }
         /* Fixed-size native fields; data offsets stay relative to the chunk. */
         for (i = 0; i < 257; i++) {
             word v = WL_ReadLE16(p + 2 * i);

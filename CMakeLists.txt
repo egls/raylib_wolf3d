@@ -201,44 +201,68 @@ add_custom_command(
   COMMENT "Generating the actor state table"
   VERBATIM)
 
+# Separate executables preserve the original UPLOAD/GOODTIMES code paths.
+# Keep the established WL1 target/name for scripts and demo_sync.
 add_executable(raylib_wolf3d ${WOLF3D_GAME_SOURCES} ${WOLF3D_PORT_SOURCES} ${WOLF3D_OBJDATA} ${WOLF3D_STATES})
-target_include_directories(raylib_wolf3d PRIVATE port WOLFSRC)
-if(EMSCRIPTEN)
-  # No pthreads in the browser: the timer has no thread there (port/wl_timer.c).
-  target_link_libraries(raylib_wolf3d PRIVATE wolf3d_raylib m)
-  include(web/web.cmake)
-else()
-  find_package(Threads REQUIRED)
-  target_link_libraries(raylib_wolf3d PRIVATE wolf3d_raylib Threads::Threads ${WOLF3D_LIBM})
-endif()
-
-if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-  target_compile_options(raylib_wolf3d PRIVATE ${WOLF3D_WARNINGS} ${WOLF3D_GAME_FLAGS})
-  target_compile_options(wolf3d_raylib PRIVATE ${WOLF3D_WARNINGS})
-elseif(MSVC)
-  target_compile_options(raylib_wolf3d PRIVATE ${WOLF3D_WARNINGS})
-  target_compile_options(wolf3d_raylib PRIVATE ${WOLF3D_WARNINGS})
-endif()
-
+add_executable(wolf3d-wl6 ${WOLF3D_GAME_SOURCES} ${WOLF3D_PORT_SOURCES} ${WOLF3D_OBJDATA} ${WOLF3D_STATES})
+target_compile_definitions(wolf3d-wl6 PRIVATE WOLF3D_REGISTERED)
 if(NOT WOLF3D_WITH_AUDIO)
   message(FATAL_ERROR "The game requires the audio engine; use -nosound at runtime")
 endif()
-
-# ASan/UBSan for the game itself (the "asan" preset turns this on).
-option(WOLF3D_SANITIZERS "Build raylib_wolf3d with ASan/UBSan" OFF)
-if(WOLF3D_SANITIZERS AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
-  target_compile_options(raylib_wolf3d PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
-  target_link_options(raylib_wolf3d PRIVATE -fsanitize=address,undefined)
+add_subdirectory(audio)
+target_compile_definitions(wolf3d_raylib PRIVATE WOLF3D_AUDIO_BACKEND)
+option(WOLF3D_SANITIZERS "Build the games with ASan/UBSan" OFF)
+if(EMSCRIPTEN)
+  include(web/web.cmake)
+else()
+  find_package(Threads REQUIRED)
 endif()
-
-if(WOLF3D_WITH_AUDIO)
-  target_compile_definitions(wolf3d_raylib PRIVATE WOLF3D_AUDIO_BACKEND)
-  add_subdirectory(audio)
-  target_link_libraries(raylib_wolf3d PRIVATE wolf_audio)
+foreach(game raylib_wolf3d wolf3d-wl6)
+  target_include_directories(${game} PRIVATE port WOLFSRC)
+  target_link_libraries(${game} PRIVATE wolf3d_raylib wolf_audio ${WOLF3D_LIBM})
+  if(EMSCRIPTEN)
+    wolf3d_configure_web(${game})
+  else()
+    target_link_libraries(${game} PRIVATE Threads::Threads)
+  endif()
+  if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(${game} PRIVATE ${WOLF3D_WARNINGS} ${WOLF3D_GAME_FLAGS})
+    if(WOLF3D_SANITIZERS)
+      target_compile_options(${game} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+      target_link_options(${game} PRIVATE -fsanitize=address,undefined)
+    endif()
+  elseif(MSVC)
+    target_compile_options(${game} PRIVATE ${WOLF3D_WARNINGS})
+  endif()
+endforeach()
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(wolf3d_raylib PRIVATE ${WOLF3D_WARNINGS})
+elseif(MSVC)
+  target_compile_options(wolf3d_raylib PRIVATE ${WOLF3D_WARNINGS})
 endif()
 
 include(CTest)
 if(BUILD_TESTING)
+  add_test(NAME registered_stub_guard COMMAND Python3::Interpreter -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/registered_stub_guard.py
+    ${CMAKE_C_COMPILER} ${CMAKE_CURRENT_SOURCE_DIR})
+  set_tests_properties(registered_stub_guard PROPERTIES TIMEOUT 30)
+  add_executable(wolf_boss_key_test tests/boss_key_test.c WOLFSRC/WL_MENU.C)
+  target_include_directories(wolf_boss_key_test PRIVATE port WOLFSRC)
+  target_compile_definitions(wolf_boss_key_test PRIVATE WOLF3D_REGISTERED)
+  target_compile_options(wolf_boss_key_test PRIVATE ${WOLF3D_TEST_WARNINGS} ${WOLF3D_GAME_FLAGS} ${WOLF3D_SECTION_FLAGS} ${WOLF3D_NODEBUG_OFF})
+  target_link_options(wolf_boss_key_test PRIVATE ${WOLF3D_GC_LINK})
+  add_test(NAME registered_boss_key COMMAND wolf_boss_key_test)
+  set_tests_properties(registered_boss_key PROPERTIES TIMEOUT 5)
+  add_executable(wolf_wl6_layout tests/wl6_layout.c)
+  target_include_directories(wolf_wl6_layout PRIVATE port WOLFSRC)
+  target_compile_definitions(wolf_wl6_layout PRIVATE WOLF3D_REGISTERED)
+  target_compile_options(wolf_wl6_layout PRIVATE ${WOLF3D_TEST_WARNINGS} ${WOLF3D_COMMON_FLAG})
+  add_test(NAME synthetic_wl6 COMMAND Python3::Interpreter -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/synthetic_wl6.py
+    $<TARGET_FILE:wolf3d-wl6> $<TARGET_FILE:wolf_wl6_layout>
+    $<TARGET_FILE:raylib_wolf3d>)
+  set_tests_properties(synthetic_wl6 PROPERTIES TIMEOUT 60)
   # Headless timer/startup/path coverage, including the native Windows timer.
   add_executable(wolf_platform_test tests/platform_test.c
     port/wl_timer.c port/wl_platform.c port/wl_persist.c)

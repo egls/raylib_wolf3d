@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include "ID_HEADS.H"
 #include "wl_timer.h"
 #include "wl_persist.h"
 
@@ -20,6 +21,20 @@ int RL_OpenWindow(int w, int h, const char *title) {
 void RL_CloseWindow(void) {}
 void RL_Hold(int ms) { (void)ms; }
 void WL_VideoTest(const char *what) { (void)what; }
+
+/* This target tests startup paths with empty placeholder assets. The actual
+ * loader is exercised by core_data/synthetic_wl6; fail if it is entered here. */
+maptype *mapheaderseg[NUMMAPS];
+int32_t *grstarts;
+void MM_Startup(void) { abort(); }
+void MM_Shutdown(void) { abort(); }
+void CA_Startup(void) { abort(); }
+void CA_Shutdown(void) { abort(); }
+void PM_Startup(void) { abort(); }
+void PM_Shutdown(void) { abort(); }
+void CA_CacheMap(int n) { (void)n; abort(); }
+void CA_CacheGrChunk(int n) { (void)n; abort(); }
+void CA_CacheAudioChunk(int n) { (void)n; abort(); }
 
 int main(int argc, char **argv) {
     double target, before;
