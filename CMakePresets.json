@@ -18,11 +18,20 @@
         "WOLF3D_SANITIZERS": "ON",
         "WOLF3D_CORE_SANITIZERS": "ON"
       }
+    },
+    {
+      "name": "web",
+      "displayName": "WebAssembly (Emscripten; source ~/emsdk/emsdk_env.sh first)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-web",
+      "toolchainFile": "$env{EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
+      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
     }
   ],
   "buildPresets": [
     { "name": "release", "configurePreset": "release" },
-    { "name": "asan", "configurePreset": "asan" }
+    { "name": "asan", "configurePreset": "asan" },
+    { "name": "web", "configurePreset": "web" }
   ],
   "testPresets": [
     { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },

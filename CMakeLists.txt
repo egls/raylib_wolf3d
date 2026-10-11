@@ -18,6 +18,13 @@ set(CMAKE_C_EXTENSIONS ON)
 # raylib 5.5 (only port/id_raylib.c may include raylib.h)
 # ---------------------------------------------------------------------------
 set(WOLF3D_RAYLIB_VERSION 5.5)
+# The browser build (cmake --preset web, WOLF-41) uses raylib's web platform.
+if(EMSCRIPTEN)
+  set(PLATFORM Web CACHE STRING "raylib platform" FORCE)
+  set(WOLF3D_USE_SYSTEM_RAYLIB OFF)
+  # The tests need a display, Xvfb or files outside the page.
+  set(BUILD_TESTING OFF CACHE BOOL "Build the tests" FORCE)
+endif()
 if(WOLF3D_USE_SYSTEM_RAYLIB)
   find_package(raylib ${WOLF3D_RAYLIB_VERSION} EXACT QUIET)
 endif()
@@ -151,8 +158,14 @@ add_custom_command(
 
 add_executable(raylib_wolf3d ${WOLF3D_GAME_SOURCES} ${WOLF3D_PORT_SOURCES} ${WOLF3D_OBJDATA} ${WOLF3D_STATES})
 target_include_directories(raylib_wolf3d PRIVATE port WOLFSRC)
-find_package(Threads REQUIRED)
-target_link_libraries(raylib_wolf3d PRIVATE wolf3d_raylib Threads::Threads m)
+if(EMSCRIPTEN)
+  # No pthreads in the browser: the timer has no thread there (port/wl_timer.c).
+  target_link_libraries(raylib_wolf3d PRIVATE wolf3d_raylib m)
+  include(web/web.cmake)
+else()
+  find_package(Threads REQUIRED)
+  target_link_libraries(raylib_wolf3d PRIVATE wolf3d_raylib Threads::Threads m)
+endif()
 
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(raylib_wolf3d PRIVATE ${WOLF3D_WARNINGS} ${WOLF3D_GAME_FLAGS})

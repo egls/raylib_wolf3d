@@ -11,6 +11,65 @@
 
 #include "id_raylib.h"
 
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+
+/*
+ * The browser build (WOLF-41) runs the game's blocking loops under ASYNCIFY:
+ * the page only shows a frame, delivers input and runs timers while the game
+ * is suspended in emscripten_sleep().  RL_Present and RL_PumpEvents yield
+ * when the game has not yielded for WEB_YIELD_MS, so polling loops that
+ * never present still let the page run, and bursts of presents (the
+ * "Get Psyched" bar draws once per VSWAP page) don't wait for the browser
+ * every time.  A yield costs a setTimeout, about 4 ms.  The game's own waits
+ * (CalcTics, VL_WaitVBL, WL_Idle) sleep in port/wl_timer.c.
+ */
+#define WEB_YIELD_MS	8.0
+
+static double web_lastyield;
+
+static void WebYield (void)
+{
+	if (emscripten_get_now() - web_lastyield < WEB_YIELD_MS)
+		return;
+	emscripten_sleep(0);
+	web_lastyield = emscripten_get_now();
+}
+
+/* raylib's WindowShouldClose() sleeps on the web; a page never closes. */
+#define WindowShouldClose()	0
+
+/*
+ * Mouse: raylib's web backend keeps only the last mousemove of a frame, so
+ * the page's own listener adds up every movement while the pointer is
+ * locked.  The browser locks it only from a click, so the game says when it
+ * wants the mouse (Module.wolfWantsPointer) and the page asks on the next
+ * click on the canvas (web/shell.html).
+ */
+EM_JS(void, WebMouseInit, (void), {
+	Module.wolfMouseDX = Module.wolfMouseDY = 0;
+	Module.canvas.addEventListener('mousemove', function (e) {
+		if (document.pointerLockElement === Module.canvas) {
+			Module.wolfMouseDX += e.movementX;
+			Module.wolfMouseDY += e.movementY;
+		}
+	});
+});
+EM_JS(int, WebMouseLocked, (void), {
+	return document.pointerLockElement === Module.canvas ? 1 : 0;
+});
+EM_JS(void, WebMouseTake, (int *dx, int *dy), {
+	HEAP32[dx >> 2] = Module.wolfMouseDX | 0;
+	HEAP32[dy >> 2] = Module.wolfMouseDY | 0;
+	Module.wolfMouseDX = Module.wolfMouseDY = 0;
+});
+EM_JS(void, WebMouseWant, (int on), {
+	Module.wolfWantsPointer = on;
+	if (!on && document.pointerLockElement === Module.canvas)
+		document.exitPointerLock();
+});
+#endif
+
 #define MAX_SCALE		8
 #define KEYQ_SIZE		256
 
@@ -149,10 +208,18 @@ static int mouse_dx, mouse_dy;
 
 static void PollMouse (void)
 {
+#ifdef __EMSCRIPTEN__
+	int dx, dy;
+
+	WebMouseTake(&dx, &dy);
+	mouse_dx += dx;
+	mouse_dy += dy;
+#else
 	Vector2 d = GetMouseDelta();
 
 	mouse_dx += (int)lroundf(d.x);
 	mouse_dy += (int)lroundf(d.y);
+#endif
 }
 
 void RL_SetMouseGrab (int on)
@@ -160,12 +227,22 @@ void RL_SetMouseGrab (int on)
 	if (!window_open || on == mouse_grab)
 		return;
 	mouse_grab = on;
+#ifdef __EMSCRIPTEN__
+	WebMouseWant(on);
+	mouse_dx = mouse_dy = 0;
+	{
+		int dx, dy;
+
+		WebMouseTake(&dx, &dy);		/* drop motion from before the grab */
+	}
+#else
 	if (on)
 		DisableCursor();
 	else
 		EnableCursor();
 	mouse_dx = mouse_dy = 0;
 	(void)GetMouseDelta();
+#endif
 }
 
 void RL_MouseDelta (int *dx, int *dy)
@@ -181,6 +258,10 @@ int RL_MouseButtons (void)
 
 	if (!window_open)
 		return 0;
+#ifdef __EMSCRIPTEN__
+	if (mouse_grab && !WebMouseLocked())
+		return 0;		/* the click that locks the pointer is not a shot */
+#endif
 	if (IsMouseButtonDown(MOUSE_BUTTON_LEFT))
 		b |= 1;
 	if (IsMouseButtonDown(MOUSE_BUTTON_RIGHT))
@@ -233,6 +314,9 @@ void RL_PumpEvents (void)
 	RL_AudioPump();
 	if (!window_open)
 		return;
+#ifdef __EMSCRIPTEN__
+	WebYield();
+#endif
 	PollKeyboard();
 	PollMouse();
 	if (WindowShouldClose())
@@ -294,6 +378,9 @@ int RL_OpenWindow (int width, int height, const char *title)
 	SetWindowMinSize(RL_FRAME_W, RL_FRAME_H);
 	SetExitKey(KEY_NULL);		/* Esc belongs to the game; closing the window quits */
 	window_open = 1;
+#ifdef __EMSCRIPTEN__
+	WebMouseInit();
+#endif
 
 	img = GenImageColor(RL_FRAME_W, RL_FRAME_H, BLACK);
 	ImageFormat(&img, PIXELFORMAT_UNCOMPRESSED_R8G8B8A8);
@@ -340,6 +427,9 @@ void RL_Present (const unsigned char *rgba)
 		(Rectangle){(w - dw) / 2, (h - dh) / 2, dw, dh},
 		(Vector2){0, 0}, 0, WHITE);
 	EndDrawing();				/* swaps and polls */
+#ifdef __EMSCRIPTEN__
+	WebYield();					/* the page shows the frame and runs its events */
+#endif
 
 	SyncKeys();
 	PollMouse();
@@ -349,8 +439,10 @@ void RL_Present (const unsigned char *rgba)
 
 void RL_ToggleFullscreen (void)
 {
+#ifndef __EMSCRIPTEN__		/* the browser wants a user gesture; the page does Alt+Enter */
 	if (window_open)
 		ToggleBorderlessWindowed();
+#endif
 }
 
 void RL_Hold (int ms)
@@ -366,6 +458,9 @@ void RL_Hold (int ms)
 		BeginDrawing();
 		ClearBackground(BLACK);
 		EndDrawing();
+#ifdef __EMSCRIPTEN__
+		WebYield();
+#endif
 	}
 }
 

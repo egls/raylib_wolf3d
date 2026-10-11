@@ -2,11 +2,84 @@
  * wl_timer.c - 70 Hz TimeCount from a monotonic clock (see wl_timer.h).
  */
 #define _GNU_SOURCE
-#include <pthread.h>
 #include <time.h>
 
 #include "ID_HEADS.H"
 #include "wl_timer.h"
+
+#ifdef __EMSCRIPTEN__
+
+/*
+ * The browser has no timer thread: TimeCount catches up with the clock
+ * whenever the game reads the clock, idles or waits (WL_TickClock,
+ * WL_Idle, WL_SleepUntilTick, WL_WebWait), and the waits give the
+ * browser its turn.  Ticks are never lost, as with the thread.
+ */
+#include <emscripten.h>
+
+static double		t0;			// ms, emscripten_get_now()
+static int			started;
+static longword		done;		// ticks added to TimeCount so far
+
+static void Catchup (double now)
+{
+	longword due = (longword)now;
+
+	if (!started)
+		return;
+	while (done < due)
+	{
+		TimeCount++;
+		done++;
+	}
+}
+
+double WL_TickClock (void)
+{
+	double now = (emscripten_get_now() - t0) * WL_TICKRATE / 1000.0;
+
+	Catchup(now);
+	return now;
+}
+
+void WL_SleepUntilTick (double tick)
+{
+	double ms = tick * 1000.0 / WL_TICKRATE - (emscripten_get_now() - t0);
+
+	// emscripten_sleep is a setTimeout, so it can wake early or late
+	while (ms > 0)
+	{
+		emscripten_sleep((unsigned)ms ? (unsigned)ms : 1);
+		ms = tick * 1000.0 / WL_TICKRATE - (emscripten_get_now() - t0);
+	}
+	WL_TickClock();
+}
+
+void WL_Idle (void)
+{
+	emscripten_sleep(0);
+	WL_TickClock();
+}
+
+void WL_WebWait (void)
+{
+	WL_TickClock();
+	WL_SleepUntilTick(done + 1);		// the next tick
+}
+
+void WL_TimerStart (void)
+{
+	if (started)
+		return;
+	t0 = emscripten_get_now();
+	TimeCount = 0;
+	done = 0;
+	started = 1;
+}
+
+#else
+
+#include <pthread.h>
 
 static struct timespec	t0;
 static int				started;
@@ -80,3 +153,5 @@ void WL_TimerStart (void)
 	}
 	pthread_detach(thread);
 }
+
+#endif
