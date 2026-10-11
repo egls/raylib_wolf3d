@@ -1586,6 +1586,7 @@ static boolean WriteSaveFile(char *name,char *title,int x,int y)
 		ok=ok && rename(tmp,path) == 0;
 		if (!ok)
 			unlink(tmp);
+		WL_UserFilesChanged();	// WOLF-43
 	}
 	if (!ok)
 	{
@@ -3153,6 +3154,11 @@ void CleanupControlPanel(void)
 #endif
 
 	fontnumber = 0;
+
+#ifdef __EMSCRIPTEN__
+	// WOLF-43: a browser tab is closed, not quit, so keep the options now
+	WriteConfig();
+#endif
 }
 
 

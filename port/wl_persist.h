@@ -22,6 +22,11 @@
  */
 const char	*WL_UserFile (const char *name);
 
+/* Call after writing or renaming a file in that directory.  The web build
+ * copies the directory to IndexedDB then (WOLF-43); elsewhere it does
+ * nothing. */
+void		WL_UserFilesChanged (void);
+
 /* A growable byte buffer with a read cursor.  Reads past the end return 0
  * and set `bad`, so a parser can read everything and check once. */
 typedef struct

@@ -41,7 +41,7 @@ if(WOLF3D_WEB_DATA)
     endif()
     list(APPEND WOLF3D_WEB_DATA_FILES "${file}")
     # SHELL: keeps CMake from de-duplicating the repeated option
-    list(APPEND WOLF3D_WEB_PRELOAD "SHELL:--preload-file ${file}@/wolf3d/data/${name}")
+    list(APPEND WOLF3D_WEB_PRELOAD "SHELL:--preload-file ${file}@/wolf3d/shareware/${name}")
   endforeach()
   if(missing)
     message(WARNING "No shareware data bundled: ${missing} not in ${WOLF3D_WEB_DATA}")
@@ -53,6 +53,10 @@ if(WOLF3D_WEB_DATA)
 endif()
 
 set(WOLF3D_SHELL ${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html)
+
+# Hosting template (WOLF-43): the build directory is what gets uploaded.
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/web/.htaccess
+  ${CMAKE_CURRENT_BINARY_DIR}/.htaccess COPYONLY)
 
 set_target_properties(raylib_wolf3d PROPERTIES
   SUFFIX .html
@@ -80,6 +84,9 @@ target_link_options(raylib_wolf3d PRIVATE
   -sINVOKE_RUN=0
   # Quit and errors end the program; the page then shows its overlay.
   -sEXIT_RUNTIME=1
-  -sEXPORTED_RUNTIME_METHODS=callMain,FS,ENV
+  -sEXPORTED_RUNTIME_METHODS=callMain,FS,ENV,addRunDependency,removeRunDependency
+  # Config, saves and the player's own data files persist in IndexedDB
+  # (web/shell.html mounts IDBFS; WL_UserFilesChanged syncs it).
+  -lidbfs.js
   --shell-file ${WOLF3D_SHELL}
   ${WOLF3D_WEB_PRELOAD})
