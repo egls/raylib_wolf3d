@@ -5,6 +5,10 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <process.h>
+/* High-resolution waitable timer, Windows 10 1803+; older headers lack the name. */
+#ifndef CREATE_WAITABLE_TIMER_HIGH_RESOLUTION
+#define CREATE_WAITABLE_TIMER_HIGH_RESOLUTION	0x00000002
+#endif
 #else
 #define _GNU_SOURCE
 #include <time.h>
@@ -111,14 +115,21 @@ double WL_TickClock (void)
 
 void WL_SleepUntilTick (double tick)
 {
-	HANDLE timer;
+	/* One waitable timer per thread, created on first use and reused: the
+	 * timer thread calls this 70+ times a second, and so does every WL_Idle.
+	 * It requests a high-resolution timer (Windows 10 1803+) with a plain
+	 * fallback; if neither can be created, keep retrying and use Sleep. */
+	static _Thread_local HANDLE timer;
 	LARGE_INTEGER due;
 	double remaining;
 
-	/* Request a high-resolution timer (Windows 10 1803+), with fallback. */
-	timer = CreateWaitableTimerExA(NULL, NULL, 0x00000002, TIMER_ALL_ACCESS);
 	if (!timer)
-		timer = CreateWaitableTimerA(NULL, TRUE, NULL);
+	{
+		timer = CreateWaitableTimerExA(NULL, NULL,
+				CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, TIMER_ALL_ACCESS);
+		if (!timer)
+			timer = CreateWaitableTimerA(NULL, TRUE, NULL);
+	}
 	while ((remaining = (tick - WL_TickClock()) / WL_TICKRATE) > 0)
 	{
 		if (timer)
@@ -132,8 +143,6 @@ void WL_SleepUntilTick (double tick)
 		}
 		Sleep((DWORD)(remaining * 1000.0) + 1);
 	}
-	if (timer)
-		CloseHandle(timer);
 }
 
 void WL_Idle (void)
