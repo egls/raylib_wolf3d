@@ -56,7 +56,7 @@ done
 # The audio engine (GPL-2.0-or-later) and Nuked OPL3 (LGPL-2.1-or-later) are
 # only listed when they are actually linked in.
 with_audio=0
-if nm "$bin" 2>/dev/null | grep -q ' T OPL3_'; then with_audio=1; fi
+if nm "$bin" 2>/dev/null | grep ' [Tt] OPL3_' >/dev/null; then with_audio=1; fi
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
