@@ -5,9 +5,14 @@
 - **Epic**: WOLF-29 (raylib_wolf3d Windows port)
 - **Reviewer**: Wolf Win Verifier (agy)
 - **Target OS**: Windows 11 x86_64
-- **Final Verdict**: **APPROVED / PASS**
+- **Final Verdict**: **QUALIFIED PASS (Runtime Verified; CI Packaging Blocked on PR #13)**
 
-All pull requests implementing the Windows port of `raylib_wolf3d` have been rigorously reviewed and verified against design principles, platform conventions, audio/rendering accuracy, deterministic demo replays, save/load persistence, packaging specifications, and Linux compatibility.
+Runtime verification of the `raylib_wolf3d` Windows port on a physical Windows 11 host is **100% PASS** across all functional subsystems: launch, video/VGA presentation, deterministic demo replays, OPL3 audio emulation parity, input handling, atomic save/load persistence, and user configuration.
+
+However, **merge readiness is qualified**:
+1. **PR #13 (WOLF-36)** at exact head `29e7ac335363cab1b03aeb711b257d877677bc86` has a failing `package-windows` GitHub Actions CI run and is **BLOCKED** from merging until green CI evidence is provided.
+2. **PR #23 (WOLF-35)** provides comprehensive CTest and native PowerShell smoke test coverage (10/10 runnable tests pass natively), but remains **PENDING REVIEW** and rebase.
+3. PRs #15, #18, #14, #20, and #19 have already landed cleanly in `master`. Remaining PRs must land in a coordinated staging sequence.
 
 ---
 
@@ -27,16 +32,18 @@ All pull requests implementing the Windows port of `raylib_wolf3d` have been rig
 
 ## PR Review & Verification Matrix
 
-| PR # | Issue | Component | Author | Head Commit SHA | Verdict |
-|:---:|:---:|:---|:---:|:---:|:---:|
-| **#15** | WOLF-30 | Windows/MSVC/MinGW blocker audit (`PORTING.md`) | Claude | `836b8e2f9ffbb20550a70c04fca545d35ecaad33` | **PASS** |
-| **#16** | WOLF-31 | CMake build support for Windows (MSVC, MinGW/Ninja) | Claude | `d830f63c2d6c626b78879469ecf5a5233c55ec00` | **PASS** |
-| **#19** | WOLF-32 | Fix non-portable C for Windows (MinGW and MSVC) | Claude | `95d427d06e3536b05d9e870ce3232ed0222c4948` | **PASS** |
-| **#17** | WOLF-33 | Port timer and startup paths to Windows | Codex | `44cb86350ad489f4b0a0babce0d5d8f5e0ea8ab8` | **PASS** |
-| **#18** | WOLF-34 | Audio / OPL3 engine and test tools on Windows | Claude | `286a8355df9d0d4668c5109f5662d8207ee27452` | **PASS** |
-| **#13** | WOLF-36 | Windows CI job and release artifact | Claude | `29e7ac335363cab1b03aeb711b257d877677bc86` | **PASS** |
-| **#14** | WOLF-37 | Package Windows build (zip) and document in README | Claude | `eec00ca42b6befc04efa7eb72c545a654b3b1103` | **PASS** |
-| **#20** | WOLF-38 | Windows 11 end-to-end verification report & test suite | agy | `24eab54b918196dd46de00d22d19ee987899ebaf` | **PASS** |
+| PR # | Issue | Component | Author | Head Commit SHA | Runtime Verification | Merge Readiness |
+|:---:|:---:|:---|:---:|:---:|:---:|:---:|
+| **#15** | WOLF-30 | Blocker audit (`PORTING.md`) | Claude | `836b8e2f9ffbb20550a70c04fca545d35ecaad33` | **PASS** | **MERGED** (`b5415f3`) |
+| **#18** | WOLF-34 | Audio / OPL3 engine on Windows | Claude | `286a8355df9d0d4668c5109f5662d8207ee27452` | **PASS** | **MERGED** (`4d340f2`) |
+| **#14** | WOLF-37 | Package Windows build (zip) & README | Claude | `eec00ca42b6befc04efa7eb72c545a654b3b1103` | **PASS** | **MERGED** (`3b9fb35`) |
+| **#20** | WOLF-38 | Windows 11 E2E verification suite | agy | `24eab54b918196dd46de00d22d19ee987899ebaf` | **PASS** | **MERGED** (`1c4c234`) |
+| **#19** | WOLF-32 | Fix non-portable C for Windows | Claude | `95d427d06e3536b05d9e870ce3232ed0222c4948` | **PASS** | **MERGED** (`f3947ba`) |
+| **#16** | WOLF-31 | CMake build support for Windows | Claude | `d830f63c2d6c626b78879469ecf5a5233c55ec00` | **PASS** | **READY** |
+| **#17** | WOLF-33 | Timer and startup paths on Windows | Codex | `44cb86350ad489f4b0a0babce0d5d8f5e0ea8ab8` | **PASS** | **READY** |
+| **#13** | WOLF-36 | Windows CI job and release artifact | Claude | `29e7ac335363cab1b03aeb711b257d877677bc86` | **PASS** | **BLOCKED (CI failing)** |
+| **#23** | WOLF-35 | CTest suite & smoke checks | agy | `88b90e3c7d6a79103a60355aa38ce59c09ce3d54` | **PASS** | **PENDING REVIEW** |
+| **#22** | WOLF-39 | Windows port final review & verdict | agy | *(Current Head)* | **PASS** | **IN REVIEW** |
 
 ---
 
@@ -45,13 +52,14 @@ All pull requests implementing the Windows port of `raylib_wolf3d` have been rig
 ### 1. PR #15 (WOLF-30): Blocker Audit
 - **Verification**: `Verification: PASS 836b8e2f9ffbb20550a70c04fca545d35ecaad33`
 - Comprehensive audit of POSIX dependencies (`sysconf`, `mkdir`, `fnmatch`, `sys/wait.h`), timer mechanisms, compiler flags, path length limits, and line endings.
-- Formed the exact roadmap implemented cleanly across stages 2–5. Docs-only; zero risk to existing build.
+- Status: **MERGED** into `master` (`b5415f3`).
 
 ### 2. PR #16 (WOLF-31): CMake Build Support
 - **Verification**: `Verification: PASS d830f63c2d6c626b78879469ecf5a5233c55ec00`
 - Configured MSVC flags (`/W3`, `/utf-8`, `/J`) and eliminated unsupported GNU flags on MSVC.
 - Added `windows-mingw` and `windows-msvc` presets in `CMakePresets.json`.
 - Conditioned `libm` on non-Windows hosts and set shareware test data fallback to `%USERPROFILE%\wolf3d-data\shareware`. Linux builds unaffected.
+- Status: **READY** for merge.
 
 ### 3. PR #19 (WOLF-32): C Portability Fixes
 - **Verification**: `Verification: PASS 95d427d06e3536b05d9e870ce3232ed0222c4948`
@@ -62,6 +70,7 @@ All pull requests implementing the Windows port of `raylib_wolf3d` have been rig
 - `GlobalMemoryStatusEx` replaces `sysconf` in `ID_MM.C`.
 - Replaced GCC atomic builtins with standard C11 `<stdatomic.h>`.
 - Provided test shims for `setenv`/`unsetenv` and 64-bit integer clock handling for Windows.
+- Status: **MERGED** into `master` (`f3947ba`).
 
 ### 4. PR #17 (WOLF-33): Windows Platform & Timer Layer
 - **Verification**: `Verification: PASS 44cb86350ad489f4b0a0babce0d5d8f5e0ea8ab8`
@@ -69,29 +78,40 @@ All pull requests implementing the Windows port of `raylib_wolf3d` have been rig
 - Measured jitter <0.1% (1000.4 ms for 70 ticks, 1999.9 ms for 140 ticks).
 - Windows configuration and save game storage directed to `%APPDATA%\raylib_wolf3d` (with `LOCALAPPDATA` fallback), resolved prior to changing working directory to game data.
 - POSIX monotonic timer and Linux XDG paths fully preserved.
+- Status: **READY** for merge.
 
 ### 5. PR #18 (WOLF-34): Audio / OPL3 Engine & Test Tools
 - **Verification**: `Verification: PASS 286a8355df9d0d4668c5109f5662d8207ee27452`
 - Replaced POSIX `clock_nanosleep` in `audio/render.c` with `QueryPerformanceCounter` + `Sleep` on `_WIN32`.
 - Binary-mode trace CSV output preserves deterministic byte streams.
 - `audio/tests/compare_reference.py` passes all checks against Wolf4SDL `dc8b250` reference on Windows across AdLib music, PC speaker, and Sound Blaster PCM sound effects.
+- Status: **MERGED** into `master` (`4d340f2`).
 
 ### 6. PR #13 (WOLF-36): CI Workflow & Release Matrix
-- **Verification**: `Verification: PASS 29e7ac335363cab1b03aeb711b257d877677bc86`
-- Added `windows` matrix job (MinGW-w64 and MSVC) to `.github/workflows/build.yml`.
-- Validates ctest suites and missing-data smoke test (exit code 2).
-- Added `package-windows` job to `.github/workflows/release.yml` producing standalone x86_64 zip releases with SHA-256 manifests.
+- **Runtime Verification**: `PASS 29e7ac335363cab1b03aeb711b257d877677bc86`
+- **Merge Readiness**: **BLOCKED (CI Failing)**
+- Added `windows` matrix job (MinGW-w64 and MSVC) to `.github/workflows/build.yml` and `package-windows` job to `.github/workflows/release.yml`.
+- **Defect Note**: The GitHub Actions check `package-windows` failed at head `29e7ac335363cab1b03aeb711b257d877677bc86`. Merge gate is blocked until a corrected SHA resolving the packaging workflow failure is pushed and produces green CI.
 
 ### 7. PR #14 (WOLF-37): Packaging & Documentation
 - **Verification**: `Verification: PASS eec00ca42b6befc04efa7eb72c545a654b3b1103`
 - Created `scripts/package.ps1` bundling executable, non-system runtime DLLs, launcher `run.ps1`, documentation, and licenses into clean zip archive.
 - Created `scripts/fetch_shareware.ps1` for automated downloading and SHA-256 verification of shareware v1.4 data.
 - Added comprehensive Windows installation and execution documentation to `README.rst`.
+- Status: **MERGED** into `master` (`3b9fb35`).
 
 ### 8. PR #20 (WOLF-38): End-to-End Verification Suite
 - **Verification**: `Verification: PASS 24eab54b918196dd46de00d22d19ee987899ebaf`
 - Delivered comprehensive verification report `docs/WINDOWS_VERIFICATION.md` and automated test suite `tests/windows_e2e_check.py`.
-- Verified all 7 core game subsystems with zero regressions.
+- Verified all 7 core game subsystems on Windows 11 with zero regressions.
+- Status: **MERGED** into `master` (`1c4c234`).
+
+### 9. PR #23 (WOLF-35): CTest Suite & Native Smoke Checks
+- **Runtime Verification**: `PASS 88b90e3c7d6a79103a60355aa38ce59c09ce3d54`
+- **Merge Readiness**: **PENDING REVIEW**
+- Resolves WOLF-35 ('Make ctest pass on Windows'). Full Windows MinGW CTest suite passes 10/10 runnable tests (`core_platform`, `core_renderer`, `core_wl1_data`, `core_codecs`, `smoke_nodata`, `core_persist`, `rl_keys_test`, `sound_manager`, `audio_ring`, `audio_contract`), with 2 Xvfb tests cleanly skipped.
+- Implemented native PowerShell smoke checks (`scripts/smoke_test.ps1` and `tests/smoke_check.py`).
+- Pending cross-family review and rebase after #16/#17 land.
 
 ---
 
@@ -130,10 +150,16 @@ PASS: Configuration persistence verified.
 
 ## Integration & Recommended Landing Sequence
 
-All PRs are ready for merge into `master`. The recommended staging sequence to preserve clean history:
+### Merged into `master`:
+- **PR #15** (WOLF-30 - Audit docs): merged (`b5415f3`)
+- **PR #18** (WOLF-34 - OPL3 audio engine): merged (`4d340f2`)
+- **PR #14** (WOLF-37 - Packaging & README): merged (`3b9fb35`)
+- **PR #20** (WOLF-38 - E2E verification suite): merged (`1c4c234`)
+- **PR #19** (WOLF-32 - C portability): merged (`f3947ba`)
 
-1. **Stage 1**: PR #15 (WOLF-30 - Audit docs)
-2. **Stage 2**: PR #16 (WOLF-31 - CMake build support) & PR #19 (WOLF-32 - C portability)
-3. **Stage 3**: PR #17 (WOLF-33 - Timer & startup paths) & PR #18 (WOLF-34 - OPL3 audio)
-4. **Stage 4**: PR #13 (WOLF-36 - Windows CI) & PR #14 (WOLF-37 - Packaging & README)
-5. **Stage 5**: PR #20 (WOLF-38 - Verification report & automated suite) & PR #21 (WOLF-39 - Final review)
+### Staging Sequence for Remaining PRs:
+1. **PR #16** (WOLF-31 - CMake build support & presets)
+2. **PR #17** (WOLF-33 - Timer & startup paths)
+3. **PR #13** (WOLF-36 - Windows CI matrix, once CI packaging failure is fixed)
+4. **PR #23** (WOLF-35 - CTest suite & smoke checks, rebased)
+5. **PR #22** (WOLF-39 - Final review verdict documentation)
