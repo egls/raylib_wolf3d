@@ -24,6 +24,10 @@
  */
 const char	*WL_UserFile (const char *name);
 
+/* Forget the resolved directory so the next WL_UserFile() re-reads the
+ * environment (for tests). */
+void		WL_ResetUserFileCache (void);
+
 /* Call after writing or renaming a file in that directory.  The web build
  * copies the directory to IndexedDB then (WOLF-43); elsewhere it does
  * nothing. */

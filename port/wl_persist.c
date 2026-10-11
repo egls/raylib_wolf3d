@@ -33,12 +33,19 @@ static int MakeDir (const char *path)
 	return result == 0 || (errno == EEXIST && stat(path, &st) == 0 && S_ISDIR(st.st_mode));
 }
 
+static char	user_dir[1024];
+
+void WL_ResetUserFileCache (void)
+{
+	user_dir[0] = '\0';
+}
+
 const char *WL_UserFile (const char *name)
 {
-	static char	dir[1024], path[1100];
+	static char	path[1100];
 	const char	*base;
 
-	if (!dir[0])
+	if (!user_dir[0])
 	{
 #ifdef _WIN32
 		/* Resolve before startup changes cwd to the read-only data directory. */
@@ -47,26 +54,26 @@ const char *WL_UserFile (const char *name)
 			base = getenv("LOCALAPPDATA");
 		if (!base || !*base)
 			Quit("APPDATA or LOCALAPPDATA is required for save files");
-		if (!_fullpath(dir, base, sizeof(dir)))
+		if (!_fullpath(user_dir, base, sizeof(user_dir)))
 			Quit("Save directory path is too long");
 #else
 		base = getenv("XDG_CONFIG_HOME");
 		if (base && base[0] == '/')
-			snprintf(dir, sizeof(dir), "%s", base);
+			snprintf(user_dir, sizeof(user_dir), "%s", base);
 		else
 		{
 			base = getenv("HOME");
-			snprintf(dir, sizeof(dir), "%s/.config", base && *base ? base : ".");
+			snprintf(user_dir, sizeof(user_dir), "%s/.config", base && *base ? base : ".");
 		}
 #endif
-		MakeDir(dir);
-		if (strlen(dir) + sizeof("/" WL_APPDIR) > sizeof(dir))
+		MakeDir(user_dir);
+		if (strlen(user_dir) + sizeof("/" WL_APPDIR) > sizeof(user_dir))
 			Quit("Save directory path is too long");
-		strcat(dir, "/" WL_APPDIR);
-		if (!MakeDir(dir))
-			fprintf(stderr, "raylib_wolf3d: can't create %s: %s\n", dir, strerror(errno));
+		strcat(user_dir, "/" WL_APPDIR);
+		if (!MakeDir(user_dir))
+			fprintf(stderr, "raylib_wolf3d: can't create %s: %s\n", user_dir, strerror(errno));
 	}
-	snprintf(path, sizeof(path), "%s/%s", dir, name);
+	snprintf(path, sizeof(path), "%s/%s", user_dir, name);
 	return path;
 }
 
