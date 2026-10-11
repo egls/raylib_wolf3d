@@ -15,7 +15,9 @@
 //   4. New Game, save in slot 1, reload, the save is still there (IndexedDB),
 //      load it from the menu, and it is not in the shareware set's saves;
 //   5. "Use shareware data", "Forget my data";
-//   6. without IndexedDB, your own data still plays for the visit.
+//   6. data that cannot be stored (no IndexedDB, or a failed write) is
+//      never lost to a reload: before Play it is used from memory, during a
+//      game the game goes on and the player is told.
 // It fails on any page error or console error.  Shots are of the page.
 
 import { spawn, spawnSync } from 'node:child_process';
@@ -262,24 +264,72 @@ print(sum(1 for v in d.getdata() if v < 8) / (d.width * d.height))
   await shot('forgotten');
   check('"Forget my data" empties the store', left && left.length === 0, String(left));
 
-  // 6. No IndexedDB (some private modes): own data still plays this visit.
-  {
+  // 6. Data that cannot be stored (no IndexedDB, as in some private modes,
+  // or a failed IndexedDB write) must never be lost to a reload.  Before
+  // Play the page switches to the files in memory and the game must start
+  // with them; during a game it keeps the game running and says why.
+  const tedUrl = base + '?args=-tedlevel%200';
+  async function failCase(label, { noIdb = false, failWrite = false, inGame = false }) {
     const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
-    await ctx.addInitScript(() => { Object.defineProperty(window, 'indexedDB', { value: undefined }); });
+    if (noIdb)
+      await ctx.addInitScript(() => { Object.defineProperty(window, 'indexedDB', { value: undefined }); });
     const p2 = await ctx.newPage();
-    p2.on('pageerror', (e) => errors.push(e.message));
-    p2.on('dialog', (d) => { log.push(`dialog: ${d.message()}`); d.accept(); });
-    await p2.goto(base);
+    const dialogs = [];
+    p2.on('pageerror', (e) => errors.push(`[${label}] ${e.message}`));
+    p2.on('console', (m) => { if (m.type() === 'error') errors.push(`[${label}] ${m.text()}`); });
+    p2.on('dialog', (d) => { dialogs.push(d.message()); d.accept(); });
+    const inPlay = () => p2.evaluate(() => !!Module.wolfWantsPointer);
+    async function untilPlaying() {
+      for (let i = 0; i < 40; i++) {
+        if (await inPlay())
+          return true;
+        await p2.keyboard.down('Enter'); await sleep(120); await p2.keyboard.up('Enter');
+        await sleep(1000);
+      }
+      return false;
+    }
+    await p2.goto(tedUrl);
     await p2.waitForSelector('#play:not([disabled])', { timeout: 30000 });
+    if (inGame) {
+      await p2.click('#play');
+      await untilPlaying();
+    }
+    if (failWrite)        // IndexedDB is there, but writing to it fails (quota...)
+      await p2.evaluate(() => {
+        const fs = Module.FS, real = fs.syncfs;
+        fs.syncfs = (populate, cb) => {
+          if (typeof populate === 'function')
+            return populate(new Error('QuotaExceededError'));
+          return populate ? real.call(fs, populate, cb) : cb(new Error('QuotaExceededError'));
+        };
+      });
     await p2.setInputFiles('#picker', lower);
-    await p2.waitForFunction(() => /your own data/.test(document.getElementById('dataname').textContent),
-      null, { timeout: 10000 }).catch(() => {});
+    await sleep(2000);
+    const url = p2.url();
     const name = await p2.locator('#dataname').innerText();
-    const status = await p2.locator('#status').innerText();
-    check('without IndexedDB, own data is used for the visit', /your own data/.test(name)
-      && /cannot keep/.test(status) && p2.url() === base, `${name} / ${status}`);
+    if (inGame) {
+      const still = await inPlay() && await p2.locator('#overlay').isHidden();
+      check(`${label}: no reload, the game keeps running, the player is told`,
+        url === tedUrl && still && dialogs.some((d) => /Reload the page and load the files/.test(d)),
+        `${url} running=${still} dialog="${dialogs.join(' / ')}"`);
+    } else {
+      const status = await p2.locator('#status').innerText();
+      const before = url === tedUrl && /your own data/.test(name) && /cannot keep/.test(status);
+      await p2.click('#play');
+      const played = await untilPlaying();
+      const dataDir = await p2.evaluate(() => Module.FS.readdir('/wolf3d/user').filter((n) => n[0] !== '.'));
+      check(`${label}: no reload, the game starts with the files from memory`,
+        before && played && dataDir.includes('VSWAP.WL1'),
+        `${url} / ${name} / ${status} / playing=${played}`);
+      await p2.screenshot({ path: join(outDir, `fail-${label.replace(/\W+/g, '-')}.png`) });
+    }
     await ctx.close();
   }
+  await failCase('no IndexedDB, before Play', { noIdb: true });
+  await failCase('no IndexedDB, during a game', { noIdb: true, inGame: true });
+  await failCase('IndexedDB write fails, before Play', { failWrite: true });
+  await failCase('IndexedDB write fails, during a game', { failWrite: true, inGame: true });
+
   check('no page errors or console errors', errors.length === 0, errors.slice(0, 5).join(' | '));
 } finally {
   await browser.close();

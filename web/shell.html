@@ -315,6 +315,16 @@
       showLoadError(set.error);
       return;
     }
+    // Switching sets mid-game reloads the page, and only stored files
+    // survive that.  The game cannot be restarted in place.
+    if (running && !persist) {
+      var msg = 'This browser cannot store your game data, so it cannot be ' +
+                'switched in during a game. Reload the page and load the files ' +
+                'before you press Play.';
+      setDataMsg(msg, true);
+      alert(msg);
+      return;
+    }
     if (running && !confirm('Restart the game with this data? An unsaved game is lost.'))
       return;
     setDataMsg('Reading your files…');
@@ -332,21 +342,28 @@
       Module.FS.writeFile(USERDIR + '/SET.TXT', set.ext.toLowerCase() + '-' +
                           ('0000000' + h.toString(16)).slice(-8) + '\n');
       syncOut(function (err) {
-        if (err || !persist)
-          alert('Your data could not be stored in this browser, so it is used ' +
-                'for this visit only.');
-        setPref('user');
-        if (persist || running) {
+        if (persist && !err) {
+          setPref('user');
           restart('user');
           return;
         }
-        // No IndexedDB: a reload would lose the files, so switch in place.
+        // Not stored: a reload would lose the files.
+        if (running) {
+          var msg = 'Your game data could not be stored in this browser (' + err +
+                    '), so the game cannot restart with it. Reload the page and ' +
+                    'load the files before you press Play.';
+          setDataMsg(msg, true);
+          alert(msg);
+          return;
+        }
+        // Before Play: switch to the files in memory, for this visit only.
         useData('user');
         failed = false;
-        setStatus('Ready. (This browser cannot keep saves.)');
+        setStatus('Ready. (This browser cannot keep your data or saves.)');
         play.disabled = false;
         play.onclick = start;
-        setDataMsg('Your data is loaded for this visit; it cannot be kept.');
+        setDataMsg('Your data is loaded for this visit only; this browser could ' +
+                   'not store it.');
       });
     }).catch(function (e) {
       setDataMsg('Could not read the files: ' + e, true);
