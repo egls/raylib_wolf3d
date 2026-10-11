@@ -15,7 +15,9 @@
 #include <stdint.h>
 
 /*
- * Config and save files go to $XDG_CONFIG_HOME/raylib_wolf3d/, or
+ * On Windows, config and saves go to %APPDATA%/raylib_wolf3d/
+ * (LOCALAPPDATA is the fallback). On Linux they go to
+ * $XDG_CONFIG_HOME/raylib_wolf3d/, or
  * ~/.config/raylib_wolf3d/ when XDG_CONFIG_HOME is unset (the directory is
  * created on first use).  Returns the full path of `name` there, in a
  * static buffer that the next call overwrites.

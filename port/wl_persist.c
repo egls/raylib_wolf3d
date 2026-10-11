@@ -8,6 +8,11 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#ifdef _WIN32
+#include <direct.h>
+/* MinGW aliases this DOS name to its CRT struct; keep the game type. */
+#undef diskfree_t
+#endif
 
 #include "WL_DEF.H"
 #include "wl_persist.h"
@@ -19,7 +24,13 @@
 
 static int MakeDir (const char *path)
 {
-	return mkdir(path, 0755) == 0 || errno == EEXIST;
+	struct stat st;
+#ifdef _WIN32
+	int result = _mkdir(path);
+#else
+	int result = mkdir(path, 0755);
+#endif
+	return result == 0 || (errno == EEXIST && stat(path, &st) == 0 && S_ISDIR(st.st_mode));
 }
 
 const char *WL_UserFile (const char *name)
@@ -29,6 +40,16 @@ const char *WL_UserFile (const char *name)
 
 	if (!dir[0])
 	{
+#ifdef _WIN32
+		/* Resolve before startup changes cwd to the read-only data directory. */
+		base = getenv("APPDATA");
+		if (!base || !*base)
+			base = getenv("LOCALAPPDATA");
+		if (!base || !*base)
+			Quit("APPDATA or LOCALAPPDATA is required for save files");
+		if (!_fullpath(dir, base, sizeof(dir)))
+			Quit("Save directory path is too long");
+#else
 		base = getenv("XDG_CONFIG_HOME");
 		if (base && base[0] == '/')
 			snprintf(dir, sizeof(dir), "%s", base);
@@ -37,8 +58,11 @@ const char *WL_UserFile (const char *name)
 			base = getenv("HOME");
 			snprintf(dir, sizeof(dir), "%s/.config", base && *base ? base : ".");
 		}
+#endif
 		MakeDir(dir);
-		strncat(dir, "/" WL_APPDIR, sizeof(dir) - strlen(dir) - 1);
+		if (strlen(dir) + sizeof("/" WL_APPDIR) > sizeof(dir))
+			Quit("Save directory path is too long");
+		strcat(dir, "/" WL_APPDIR);
 		if (!MakeDir(dir))
 			fprintf(stderr, "raylib_wolf3d: can't create %s: %s\n", dir, strerror(errno));
 	}
