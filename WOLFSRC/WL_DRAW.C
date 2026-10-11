@@ -1,6 +1,7 @@
 // WL_DRAW.C
 
 #include "WL_DEF.H"
+#include "wl_timer.h"
 #include "wl_data.h"
 #pragma hdrstop
 
@@ -1062,6 +1063,10 @@ void CalcTics (void)
 	{
 		newtime = TimeCount;
 		tics = newtime-lasttimecount;
+#ifdef __EMSCRIPTEN__
+		if (!tics)
+			WL_WebWait ();		// WOLF-41: no timer thread in the browser
+#endif
 	} while (!tics);			// make sure at least one tic passes
 
 	lasttimecount = newtime;

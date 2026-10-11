@@ -1,6 +1,7 @@
 // WL_TEXT.C
 
 #include "WL_DEF.H"
+#include "wl_timer.h"
 #pragma	hdrstop
 
 /*
@@ -166,7 +167,11 @@ void	TimedPicCommand (void)
 //
 	TimeCount = 0;
 	while (TimeCount < picdelay)
+#ifdef __EMSCRIPTEN__
+		WL_WebWait ();		// WOLF-41: no timer thread in the browser
+#else
 	;
+#endif
 
 //
 // draw pic

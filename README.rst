@@ -237,6 +237,48 @@ Audio integration tests and device recordings are described in
 ``demo_sync`` (see above) needs the data and ``xvfb-run``, and skips without
 them.
 
+WebAssembly build
+-----------------
+
+The game also builds for the browser with Emscripten (raylib's web platform,
+WebGL).  It needs emsdk (tested with emcc 6.0.10) and, to be playable, the
+shareware data, which the build bundles from a local directory into
+``raylib_wolf3d.data``::
+
+    source ~/emsdk/emsdk_env.sh
+    scripts/fetch_shareware.sh                  # -> ~/wolf3d-data/shareware
+    cmake --preset web                          # -DWOLF3D_WEB_DATA=<dir> for another directory
+    cmake --build --preset web
+    python3 -m http.server -d build-web 8000    # open http://localhost:8000/raylib_wolf3d.html
+
+``build-web/`` then holds ``raylib_wolf3d.html``, ``.js``, ``.wasm`` and
+``.data``; serve the four files from any static web server.  The build checks
+the SHA-256 of each ``*.WL1`` file.  Without the data (``-DWOLF3D_WEB_DATA=``)
+the page builds but only says that the data is missing.
+
+How it works: the game keeps its blocking loops (menus, fades, "press a key",
+demos) and runs under ASYNCIFY.  The frame and input pump in
+``port/id_raylib.c`` and the timer waits in ``port/wl_timer.c`` give the
+browser its turn with ``emscripten_sleep``.  There is no timer thread: the
+70 Hz ``TimeCount`` catches up with ``emscripten_get_now()`` whenever the game
+reads the clock or waits.  The page (``web/shell.html``) starts the game on a
+click, keeps game keys (arrows, Space, Tab, F1-F10, Alt, Ctrl...) from
+scrolling or triggering browser shortcuts, captures the mouse with pointer lock
+after a click on the game (Esc lets it go), and does Alt+Enter fullscreen.  The
+canvas fills the window and the 320x200 frame is letterboxed to 4:3.
+
+Limits for now: no sound (the page runs the game with ``-nosound``), and
+config and saves live in memory only, so they are lost on reload.
+``?args=...`` adds command-line options, e.g. ``?args=-tedlevel%200%20-nowait``.
+
+``scripts/web_smoke.mjs`` checks a build in headless Chromium or Firefox with
+Playwright: the four demos must reach the same state hashes as the native
+``demo_sync`` test, and a normal start must reach the title, the menu and
+E1M1, walk, and turn with the mouse, with no page or console errors::
+
+    PLAYWRIGHT=/path/to/node_modules/playwright/index.mjs \
+        node scripts/web_smoke.mjs build-web web-smoke [--browser firefox]
+
 Original release notes
 ----------------------
 
