@@ -336,10 +336,17 @@
           alert('Your data could not be stored in this browser, so it is used ' +
                 'for this visit only.');
         setPref('user');
-        if (persist)
+        if (persist || running) {
           restart('user');
-        else
-          setDataMsg('Your data is loaded. It cannot be kept after you leave.');
+          return;
+        }
+        // No IndexedDB: a reload would lose the files, so switch in place.
+        useData('user');
+        failed = false;
+        setStatus('Ready. (This browser cannot keep saves.)');
+        play.disabled = false;
+        play.onclick = start;
+        setDataMsg('Your data is loaded for this visit; it cannot be kept.');
       });
     }).catch(function (e) {
       setDataMsg('Could not read the files: ' + e, true);
@@ -489,6 +496,17 @@
       : 'Playing the bundled shareware data (v1.4).';
   }
 
+  // Saves, config and scores of each data set stay apart.
+  function useData(set) {
+    dataset = set;
+    var confdir = CONFROOT + '/' + (set === 'user' ? 'user-' + userSetId() : 'shareware');
+    Module.FS.mkdirTree(confdir);
+    if (exists(CONFLINK))
+      Module.FS.unlink(CONFLINK);
+    Module.FS.symlink(confdir, CONFLINK);
+    updateDataButtons();
+  }
+
   var Module = window.Module = {
     canvas: canvas,
     noInitialRun: true,
@@ -532,11 +550,7 @@
                   'build").', true);
         return;
       }
-      // Saves, config and scores of each data set stay apart.
-      var confdir = CONFROOT + '/' + (dataset === 'user' ? 'user-' + userSetId() : 'shareware');
-      Module.FS.mkdirTree(confdir);
-      Module.FS.symlink(confdir, CONFLINK);
-      updateDataButtons();
+      useData(dataset);
       setStatus(persist ? 'Ready.' : 'Ready. (This browser cannot keep saves.)');
       play.disabled = false;
       play.onclick = start;

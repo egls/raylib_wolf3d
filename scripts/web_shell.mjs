@@ -14,7 +14,8 @@
 //      with ?data=user and plays it;
 //   4. New Game, save in slot 1, reload, the save is still there (IndexedDB),
 //      load it from the menu, and it is not in the shareware set's saves;
-//   5. "Use shareware data", "Forget my data".
+//   5. "Use shareware data", "Forget my data";
+//   6. without IndexedDB, your own data still plays for the visit.
 // It fails on any page error or console error.  Shots are of the page.
 
 import { spawn, spawnSync } from 'node:child_process';
@@ -260,6 +261,25 @@ print(sum(1 for v in d.getdata() if v < 8) / (d.width * d.height))
   const left = await fsList('/wolf3d/user');
   await shot('forgotten');
   check('"Forget my data" empties the store', left && left.length === 0, String(left));
+
+  // 6. No IndexedDB (some private modes): own data still plays this visit.
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 800 } });
+    await ctx.addInitScript(() => { Object.defineProperty(window, 'indexedDB', { value: undefined }); });
+    const p2 = await ctx.newPage();
+    p2.on('pageerror', (e) => errors.push(e.message));
+    p2.on('dialog', (d) => { log.push(`dialog: ${d.message()}`); d.accept(); });
+    await p2.goto(base);
+    await p2.waitForSelector('#play:not([disabled])', { timeout: 30000 });
+    await p2.setInputFiles('#picker', lower);
+    await p2.waitForFunction(() => /your own data/.test(document.getElementById('dataname').textContent),
+      null, { timeout: 10000 }).catch(() => {});
+    const name = await p2.locator('#dataname').innerText();
+    const status = await p2.locator('#status').innerText();
+    check('without IndexedDB, own data is used for the visit', /your own data/.test(name)
+      && /cannot keep/.test(status) && p2.url() === base, `${name} / ${status}`);
+    await ctx.close();
+  }
   check('no page errors or console errors', errors.length === 0, errors.slice(0, 5).join(' | '));
 } finally {
   await browser.close();
