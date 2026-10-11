@@ -351,3 +351,115 @@ python tests/platform_check.py build-platform-test.exe
 
 The harness supplies a fake window and empty asset placeholders; it tests
 startup and paths, not game data validity or rendering.
+
+## Non-portable C for Windows (WOLF-32)
+
+Fixed in the shared sources, with the POSIX paths unchanged:
+
+- `wl_compat.h`: `<strings.h>`/`<unistd.h>` only off MSVC (`<io.h>`, `ssize_t`,
+  `_stricmp` there); `__attribute__((noreturn))` became C11 `_Noreturn`; `M_PI`
+  is defined when missing; the DOS `cdecl`/`pascal`/`MAXINT`/`MAXLONG` macros
+  are `#undef`ed first because the Windows headers predefine them.
+- `findfirst`/`findnext` use `FindFirstFileA` on Windows (no `dirent`/`fnmatch`).
+- `WL_Fsync` (`_commit`) and `WL_ReplaceFile` (`MoveFileExA`, replace existing)
+  for the save-game temp-file-then-rename path: `rename()` fails on Windows when
+  the target exists.
+- `ID_MM.C` reads available RAM with `GlobalMemoryStatusEx` (no `sysconf`).
+- `id_raylib.c`: GCC `__atomic_*` builtins became C11 `<stdatomic.h>`; the audio
+  pacing clock goes through `RL_MonotonicNow` (MSVC has no `clock_gettime`).
+  MSVC builds need `/std:c11 /experimental:c11atomics` (VS 2022 17.5+), now in
+  `CMakeLists.txt`.
+- Tests: `setenv`/`unsetenv` shims for `sd_integration_test.c`;
+  `audio_ring_test.c` scripts time through `RL_MonotonicNow` (built with
+  `RL_EXTERNAL_CLOCK`), because MinGW's `clock_gettime` is an inline function
+  that cannot be replaced at link time, and its clock is `int64_t` (Windows
+  `long` is 32 bits, so 2^31 ns = 2.1 s overflowed).
+
+Checked and needing no change: `O_BINARY` is real on Windows and already used
+for every `open()`; the `0600`/`0644` modes include the write bit so files
+are not created read-only; data file names are upper-case `.WL1` and Windows
+lookups are case-insensitive; config/save streams are explicit little-endian
+(`wl_persist.c`) and Windows targets x86-64/ARM64 are little-endian; the game
+`long` uses are 32-bit quantities, matching the DOS `long`.
+
+Not covered here: `wl_timer.c`, `wl_platform.c`, `wl_persist.c` (WOLF-33; they
+still include `pthread.h`/`unistd.h` unconditionally on master, so MSVC needs
+that PR), the MSVC compiler flags (WOLF-31), and the tests `persist_test`
+(`fork`/`sys/wait.h`) and `wolf_render_test` (relies on `--gc-sections`
+dropping unreferenced functions; the Windows x64 `.pdata` sections keep them
+alive and the link fails).
+
+## WOLF-30 Windows audit
+
+Audit of what blocks a native Windows 11 build (MSVC and MinGW-w64/Ninja).
+Nothing here is fixed yet; each item names the file and a suggested fix.
+Verified on Windows 11 with MSYS2 MinGW-w64 GCC 15.2, CMake, Ninja and a
+system raylib 5.5: `cmake -B build -G Ninja -DBUILD_TESTING=ON`, then
+`cmake --build build -- -k 0`. Configure succeeds; section A lists every
+compile error that build reported. The main executable did not get as far as
+linking, so section B is from reading the code. MSVC (`cl`) was not installed,
+so MSVC remarks are expectations, not test results.
+
+### A. Hard blockers (MinGW compile fails today)
+
+| # | Where | Problem | Fix |
+|---|-------|---------|-----|
+| 1 | `WOLFSRC/ID_MM.C:114` | `sysconf(_SC_AVPHYS_PAGES / _SC_PAGESIZE)` is glibc/POSIX only (hits every target that compiles ID_MM.C). | `GlobalMemoryStatusEx` under `_WIN32`. |
+| 2 | `port/wl_persist.c:19` | `mkdir(path, 0755)`: the Windows `mkdir` takes one argument. | Small wrapper using `_mkdir(path)` on `_WIN32`. |
+| 3 | `port/wl_persist.c:29-35` | Config/save dir is `$XDG_CONFIG_HOME` (must start with `/`) or `$HOME/.config`. `HOME` is normally unset on Windows. | On `_WIN32` use `%APPDATA%\raylib_wolf3d`; accept drive-letter paths. Update `wl_persist.h` docs and `tests/persist_test.c`. |
+| 4 | `port/wl_compat.c:6,95` | `<fnmatch.h>` / `fnmatch(FNM_CASEFOLD)` for `findfirst`/`findnext`; no such header on MinGW or MSVC. | `FindFirstFileA`/`FindNextFileA` under `_WIN32`, or a small `*`/`?` matcher. |
+| 5 | `tests/persist_test.c:15` | `<sys/wait.h>`, `fork`/`waitpid`, `setenv`/`unsetenv`, `system("rm -rf ...")`, `mkdir(path, 0755)`. | Port (`_putenv_s`, in-process cases, CMake `-E rm -r`) or build only off Windows until ported. |
+| 6 | `tests/audio_ring_test.c:11` | Defines its own `clock_gettime` to fake the clock; redefinition error against winpthreads, and it relies on symbol interposition. | Add a `WL_MonotonicNow()` hook used by `id_raylib.c`; the test supplies its own. |
+
+### B. Expected link/runtime blockers (not reached yet)
+
+- **70 Hz timer** (`port/wl_timer.c`): `pthread_create`, `clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME)` and `nanosleep`. winpthreads has pthread and `clock_gettime`; MSVC has none. The default Windows timer tick is about 15.6 ms, coarser than the 14.3 ms game tick. Use `QueryPerformanceCounter` + `CreateThread` + a high-resolution waitable timer (or `timeBeginPeriod(1)` + `Sleep`) under `_WIN32`. `WL_Idle` (0.2 ms sleep) needs the same.
+- **Other clock users**: `port/id_raylib.c:421,453` (audio pump), `audio/render.c:114`, `tests/sd_integration_test.c`: route through one clock abstraction.
+- **Atomics**: `_Atomic longword TimeCount` (`WOLFSRC/ID_SD.C:15`) and the GCC `__atomic_*` builtins in `port/id_raylib.c` are fine on MinGW GCC. MSVC has no `__atomic_*`; use `<stdatomic.h>` with `/std:c11 /experimental:c11atomics`.
+- **`chdir`** (`port/wl_platform.c:81`): `<unistd.h>` on MinGW, `_chdir` in `<direct.h>` on MSVC.
+- **POSIX file API** (`ID_CA.C`, `ID_PM.C`, `wl_persist.c`, `wl_demotest.c`): `open/read/write/lseek/close`, `ssize_t`. MinGW provides them; MSVC needs `<io.h>` and the underscore names, and has no `ssize_t`.
+- **`O_BINARY`**: `port/wl_compat.h:69` defaults it to 0 only if `<fcntl.h>` does not define it, which is correct for Windows. The game's own opens (`ID_CA.C`, `ID_PM.C`, `WL_MAIN.C` config, `WL_MENU.C` saves) already pass it; `port/wl_demotest.c` (`-savetest`), `tests/persist_test.c` and `CA_OpenDebug` do not and would run in text mode (CRLF translation, Ctrl-Z EOF) on Windows.
+- **`port/wl_compat.h`** includes `<strings.h>`, `<unistd.h>`, `<sys/stat.h>` and maps `stricmp` to `strcasecmp`. MinGW is fine; MSVC has no `strings.h`/`unistd.h`, uses `_stricmp`, and lacks `S_IRUSR`/`S_IWUSR`/`S_ISREG`.
+- **`__attribute__((noreturn))`** (`port/wl_compat.h:49`) is a GCC-ism; use `_Noreturn`/`__declspec(noreturn)` under `_MSC_VER`.
+- **`long` is 32-bit on Win64** (LLP64) but 64-bit on Linux. `fixed` is already `int32_t`, and most game `long` fields were 32-bit under DOS, so those match better on Windows than on Linux. Risk is pointer-to-`long` casts: `CMakeLists.txt` suppresses `-Wint-conversion`/`incompatible-pointer-types` for GCC 14+, so run a `-Wpointer-to-int-cast` pass and move any pointer arithmetic to `intptr_t`.
+
+### C. CMake and build system
+
+- GCC-only flags are mostly guarded by `MATCHES "GNU|Clang"` but several test targets are not: `wolf_render_test` (`-ffunction-sections`, `-Wl,--gc-sections`), `wolf_core_data_test`, `wolf_codec_test`, `wolf_persist_test`, `wolf_sd_*` pass `-Wall -Wextra -fcommon ...` unconditionally and will fail under MSVC. The `-fsigned-char` pin has no direct MSVC flag (char is signed there by default, so it is already correct; `/J` would make it unsigned).
+- Uppercase `.C` files are forced to C with `LANGUAGE C` (right for CMake with MSVC too); `-x c` is correctly GNU/Clang only.
+- `CMAKE_C_STANDARD 99` is not what compiles: the build log shows `-std=gnu11` because `audio/` requests `c_std_11`. Set 11 at the top level and add `/experimental:c11atomics` for MSVC.
+- `target_link_libraries(raylib_wolf3d PRIVATE ... Threads::Threads m)`: there is no `m` on MSVC; guard with `if(NOT MSVC)`. raylib supplies `opengl32/gdi32/winmm` itself.
+- raylib comes from `find_package(raylib 5.5 EXACT)` (an MSYS2 package was found) with a FetchContent fallback that is untested on Windows. Decide static vs DLL; a MinGW release will want `-static` runtime linking so it does not need MSYS2 DLLs.
+- `find_package(Python3 REQUIRED)` worked, but a clean Windows box often has only the `py` launcher or the Store stub. Document it, or commit the generated `wl_objdata.c`/`wl_states.c`. The `gen_states.py ... > file` redirect in `add_custom_command` works with Ninja but not portably with Visual Studio generators; give the script an `-o` option like `obj2c.py`.
+- `WOLF3D_TEST_DATA` defaults to `$ENV{HOME}/wolf3d-data/shareware`; add a `USERPROFILE` fallback.
+- `CMakePresets.json` only has Linux presets. Add `windows-mingw` (Ninja) and `windows-msvc` presets with `condition` on `hostSystemName`. ASan is MSVC-only (`/fsanitize=address`) and UBSan is unavailable there.
+
+### D. Paths, names and line endings
+
+- `WOLFSRC/ID_HEADS.H:17,19` include `"FOREIGN\JAPAN\GFXV_WJ1.H"` with backslashes. It sits in `#ifdef JAPAN` and is never compiled; switch to `/` if that build is ever enabled.
+- Case: all includes match the on-disk names exactly (`WL_DEF.H`, `WOLF1VER.H`, lower-case `wl_compat.h`), so NTFS and Linux both work. Data files are looked up as `*.WL1` upper-case; Windows is case-insensitive but a Linux CI step is not.
+- Line endings: `core.autocrlf` is `true` in this Git for Windows setup and the repo has no `.gitattributes`, so `WOLFSRC/` and shell scripts can be checked out as CRLF (breaking `#!/bin/bash` scripts) and binary files such as `WOLFSRC/OBJ/*.OBJ` rely on Git's heuristic. Add `.gitattributes` (`* text=auto`, `*.sh eol=lf`, `*.OBJ *.EXE *.WL1 *.png binary`).
+- Path length: agent workdirs already exceed 150 characters; the CMake object paths under them are close to `MAX_PATH` (260) for MSVC. Build in a short directory (for example `C:\b\wolf`) or enable long paths.
+- `DEICE.EXE`, `INSTALL.BAT` in the repo root are original DOS artefacts and confusing for Windows users; mention in the README.
+
+### E. Scripts, tests and CI
+
+- `scripts/*.sh` (including `fetch_shareware.sh`, `package.sh`, `xvfb_session.sh`) need bash, curl and (for the last) Xvfb: usable in Git Bash/MSYS2 except `xvfb_session.sh`; PowerShell equivalents are needed for a native flow.
+- `tests/demo_sync.cmake` and `tests/persist_check.py` print `SKIPPED` without `xvfb-run`, so on Windows they never run. They redirect config with `XDG_CONFIG_HOME`; once the config dir is `%APPDATA%`, add a `WOLF3D_CONFIG_DIR` override and let both tests use it, and run them against the real window on Windows.
+- `.github/workflows/build.yml` has only Ubuntu x86_64/arm64 jobs. Add a `windows-2022` MSYS2 MinGW64 job first (`mingw-w64-x86_64-{toolchain,cmake,ninja,raylib,python}`), MSVC later; leave the Ubuntu jobs untouched. The raylib-quarantine grep step works under `shell: bash`.
+- `release.yml` and `scripts/package.sh` only produce Ubuntu artefacts; a Windows zip (exe, `raylib.dll` if shared, README, no game data) is a separate task.
+
+### F. Checked and fine
+
+- `raylib.h` is quarantined to `port/id_raylib.c`; raylib itself builds on Windows.
+- `port/asm_stubs.c`, `port/wl_data.c`, `port/wl_raycast.c`, `port/wl_timer.c` (compiles; runtime behaviour per B), `port/id_raylib.c`, `audio/sd_audio.c` and `audio/vendor/opl3.c` compiled without errors under MinGW GCC 15.
+- No `fork`, `mmap`, signals, sockets, `dlopen`, `alloca` or VLAs in the game path; the inline asm is behind `#if 0` or in files that are not built (`CONTIGSC.C`, `OLDSCALE.C`, `DETECT.C`).
+- Structures are read field by field, so no packing/endianness change is needed on Win64.
+
+### Suggested order
+
+1. Add small `port/` shims (clock/sleep, mkdir, config dir, `findfirst`, memory size) and fix A1-A6 so MinGW builds, links and runs.
+2. Add the CMake presets, `.gitattributes` and a MinGW CI job.
+3. Run `-demotest all -viewsize 19` on Windows against the recorded hashes.
+4. MSVC: flags, atomics, `strings.h`/`unistd.h` replacements.
+5. Windows packaging.

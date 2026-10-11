@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wolfenstein 3-D (raylib)</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; color: #ddd;
+               font: 15px/1.4 system-ui, sans-serif; overflow: hidden;
+               overscroll-behavior: none; }
+  /* raylib sizes the canvas to the window; the game letterboxes to 4:3. */
+  #canvas { display: block; outline: none; image-rendering: pixelated; }
+  #overlay { position: fixed; inset: 0; display: flex; align-items: center;
+             justify-content: center; background: rgba(0, 0, 0, .85); }
+  .hidden { display: none !important; }
+  #panel { width: min(30em, 90vw); text-align: center; }
+  h1 { margin: 0 0 .6em; font-size: 2em; color: #c33; letter-spacing: .06em; }
+  #bar { height: .6em; margin: 1em 0; border: 1px solid #555; }
+  #fill { height: 100%; width: 0; background: #c33; }
+  #status { min-height: 1.4em; white-space: pre-wrap; }
+  #status.error { color: #f66; text-align: left; font-family: monospace; }
+  #play { margin: 1em 0; padding: .5em 2em; font-size: 1.3em; cursor: pointer;
+          background: #c33; color: #fff; border: 0; border-radius: 4px; }
+  #play:disabled { background: #555; cursor: default; }
+  small { color: #888; }
+  #hint { position: fixed; top: .6em; left: 50%; transform: translateX(-50%);
+          padding: .3em .8em; background: rgba(0, 0, 0, .7); border-radius: 4px;
+          pointer-events: none; }
+</style>
+</head>
+<body>
+<canvas id="canvas" tabindex="-1"></canvas>
+<div id="hint" class="hidden">Click to capture the mouse</div>
+
+<div id="overlay">
+  <div id="panel">
+    <h1>Wolfenstein 3-D</h1>
+    <div id="bar"><div id="fill"></div></div>
+    <div id="status">Loading…</div>
+    <button id="play" disabled>Click to play</button>
+    <p><small>Arrows move, Ctrl fires, Space opens doors, Alt strafes,
+      Shift runs, Esc is the menu. Click the game to use the mouse
+      (Esc lets go). Alt+Enter: fullscreen.</small></p>
+    <p><small>Shareware episode 1. Sound is not in the browser version
+      yet.</small></p>
+  </div>
+</div>
+
+<script>
+(function () {
+  var canvas = document.getElementById('canvas');
+  var overlay = document.getElementById('overlay');
+  var fill = document.getElementById('fill');
+  var statusEl = document.getElementById('status');
+  var play = document.getElementById('play');
+  var hint = document.getElementById('hint');
+  var DATADIR = '/wolf3d/data';      // web/web.cmake preloads the WL1 files here
+  var CONFIGDIR = '/wolf3d/config';  // config and saves (MEMFS for now)
+  var running = false;
+  var failed = false;
+  var lastlines = [];
+
+  // ?args=... adds command-line options, e.g. ?args=-tedlevel%200
+  var query = new URLSearchParams(location.search);
+
+  function setStatus(text, error) {
+    statusEl.textContent = text;
+    statusEl.className = error ? 'error' : '';
+  }
+
+  function showOverlay(text, error) {
+    running = false;
+    hint.classList.add('hidden');
+    if (document.pointerLockElement)
+      document.exitPointerLock();
+    overlay.classList.remove('hidden');
+    document.getElementById('bar').classList.add('hidden');
+    setStatus(text, error);
+    play.textContent = 'Play again';
+    play.disabled = false;
+    play.onclick = function () { location.reload(); };
+  }
+
+  function log(text) {
+    lastlines.push(text);
+    if (lastlines.length > 8)
+      lastlines.shift();
+  }
+
+  function gameArgs() {
+    // No web audio yet (WOLF-40 stage 2): the silent path of ID_SD.
+    var args = ['-data', DATADIR, '-nosound'];
+    (query.get('args') || '').split(/\s+/).filter(Boolean)
+      .forEach(function (a) { args.push(a); });
+    return args;
+  }
+
+  function start() {
+    if (running || failed)
+      return;
+    running = true;
+    overlay.classList.add('hidden');
+    canvas.focus();
+    Module.callMain(gameArgs());
+  }
+
+  var Module = window.Module = {
+    canvas: canvas,
+    noInitialRun: true,
+    print: function (text) { console.log(text); log(text); },
+    printErr: function (text) { console.warn(text); log(text); },
+    setStatus: function (text) {
+      var m = text.match(/\((\d+(?:\.\d+)?)\/(\d+)\)/);
+      if (m)
+        fill.style.width = (100 * m[1] / m[2]) + '%';
+      if (text && !running && !failed)
+        setStatus(text.replace(/\s*\(.*\)$/, '…'));
+    },
+    preRun: [function () {
+      Module.FS.mkdirTree(CONFIGDIR);
+      Module.ENV.XDG_CONFIG_HOME = CONFIGDIR;
+    }],
+    onRuntimeInitialized: function () {
+      fill.style.width = '100%';
+      if (!Module.FS.analyzePath(DATADIR + '/VSWAP.WL1').exists) {
+        failed = true;
+        setStatus('This build has no game data. Build it with the shareware ' +
+                  'files (see README, "WebAssembly build").', true);
+        return;
+      }
+      setStatus('Ready.');
+      play.disabled = false;
+      play.onclick = start;
+    },
+    onExit: function (status) {
+      if (status)
+        showOverlay('The game stopped (exit code ' + status + ').\n\n' +
+                    lastlines.join('\n'), true);
+      else
+        showOverlay('Thanks for playing.');
+    },
+    onAbort: function (what) {
+      failed = true;
+      showOverlay('The game crashed: ' + what + '\n\n' + lastlines.join('\n'), true);
+    },
+    wolfWantsPointer: 0
+  };
+
+  // Pointer lock needs a click; the game says when it wants the mouse.
+  canvas.addEventListener('click', function () {
+    if (running && Module.wolfWantsPointer && document.pointerLockElement !== canvas)
+      canvas.requestPointerLock();
+  });
+  canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+  setInterval(function () {
+    hint.classList.toggle('hidden', !(running && Module.wolfWantsPointer
+                                      && document.pointerLockElement !== canvas));
+  }, 250);
+
+  // Keep the browser's own shortcuts (F1 help, F3 find, F5 reload, Tab,
+  // Space and arrow scrolling, Backspace, Alt menus...) away from the game's
+  // keys.  F11 and F12 stay with the browser.
+  function gameKey(e) {
+    return /^(F([1-9]|10)|Tab|Backspace|Escape|Enter|Arrow\w+|PageUp|PageDown|Home|End|Insert|Delete| )$/.test(e.key)
+      || e.key === 'Alt' || e.key === 'Control' || e.ctrlKey || e.altKey;
+  }
+  window.addEventListener('keydown', function (e) {
+    if (!running)
+      return;
+    if (e.key === 'Enter' && e.altKey) {
+      if (document.fullscreenElement)
+        document.exitFullscreen();
+      else
+        document.documentElement.requestFullscreen().catch(function () {});
+      e.preventDefault();
+      return;
+    }
+    if (gameKey(e))
+      e.preventDefault();
+  });
+  window.addEventListener('keyup', function (e) {
+    if (running && gameKey(e))
+      e.preventDefault();        // a lone Alt release opens the menu bar
+  });
+  window.addEventListener('wheel', function (e) {
+    if (running)
+      e.preventDefault();
+  }, { passive: false });
+})();
+</script>
+{{{ SCRIPT }}}
+</body>
+</html>

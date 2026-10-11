@@ -13,11 +13,22 @@ endif()
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS ON)
+if(MSVC)
+  # _Atomic / <stdatomic.h> (TimeCount, the audio ring) need C11 mode, VS 2022 17.5+.
+  add_compile_options(/std:c11 /experimental:c11atomics)
+endif()
 
 # ---------------------------------------------------------------------------
 # raylib 5.5 (only port/id_raylib.c may include raylib.h)
 # ---------------------------------------------------------------------------
 set(WOLF3D_RAYLIB_VERSION 5.5)
+# The browser build (cmake --preset web, WOLF-41) uses raylib's web platform.
+if(EMSCRIPTEN)
+  set(PLATFORM Web CACHE STRING "raylib platform" FORCE)
+  set(WOLF3D_USE_SYSTEM_RAYLIB OFF)
+  # The tests need a display, Xvfb or files outside the page.
+  set(BUILD_TESTING OFF CACHE BOOL "Build the tests" FORCE)
+endif()
 if(WOLF3D_USE_SYSTEM_RAYLIB)
   find_package(raylib ${WOLF3D_RAYLIB_VERSION} EXACT QUIET)
 endif()
@@ -151,8 +162,14 @@ add_custom_command(
 
 add_executable(raylib_wolf3d ${WOLF3D_GAME_SOURCES} ${WOLF3D_PORT_SOURCES} ${WOLF3D_OBJDATA} ${WOLF3D_STATES})
 target_include_directories(raylib_wolf3d PRIVATE port WOLFSRC)
-find_package(Threads REQUIRED)
-target_link_libraries(raylib_wolf3d PRIVATE wolf3d_raylib Threads::Threads m)
+if(EMSCRIPTEN)
+  # No pthreads in the browser: the timer has no thread there (port/wl_timer.c).
+  target_link_libraries(raylib_wolf3d PRIVATE wolf3d_raylib m)
+  include(web/web.cmake)
+else()
+  find_package(Threads REQUIRED)
+  target_link_libraries(raylib_wolf3d PRIVATE wolf3d_raylib Threads::Threads m)
+endif()
 
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(raylib_wolf3d PRIVATE ${WOLF3D_WARNINGS} ${WOLF3D_GAME_FLAGS})
@@ -264,7 +281,7 @@ if(BUILD_TESTING)
   add_executable(wolf_audio_ring_test tests/audio_ring_test.c port/id_raylib.c)
   target_include_directories(wolf_audio_ring_test PRIVATE port
     $<TARGET_PROPERTY:raylib,INTERFACE_INCLUDE_DIRECTORIES>)
-  target_compile_definitions(wolf_audio_ring_test PRIVATE WOLF3D_AUDIO_BACKEND)
+  target_compile_definitions(wolf_audio_ring_test PRIVATE WOLF3D_AUDIO_BACKEND RL_EXTERNAL_CLOCK)
   target_compile_options(wolf_audio_ring_test PRIVATE -Wall -UNDEBUG)
   target_link_libraries(wolf_audio_ring_test PRIVATE m)
   add_test(NAME audio_ring COMMAND wolf_audio_ring_test)

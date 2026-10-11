@@ -25,7 +25,9 @@
  */
 
 #include <fcntl.h>
+#ifndef _MSC_VER
 #include <unistd.h>
+#endif
 #include "WL_DEF.H"
 #include "wl_persist.h"
 

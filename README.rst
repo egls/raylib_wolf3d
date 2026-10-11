@@ -101,6 +101,49 @@ Alt + Enter                Toggle fullscreen (this port; never reaches the game)
 The mouse works as in the original (move/turn and buttons).  The original
 Pause key is not mapped by this port yet.
 
+Windows
+-------
+
+Target: Windows 11 x64, built from PowerShell.  Only the shareware (WL1) data
+is supported, as on Linux.
+
+Build with MSYS2 MinGW-w64 (``pacman -S mingw-w64-x86_64-gcc
+mingw-w64-x86_64-cmake mingw-w64-x86_64-ninja mingw-w64-x86_64-python``; put
+``C:\msys64\mingw64\bin`` on ``PATH``)::
+
+    cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+    cmake --build build
+
+raylib 5.5 is fetched and linked statically unless a matching one is
+installed.  ``ctest --test-dir build --output-on-failure`` runs the tests;
+those that need the WL1 data skip without it.
+
+Get the data (checked by SHA-256, kept outside the repository) and run::
+
+    scripts\fetch_shareware.ps1        # -> %USERPROFILE%\wolf3d-data\shareware
+    build\raylib_wolf3d.exe -data $env:USERPROFILE\wolf3d-data\shareware
+
+If scripts are blocked, run ``powershell -ExecutionPolicy Bypass -File
+scripts\fetch_shareware.ps1`` (or ``Set-ExecutionPolicy -Scope CurrentUser
+RemoteSigned``).
+
+The Windows release package is
+``raylib_wolf3d-VERSION-windows-x64.zip``: ``raylib_wolf3d.exe``, the
+non-system runtime DLLs it needs (for MinGW ``libwinpthread-1.dll`` and
+possibly ``libgcc_s_seh-1.dll``), ``run.ps1``, ``scripts\fetch_shareware.ps1``
+and ``doc\`` (README, ``SOURCE.txt``, ``licenses\``).  It contains no game
+data.  Unzip it anywhere and run ``.\run.ps1``: on first run it downloads and
+verifies the shareware data, then starts the game (extra arguments are passed
+through; ``WOLF3D_DATA`` overrides the data directory).  Windows SmartScreen
+may warn about the unsigned ``.exe``; choose "More info", "Run anyway".
+Build the zip locally after a build with::
+
+    scripts\package.ps1 -BuildDir build -OutDir dist 0.0.0-local
+
+``package.ps1`` finds the DLLs with ``objdump`` (MinGW) or ``dumpbin`` (MSVC
+Developer PowerShell) and fails if one cannot be found (``-DllDir`` adds
+search directories).  The zip's SHA-256 goes to ``dist\SHA256SUMS-windows``.
+
 Command-line options
 --------------------
 
@@ -236,6 +279,48 @@ Audio integration tests and device recordings are described in
 
 ``demo_sync`` (see above) needs the data and ``xvfb-run``, and skips without
 them.
+
+WebAssembly build
+-----------------
+
+The game also builds for the browser with Emscripten (raylib's web platform,
+WebGL).  It needs emsdk (tested with emcc 6.0.10) and, to be playable, the
+shareware data, which the build bundles from a local directory into
+``raylib_wolf3d.data``::
+
+    source ~/emsdk/emsdk_env.sh
+    scripts/fetch_shareware.sh                  # -> ~/wolf3d-data/shareware
+    cmake --preset web                          # -DWOLF3D_WEB_DATA=<dir> for another directory
+    cmake --build --preset web
+    python3 -m http.server -d build-web 8000    # open http://localhost:8000/raylib_wolf3d.html
+
+``build-web/`` then holds ``raylib_wolf3d.html``, ``.js``, ``.wasm`` and
+``.data``; serve the four files from any static web server.  The build checks
+the SHA-256 of each ``*.WL1`` file.  Without the data (``-DWOLF3D_WEB_DATA=``)
+the page builds but only says that the data is missing.
+
+How it works: the game keeps its blocking loops (menus, fades, "press a key",
+demos) and runs under ASYNCIFY.  The frame and input pump in
+``port/id_raylib.c`` and the timer waits in ``port/wl_timer.c`` give the
+browser its turn with ``emscripten_sleep``.  There is no timer thread: the
+70 Hz ``TimeCount`` catches up with ``emscripten_get_now()`` whenever the game
+reads the clock or waits.  The page (``web/shell.html``) starts the game on a
+click, keeps game keys (arrows, Space, Tab, F1-F10, Alt, Ctrl...) from
+scrolling or triggering browser shortcuts, captures the mouse with pointer lock
+after a click on the game (Esc lets it go), and does Alt+Enter fullscreen.  The
+canvas fills the window and the 320x200 frame is letterboxed to 4:3.
+
+Limits for now: no sound (the page runs the game with ``-nosound``), and
+config and saves live in memory only, so they are lost on reload.
+``?args=...`` adds command-line options, e.g. ``?args=-tedlevel%200%20-nowait``.
+
+``scripts/web_smoke.mjs`` checks a build in headless Chromium or Firefox with
+Playwright: the four demos must reach the same state hashes as the native
+``demo_sync`` test, and a normal start must reach the title, the menu and
+E1M1, walk, and turn with the mouse, with no page or console errors::
+
+    PLAYWRIGHT=/path/to/node_modules/playwright/index.mjs \
+        node scripts/web_smoke.mjs build-web web-smoke [--browser firefox]
 
 Original release notes
 ----------------------

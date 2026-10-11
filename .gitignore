@@ -10,3 +10,4 @@ build*/
 *.SDM
 *.sdm
 dist/
+web-smoke/
