@@ -491,11 +491,13 @@ changes the demo hashes; fix or silence in macOS 3 (game) and macOS 6 (audio).
 - **No `timeout`/`gtimeout`** in a stock macOS: scripts and docs must not
   depend on it (CTest `TIMEOUT` is fine). (macOS 7)
 - **CI**: `.github/workflows/build.yml` has Ubuntu x86_64/arm64 jobs only.
-  Add a `macos-14` (arm64) job: Ninja from Homebrew, FetchContent raylib
-  (cache `_deps`), configure with the deployment target, build, `ctest`,
-  and the no-data smoke test (`exit 2`). The fake-data smoke test opens a
-  window; this should work on the runners without Xvfb (not tested yet). Keep the raylib quarantine
-  check. (macOS 7)
+  Add a `macos-15` (arm64) job: Ninja from Homebrew, FetchContent raylib
+  (cache `_deps`), configure with deployment target 13.0, build, `ctest`,
+  and the no-data smoke test (`exit 2`). Not `macos-14`: that image has
+  brownouts and is retired on November 2, 2026; the 13.0 deployment target
+  keeps macOS 13 support whatever the runner runs. The fake-data smoke test
+  opens a window; this should work on the runners without Xvfb (not tested
+  yet). Keep the raylib quarantine check. (macOS 7)
 - **Packaging**: `scripts/package.sh` is Linux-only (GNU `tar --sort
   --owner --mtime`, `touch -d @`, `dpkg-deb`, `dpkg-shlibdeps`). The `.app`
   bundle needs its own script (`Info.plist`, icon, `codesign -s -`, a
