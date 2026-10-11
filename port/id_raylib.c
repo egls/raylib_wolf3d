@@ -482,13 +482,31 @@ int RL_WindowIsOpen (void)
 }
 
 /* SPSC: game thread owns write/mixing; raylib audio thread owns read.
- * GCC atomics work with the legacy C99 build, including on ARM. Never take a
- * game/cache lock in the callback. The ring contains 16-bit stereo frames. */
+ * C11 atomics (GCC, Clang and MSVC with /experimental:c11atomics) work with
+ * the legacy C99 build, including on ARM. Never take a game/cache lock in the
+ * callback. The ring contains 16-bit stereo frames. */
 #ifdef WOLF3D_AUDIO_BACKEND
+#include <stdatomic.h>
+/* Monotonic clock for pacing.  A test defines RL_EXTERNAL_CLOCK and supplies
+ * RL_MonotonicNow() itself to script time (MinGW's clock_gettime is an inline
+ * function, so unlike on Linux it cannot be replaced at link time).  The MSVC
+ * CRT has no clock_gettime, so there raylib's GetTime() (the same
+ * QueryPerformanceCounter clock) stands in; only differences are used. */
+#ifdef RL_EXTERNAL_CLOCK
+void RL_MonotonicNow(struct timespec *ts);
+#elif defined(_MSC_VER)
+static void RL_MonotonicNow(struct timespec *ts) {
+    double t=GetTime();
+    ts->tv_sec=(time_t)t;
+    ts->tv_nsec=(long)((t-(double)ts->tv_sec)*1e9);
+}
+#else
+static void RL_MonotonicNow(struct timespec *ts) { clock_gettime(CLOCK_MONOTONIC,ts); }
+#endif
 #define AUDIO_RING 8192u
 #define AUDIO_AHEAD 3840u /* 80 ms at 48 kHz */
 static short audio_ring[AUDIO_RING*2];
-static unsigned audio_read, audio_write;
+static _Atomic unsigned audio_read, audio_write;
 static AudioStream audio_stream;
 static int audio_open;
 static void (*audio_mixer)(short *, unsigned);
@@ -496,8 +514,8 @@ static struct timespec audio_epoch;
 static uint64_t audio_generated;
 static void WolfAudioCallback(void *buffer, unsigned frames) {
     short *out=buffer;
-    unsigned r=__atomic_load_n(&audio_read,__ATOMIC_RELAXED);
-    unsigned w=__atomic_load_n(&audio_write,__ATOMIC_ACQUIRE);
+    unsigned r=atomic_load_explicit(&audio_read,memory_order_relaxed);
+    unsigned w=atomic_load_explicit(&audio_write,memory_order_acquire);
     unsigned n=w-r, i;
     if (n>frames) n=frames;
     for (i=0;i<n;++i) {
@@ -505,7 +523,7 @@ static void WolfAudioCallback(void *buffer, unsigned frames) {
         out[i*2+1]=audio_ring[((r+i)%AUDIO_RING)*2+1];
     }
     memset(out+n*2,0,(frames-n)*2*sizeof(*out));
-    __atomic_store_n(&audio_read,r+n,__ATOMIC_RELEASE);
+    atomic_store_explicit(&audio_read,r+n,memory_order_release);
 }
 void RL_AudioPump(void) {
     struct timespec now;
@@ -513,14 +531,14 @@ void RL_AudioPump(void) {
     unsigned r,w,queued,n;
     uint64_t due;
     if (!audio_open) return;
-    clock_gettime(CLOCK_MONOTONIC,&now);
+    RL_MonotonicNow(&now);
     /* Allow 1000 ppm of DAC clock drift relative to CLOCK_MONOTONIC.
      * The queue limit still bounds latency to 80 ms; this cap only prevents
      * a null/racing sink from advancing synthesis without wall-clock time. */
     due=(uint64_t)(((now.tv_sec-audio_epoch.tv_sec)+
                    (now.tv_nsec-audio_epoch.tv_nsec)*1e-9)*48000*1.001)+AUDIO_AHEAD;
-    r=__atomic_load_n(&audio_read,__ATOMIC_ACQUIRE);
-    w=__atomic_load_n(&audio_write,__ATOMIC_RELAXED);
+    r=atomic_load_explicit(&audio_read,memory_order_acquire);
+    w=atomic_load_explicit(&audio_write,memory_order_relaxed);
     queued=w-r;
     while (queued<AUDIO_AHEAD && audio_generated<due) {
         n=AUDIO_AHEAD-queued;
@@ -532,20 +550,22 @@ void RL_AudioPump(void) {
             audio_ring[((w+i)%AUDIO_RING)*2+1]=samples[i*2+1];
         }
         w+=n; queued+=n; audio_generated+=n;
-        __atomic_store_n(&audio_write,w,__ATOMIC_RELEASE);
+        atomic_store_explicit(&audio_write,w,memory_order_release);
     }
 }
 int RL_AudioOpen(void (*mixer)(short *, unsigned)) {
     if (audio_open) return 1;
     /* Require actual lock-free 32-bit atomics on the target. */
-    if (!__atomic_always_lock_free(sizeof(unsigned),0)) return 0;
+    if (ATOMIC_INT_LOCK_FREE!=2) return 0;
     InitAudioDevice();
     if (!IsAudioDeviceReady()) { CloseAudioDevice(); return 0; }
     SetAudioStreamBufferSizeDefault(512);
     audio_stream=LoadAudioStream(48000,16,2);
     if (!IsAudioStreamValid(audio_stream)) { CloseAudioDevice(); return 0; }
-    audio_read=audio_write=0; audio_generated=0; audio_mixer=mixer;
-    clock_gettime(CLOCK_MONOTONIC,&audio_epoch);
+    atomic_store_explicit(&audio_read,0,memory_order_relaxed);
+    atomic_store_explicit(&audio_write,0,memory_order_relaxed);
+    audio_generated=0; audio_mixer=mixer;
+    RL_MonotonicNow(&audio_epoch);
     audio_open=1;
     RL_AudioPump();
     SetAudioStreamCallback(audio_stream,WolfAudioCallback);

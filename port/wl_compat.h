@@ -25,13 +25,29 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <strings.h>
+#include <math.h>
 #include <sys/stat.h>
+#ifdef _MSC_VER
+#include <io.h>				/* open/read/write/close/unlink; no unistd.h or strings.h */
+#include <BaseTsd.h>
+typedef SSIZE_T ssize_t;
+#else
+#include <strings.h>
 #include <unistd.h>
+#endif
+
+/* M_PI is POSIX, not ISO C (MSVC hides it without _USE_MATH_DEFINES). */
+#ifndef M_PI
+#define M_PI	3.14159265358979323846
+#endif
 
 /* ------------------------------------------------------------------------
  * Borland memory-model and calling-convention keywords
  * ------------------------------------------------------------------------ */
+#undef cdecl			/* predefined by the MinGW/MSVC (windows.h) headers */
+#undef _cdecl
+#undef pascal
+#undef _pascal
 #define far
 #define huge
 #define near
@@ -45,8 +61,7 @@
 /* ------------------------------------------------------------------------
  * Not-ported-yet aborts
  * ------------------------------------------------------------------------ */
-void WL_NotPorted (const char *what, const char *file, int line)
-	__attribute__((noreturn));
+_Noreturn void WL_NotPorted (const char *what, const char *file, int line);
 
 #define NOTPORTED(what)	WL_NotPorted((what), __FILE__, __LINE__)
 /* Replaces each run of Borland inline asm (original kept under #if 0). */
@@ -55,6 +70,8 @@ void WL_NotPorted (const char *what, const char *file, int line)
 /* ------------------------------------------------------------------------
  * VALUES.H
  * ------------------------------------------------------------------------ */
+#undef MAXINT
+#undef MAXLONG
 #define MAXINT		0x7fff		/* 16-bit int range the game was tuned for */
 #define MAXLONG		0x7fffffffL
 
@@ -72,10 +89,19 @@ void WL_NotPorted (const char *what, const char *file, int line)
 #ifndef O_TEXT
 #define O_TEXT		0
 #endif
-#define S_IREAD		S_IRUSR
-#define S_IWRITE	S_IWUSR
+#ifndef S_IREAD
+#define S_IREAD		0400
+#endif
+#ifndef S_IWRITE
+#define S_IWRITE	0200
+#endif
 
 long	filelength (int handle);
+
+/* fsync(), and rename-over-existing (plain rename() fails on Windows when the
+ * target exists).  Both return 0 on success. */
+int		WL_Fsync (int handle);
+int		WL_ReplaceFile (const char *from, const char *to);
 
 /* ------------------------------------------------------------------------
  * MEM.H / STRING.H far variants: flat memory makes these the plain ones
@@ -85,9 +111,15 @@ long	filelength (int handle);
 #define _fmemcmp	memcmp
 #define _fstrcpy	strcpy
 #define _fstrlen	strlen
+#ifdef _MSC_VER
+#define _fstricmp	_stricmp
+#define stricmp		_stricmp
+#define strnicmp	_strnicmp
+#else
 #define _fstricmp	strcasecmp
 #define stricmp		strcasecmp
 #define strnicmp	strncasecmp
+#endif
 
 char	*itoa (int value, char *string, int radix);
 char	*ltoa (long value, char *string, int radix);

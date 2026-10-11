@@ -13,6 +13,10 @@ endif()
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS ON)
+if(MSVC)
+  # _Atomic / <stdatomic.h> (TimeCount, the audio ring) need C11 mode, VS 2022 17.5+.
+  add_compile_options(/std:c11 /experimental:c11atomics)
+endif()
 
 # ---------------------------------------------------------------------------
 # raylib 5.5 (only port/id_raylib.c may include raylib.h)
@@ -268,7 +272,7 @@ if(BUILD_TESTING)
   add_executable(wolf_audio_ring_test tests/audio_ring_test.c port/id_raylib.c)
   target_include_directories(wolf_audio_ring_test PRIVATE port
     $<TARGET_PROPERTY:raylib,INTERFACE_INCLUDE_DIRECTORIES>)
-  target_compile_definitions(wolf_audio_ring_test PRIVATE WOLF3D_AUDIO_BACKEND)
+  target_compile_definitions(wolf_audio_ring_test PRIVATE WOLF3D_AUDIO_BACKEND RL_EXTERNAL_CLOCK)
   target_compile_options(wolf_audio_ring_test PRIVATE -Wall -UNDEBUG)
   target_link_libraries(wolf_audio_ring_test PRIVATE m)
   add_test(NAME audio_ring COMMAND wolf_audio_ring_test)

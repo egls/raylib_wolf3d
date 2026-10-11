@@ -330,6 +330,43 @@ leaked it (found by LeakSanitizer in the `asan` preset).
 - `WL_DEBUG.C` debug keys that touch VGA memory (`MK_FP(0xa000,...)`) or
   `bioskey`; virtual-reality helmet input (`peek`, int 60h).
 
+## Non-portable C for Windows (WOLF-32)
+
+Fixed in the shared sources, with the POSIX paths unchanged:
+
+- `wl_compat.h`: `<strings.h>`/`<unistd.h>` only off MSVC (`<io.h>`, `ssize_t`,
+  `_stricmp` there); `__attribute__((noreturn))` became C11 `_Noreturn`; `M_PI`
+  is defined when missing; the DOS `cdecl`/`pascal`/`MAXINT`/`MAXLONG` macros
+  are `#undef`ed first because the Windows headers predefine them.
+- `findfirst`/`findnext` use `FindFirstFileA` on Windows (no `dirent`/`fnmatch`).
+- `WL_Fsync` (`_commit`) and `WL_ReplaceFile` (`MoveFileExA`, replace existing)
+  for the save-game temp-file-then-rename path: `rename()` fails on Windows when
+  the target exists.
+- `ID_MM.C` reads available RAM with `GlobalMemoryStatusEx` (no `sysconf`).
+- `id_raylib.c`: GCC `__atomic_*` builtins became C11 `<stdatomic.h>`; the audio
+  pacing clock goes through `RL_MonotonicNow` (MSVC has no `clock_gettime`).
+  MSVC builds need `/std:c11 /experimental:c11atomics` (VS 2022 17.5+), now in
+  `CMakeLists.txt`.
+- Tests: `setenv`/`unsetenv` shims for `sd_integration_test.c`;
+  `audio_ring_test.c` scripts time through `RL_MonotonicNow` (built with
+  `RL_EXTERNAL_CLOCK`), because MinGW's `clock_gettime` is an inline function
+  that cannot be replaced at link time, and its clock is `int64_t` (Windows
+  `long` is 32 bits, so 2^31 ns = 2.1 s overflowed).
+
+Checked and needing no change: `O_BINARY` is real on Windows and already used
+for every `open()`; the `0600`/`0644` modes include the write bit so files
+are not created read-only; data file names are upper-case `.WL1` and Windows
+lookups are case-insensitive; config/save streams are explicit little-endian
+(`wl_persist.c`) and Windows targets x86-64/ARM64 are little-endian; the game
+`long` uses are 32-bit quantities, matching the DOS `long`.
+
+Not covered here: `wl_timer.c`, `wl_platform.c`, `wl_persist.c` (WOLF-33; they
+still include `pthread.h`/`unistd.h` unconditionally on master, so MSVC needs
+that PR), the MSVC compiler flags (WOLF-31), and the tests `persist_test`
+(`fork`/`sys/wait.h`) and `wolf_render_test` (relies on `--gc-sections`
+dropping unreferenced functions; the Windows x64 `.pdata` sections keep them
+alive and the link fails).
+
 ## WOLF-30 Windows audit
 
 Audit of what blocks a native Windows 11 build (MSVC and MinGW-w64/Ninja).
