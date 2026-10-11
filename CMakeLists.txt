@@ -211,6 +211,11 @@ if(BUILD_TESTING)
     $<TARGET_FILE:raylib_wolf3d> ${WOLF3D_TEST_DATA} ${CMAKE_CURRENT_BINARY_DIR}/persist_check)
   set_tests_properties(persist_check PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED" TIMEOUT 600)
 
+  add_test(NAME silent_config COMMAND Python3::Interpreter -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/silent_config_check.py
+    $<TARGET_FILE:raylib_wolf3d> ${WOLF3D_TEST_DATA})
+  set_tests_properties(silent_config PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED" TIMEOUT 600)
+
   # The persistence streams and paths on their own: no data, no display (WOLF-18).
   add_executable(wolf_persist_test tests/persist_test.c port/wl_persist.c)
   target_include_directories(wolf_persist_test PRIVATE port WOLFSRC)
