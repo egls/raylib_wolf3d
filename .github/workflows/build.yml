@@ -130,7 +130,10 @@ jobs:
           set -o pipefail
           cmake --build build 2>&1 | tee build.log
           echo "Game warnings: $(grep -E '/(WOLFSRC|port)/.*warning:' build.log | wc -l)"
-          lipo -archs build/raylib_wolf3d | grep -qx arm64
+          # With WOLF3D_MACOS_BUNDLE (WOLF-66) the executable lives in the .app
+          bundle="build/raylib_wolf3d"
+          [ -x "$bundle" ] || bundle="build/raylib_wolf3d.app/Contents/MacOS/raylib_wolf3d"
+          lipo -archs "$bundle" | grep -qx arm64
 
       - name: Core tests (data tests skip without WL1)
         run: ctest --test-dir build --output-on-failure --no-tests=error
