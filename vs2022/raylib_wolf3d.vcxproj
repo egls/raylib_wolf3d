@@ -54,7 +54,7 @@
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <!-- raylib.lib first: raylib and user32 both export CloseWindow, the first library on the command line wins. -->
-      <AdditionalDependencies>raylib.lib;winmm.lib;gdi32.lib;shell32.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>raylib.lib;winmm.lib;gdi32.lib;opengl32.lib;shell32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)'=='Debug'">
@@ -112,6 +112,7 @@
     <ClCompile Include="..\port\id_raylib.c">
       <PreprocessorDefinitions>WOLF3D_AUDIO_BACKEND;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
+    <ClCompile Include="..\port\wl_glprobe.c" />
     <ClCompile Include="..\audio\sd_audio.c" />
     <ClCompile Include="..\audio\vendor\opl3.c" />
     <ClCompile Include="$(GeneratedDir)wl_objdata.c" />
