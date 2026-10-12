@@ -1,10 +1,13 @@
 # Template for serving the browser build from Apache or LiteSpeed (WOLF-43).
 # The build copies it next to raylib_wolf3d.html; upload the five files and
-# this one to a directory such as /wolf3d/.  All URLs in the page are
-# relative, and it needs no COOP/COEP headers.
+# this one to a directory such as /wolf3d/ (scripts/deploy_web.sh does it).
+# All URLs in the page are relative, and it needs no COOP/COEP headers.
 
 # /wolf3d/ opens the game.  Deploy can rename the page to index.html.
 DirectoryIndex index.html raylib_wolf3d.html
+
+# No directory listing (WOLF-46).
+Options -Indexes
 
 # WebAssembly must be served as application/wasm for streaming compilation.
 <IfModule mod_mime.c>
