@@ -169,6 +169,9 @@ found (``-DllDir`` adds search directories).  The Visual C++ runtime
 (``vcruntime140``, ``msvcp140``, ...) is not part of Windows, so an MSVC build
 gets those DLLs bundled app-local; real system DLLs are not bundled.  The zip's SHA-256 goes to ``dist\SHA256SUMS-windows``.
 
+To build and debug from the Visual Studio IDE (Debug/Release x64, vcpkg raylib,
+running with F5), see ``docs/VISUAL_STUDIO.rst``.
+
 macOS
 -----
 
