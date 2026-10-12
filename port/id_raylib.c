@@ -556,7 +556,13 @@ void RL_AudioPump(void) {
 int RL_AudioOpen(void (*mixer)(short *, unsigned)) {
     if (audio_open) return 1;
     /* Require actual lock-free 32-bit atomics on the target. */
+#ifdef _MSC_VER
+    /* MSVC reports ATOMIC_INT_LOCK_FREE 1 ("sometimes") although every
+     * 32-bit atomic is lock-free on x86-64 and arm64: check the objects. */
+    if (!atomic_is_lock_free(&audio_read) || !atomic_is_lock_free(&audio_write)) return 0;
+#else
     if (ATOMIC_INT_LOCK_FREE!=2) return 0;
+#endif
     InitAudioDevice();
     if (!IsAudioDeviceReady()) { CloseAudioDevice(); return 0; }
     SetAudioStreamBufferSizeDefault(512);

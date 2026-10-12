@@ -19,6 +19,9 @@
 #include "wl_timer.h"
 #include "wl_persist.h"
 #include "wl_asset.h"
+#ifdef _WIN32
+#include "wl_glprobe.h"
+#endif
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
 #include <limits.h>
@@ -202,6 +205,15 @@ void WL_PlatformStartup (int argc, char **argv)
         }
     }
 
+#ifdef _WIN32
+	/* raylib 5.5 crashes in InitWindow() when there is no OpenGL driver. */
+	if (!WL_GLAvailable())
+	{
+		fprintf(stderr, WOLF3D_PROGRAM_NAME ": no OpenGL 3.3 driver available, "
+			"cannot open a window\n");
+		exit(2);
+	}
+#endif
 	if (!RL_OpenWindow(WL_WINDOW_W, WL_WINDOW_H, "Wolfenstein 3-D (raylib)"))
 	{
 		fprintf(stderr, WOLF3D_PROGRAM_NAME ": could not open a window\n");

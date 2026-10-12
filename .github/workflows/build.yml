@@ -79,8 +79,6 @@ jobs:
       matrix:
         toolchain: [mingw, msvc]
     runs-on: windows-latest
-    # MSVC support is best effort until the MinGW build is proven.
-    continue-on-error: ${{ matrix.toolchain == 'msvc' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -114,9 +112,13 @@ jobs:
         shell: pwsh
         run: |
           cmake --version
+          # pwsh does not stop on a failing native command: check each one.
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cmake --build build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ctest --test-dir build --output-on-failure --no-tests=error -C RelWithDebInfo
+          exit $LASTEXITCODE
 
       - name: Smoke test (no game data)
         shell: pwsh
