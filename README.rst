@@ -438,6 +438,13 @@ The page (WOLF-43):
 
 Limits for now: no sound (the page runs the game with ``-nosound``).
 
+The headless core tests (codecs, renderer, WL1 data, sound manager and the
+registered boss key) are also built for wasm32 and run under node; the data
+tests skip without the shareware files.  CI builds the page without game data
+and runs them on every pull request::
+
+    ctest --preset web
+
 ``scripts/web_smoke.mjs`` checks a build in headless Chromium or Firefox with
 Playwright: the four demos must reach the same state hashes as the native
 ``demo_sync`` test, and a normal start must reach the title, the menu and
