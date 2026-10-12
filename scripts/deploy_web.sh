@@ -82,6 +82,14 @@ remote() {
     < "$remote_script"
 }
 
+# Checked before anything reaches the server.
+if [ $((root_bypass + unlock_only + rollback)) -gt 1 ]; then
+  echo "--root-bypass, --unlock and --rollback are separate steps" >&2; exit 2
+fi
+if [ "$dry_run" = 1 ] && [ $((unlock_only + rollback)) = 1 ]; then
+  echo "--unlock and --rollback have no dry run" >&2; exit 2
+fi
+
 if [ "$root_bypass" = 1 ]; then
   if [ "$dry_run" = 1 ]; then remote bypass --dry-run; else remote bypass; fi
   exit 0
@@ -91,7 +99,6 @@ if [ "$unlock_only" = 1 ]; then
   exit 0
 fi
 if [ "$rollback" = 1 ]; then
-  [ "$dry_run" = 0 ] || { echo "--rollback has no dry run" >&2; exit 2; }
   remote rollback
   exit 0
 fi

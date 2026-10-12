@@ -34,6 +34,7 @@ EOF
 # ssh stub: drop options and host, run the command with the fake \$HOME.
 cat > "$t/bin/ssh" <<EOF
 #!/usr/bin/env bash
+echo "\$*" >> "$t/ssh.log"
 while [ "\$1" != bash ]; do shift; done
 HOME="$t/home" exec "\$@"
 EOF
@@ -126,6 +127,20 @@ if FAIL_CALLS="2 3" srv cutover wolf3d.staging-i >/dev/null 2>&1; then fail "swa
 if bash "$repo/scripts/deploy_web.sh" --unlock --root site 2>/dev/null; then fail "--unlock in needs-recovery"; fi
 ok "failed swap whose wolf3d.prev restore also fails: needs-recovery, nothing deleted"
 (cd "$site" && mv wolf3d.retired-* wolf3d.prev && echo uploaded > wolf3d.deploy-lock/phase)
+
+# Snapshot of every path and file content under the site.
+snapshot() { (cd "$site" && find . -printf '%y %p\n' | sort && find . -type f -exec sha256sum {} + | sort); }
+before="$(snapshot)"
+: > "$t/ssh.log"
+for args in "--unlock --dry-run" "--dry-run --rollback" "--unlock --rollback" "--root-bypass --unlock"; do
+  rc=0
+  # shellcheck disable=SC2086
+  bash "$repo/scripts/deploy_web.sh" $args --root site 2>/dev/null || rc=$?
+  [ "$rc" = 2 ] || fail "deploy_web.sh $args exited $rc, not 2"
+done
+[ "$(snapshot)" = "$before" ] && [ ! -s "$t/ssh.log" ] || fail "a refused combination reached the server"
+ok "--unlock/--rollback with --dry-run, and mixed modes, are refused before ssh; staging and lock unchanged"
+
 bash "$repo/scripts/deploy_web.sh" --unlock --root site >/dev/null
 [ "$(live)" = c ] && [ "$(prev)" = b ] && ! locked && [ -z "$(leftovers)" ] || fail "--unlock"
 ok "deploy_web.sh --unlock discards an unused upload"
