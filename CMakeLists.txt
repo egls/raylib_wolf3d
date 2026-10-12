@@ -38,7 +38,8 @@ set(WOLF3D_RAYLIB_VERSION 5.5)
 if(EMSCRIPTEN)
   set(PLATFORM Web CACHE STRING "raylib platform" FORCE)
   set(WOLF3D_USE_SYSTEM_RAYLIB OFF)
-  # The tests need a display, Xvfb or files outside the page.
+  # The native suite needs a display, Xvfb, threads or Python driving the
+  # game; web/web_tests.cmake builds the headless core tests for node instead.
   set(BUILD_TESTING OFF CACHE BOOL "Build the tests" FORCE)
 endif()
 if(WOLF3D_USE_SYSTEM_RAYLIB)
@@ -289,6 +290,9 @@ if(APPLE AND WOLF3D_MACOS_BUNDLE)
 endif()
 
 include(CTest)
+if(EMSCRIPTEN)
+  include(web/web_tests.cmake)
+endif()
 if(BUILD_TESTING)
   if(APPLE)
     add_test(NAME macos_packaging COMMAND Python3::Interpreter

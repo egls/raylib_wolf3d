@@ -98,6 +98,16 @@
       }
     },
     {
+      "name": "web",
+      "configurePreset": "web",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
       "name": "windows-mingw",
       "configurePreset": "windows-mingw",
       "output": {
