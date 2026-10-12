@@ -20,7 +20,8 @@ char **_argv;
 static void (*mixer)(short *,unsigned);
 static short output[9600*2];
 #ifndef SD_DEVICE
-int RL_AudioOpen(void (*f)(short *,unsigned)) { mixer=f; return 1; }
+static int device_available = 1;
+int RL_AudioOpen(void (*f)(short *,unsigned)) { mixer=f; return device_available; }
 void RL_AudioClose(void) { mixer=NULL; }
 void RL_AudioPump(void) { }
 void RL_PumpEvents(void) { }
@@ -128,6 +129,11 @@ int main(int argc,char **argv) {
     SD_Default(false,sdm_AdLib,smm_AdLib); SD_SetDigiDevice(sds_SoundBlaster);
     assert(SoundMode==sdm_Off && MusicMode==smm_Off && DigiMode==sds_Off);
     assert(!SD_PlaySound(SHOOTSND)); unsetenv("WOLF3D_NOSOUND");
+    SD_Shutdown(); device_available=0; SD_Startup();
+    assert(SD_IsSilent());
+    SD_Default(false,sdm_AdLib,smm_AdLib); SD_SetDigiDevice(sds_SoundBlaster);
+    assert(SoundMode==sdm_Off && MusicMode==smm_Off && DigiMode==sds_Off);
+    assert(!SD_PlaySound(SHOOTSND));
     puts("PASS: cache layout, completion, stereo, digi with effects off, music modes, silent startup");
 #endif
     SD_Shutdown(); CA_Shutdown(); PM_Shutdown(); MM_Shutdown();
