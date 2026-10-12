@@ -463,3 +463,199 @@ so MSVC remarks are expectations, not test results.
 3. Run `-demotest all -viewsize 19` on Windows against the recorded hashes.
 4. MSVC: flags, atomics, `strings.h`/`unistd.h` replacements.
 5. Windows packaging.
+
+## WOLF-49 macOS audit
+
+Audit of what blocks a native macOS arm64 build (AppleClang, macOS 13+,
+raylib 5.5). Nothing is fixed here; each item names the file, a suggested fix
+and the macOS issue that owns it (macOS 2 = WOLF-50 toolchain, 3 = WOLF-51
+portable C, 4 = WOLF-52 platform layer, 5 = WOLF-53 raylib backend, 6 =
+WOLF-54 audio, 7 = WOLF-55 ctest + CI, 8 = WOLF-56 `.app` + README).
+
+Host: Apple Silicon (arm64), macOS 26.6.2, Apple clang 21.0.0, CMake 3.29.2,
+Ninja 1.12.0, Homebrew. Master `b1d3d52`:
+
+    cmake --preset release -DWOLF3D_USE_SYSTEM_RAYLIB=OFF
+    cmake --build build -- -k 0
+
+Configure succeeds. The build fails on the three compile errors in section A
+and the `--gc-sections` link error in section B. With those patched locally
+(not committed),
+the game links, `ctest` passes 8/8 (`demo_sync` and `persist_check` skip:
+no `xvfb-run`), the four shareware demos give the Linux hashes when run
+directly (`raylib_wolf3d -demotest all -viewsize 19`, also under the `asan`
+preset with no ASan/UBSan reports), the title screen renders on a Retina
+display, and `wolf_sd_device` plays through miniaudio's Core Audio backend.
+
+**Status at master `704b936`:** line numbers below are from master
+`9f20fe7`. Since then, A1 and the `WL_INTER.C`/`WL_MENU.C` byte indices
+were fixed by WOLF-61 (PR #29). A2, the config path and the data lookup
+in section D were fixed by WOLF-63 (PR #30). WOLF-35 (PR #23) stopped
+`--gc-sections` reaching Apple ld (section B). Everything else is still
+open.
+
+### A. Hard blockers (AppleClang compile fails today)
+
+| # | Where | Problem | Fix | Owner |
+|---|-------|---------|-----|-------|
+| 1 | `WOLFSRC/ID_MM.C:127` | `sysconf(_SC_AVPHYS_PAGES)` does not exist on Darwin (5 targets fail). The Windows port (WOLF-32) put it in the non-`_WIN32` branch, so it still fails there. | `host_statistics64(HOST_VM_INFO64)` free + inactive pages, or `sysctl hw.memsize`, under `__APPLE__`; keep the 64 MB fallback. | 3 |
+| 2 | `port/wl_timer.c:178` | `clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME)` does not exist on Darwin (implicit declaration is an error in clang 16+). | Under `__APPLE__`: compute the remaining time against `clock_gettime(CLOCK_MONOTONIC)` and `nanosleep` it in a loop (or `mach_wait_until`). Must not drift: the 70 Hz tick is absolute. | 4 |
+| 3 | `audio/render.c:149` | Same `clock_nanosleep(TIMER_ABSTIME)` in the `--realtime` pacing of `wolf_audio_render`. | Share the helper from item 2, or a relative `nanosleep` loop. | 6 |
+
+### B. Toolchain and link (CMake)
+
+- **`-Wl,--gc-sections`** (`wolf_render_test`): Apple ld says `unknown
+  options: --gc-sections` at `b1d3d52`. Master now sets `WOLF3D_GC_LINK`
+  only `NOT APPLE` (`CMakeLists.txt:138-141`), so this no longer fails; set
+  it to `-Wl,-dead_strip` on `APPLE`. (macOS 2)
+- **Deployment target**: nothing sets `CMAKE_OSX_DEPLOYMENT_TARGET`, so the
+  binary gets `minos 26.0` (the SDK) and will not start on macOS 13-25. With
+  `-DCMAKE_OSX_DEPLOYMENT_TARGET=13.0` it gets `minos 13.0` and builds without
+  availability warnings. Set it to 13.0 before `project()` (cache default).
+  (macOS 2)
+- **Homebrew raylib is 6.0**, not 5.5. `find_package(raylib 5.5 EXACT)`
+  rejects it quietly and the build falls back to FetchContent (checked with
+  the 6.0 bottle on `CMAKE_PREFIX_PATH`). That is the right outcome, but the
+  "Homebrew raylib 5.5" path does not exist: document FetchContent as the
+  macOS path (needs network on first configure) and print why the system
+  raylib was skipped. `WOLF3D_RAYLIB_VERSION` is a plain variable, not a
+  cache option. (macOS 2)
+- **Presets**: no macOS preset. A `macos` configure/build/test preset with
+  Ninja, `CMAKE_OSX_ARCHITECTURES=arm64` and the deployment target keeps the
+  CI and README commands short. (macOS 2)
+- **Linker warning**: `ld: warning: reducing alignment of section
+  __DATA,__common from 0x8000 to 0x4000` when linking `raylib_wolf3d` and
+  `wolf_sd_device` (large `-fcommon` globals). Harmless; quiet it by
+  defining the large globals once instead of `-fcommon`, or leave it. (macOS 3)
+- raylib configure prints a CMake dev warning that OpenGL is deprecated since
+  macOS 10.14. raylib 5.5 still gets a working OpenGL 3.3 core context. No
+  action. (macOS 2)
+- Frameworks: raylib's link interface brings in OpenGL, Cocoa, IOKit,
+  CoreFoundation, CoreGraphics, CoreServices, AppKit and Foundation (`otool
+  -L`); `m` and `Threads::Threads` resolve to libSystem. No change needed. (macOS 2)
+- The GCC 14 `-Wno-error=...` list is GNU-only. AppleClang 21 is fine
+  without it: the only errors are the implicit `clock_nanosleep` declarations
+  in A. (macOS 2)
+
+### C. Warnings (AppleClang `-Wall`, default filtering)
+
+36 distinct warnings in project sources (CI's GCC build does not report these classes). None is an error and none
+changes the demo hashes; fix or silence in macOS 3 (game) and macOS 6 (audio).
+
+- `-Wabsolute-value` (12): `abs()` of `unsigned` tile differences in
+  `WL_ACT2.C` (2387..3458) and `WL_AGENT.C:1227-1228`. The result is right
+  (the wrapped value converts back to a negative `int`); cast to `int` first.
+- `-Wimplicit-enum-enum-cast` (9): `boolean` stored in `activetype`
+  (`WL_ACT2.C`, `WL_AGENT.C:1103`, `WL_DRAW.C:951`, `WL_PLAY.C:941`) and
+  `SMMode` -> `SDMode` (`WL_MAIN.C:190`). Original code; add
+  `-Wno-implicit-enum-enum-cast` to the filtered list.
+- `-Wchar-subscripts` (4): `WL_MENU.C:2341,2747,3806`, `WL_INTER.C:384`. char
+  is signed on Apple arm64 (and the build pins `-fsigned-char` anyway), so
+  check each index is never negative.
+- `-Wsometimes-uninitialized`: `ID_IN.C:619` (`realdelta` after
+  `Quit("Demo playback exceeded")`; false positive because `Quit` is not
+  declared `noreturn` (`WL_DEF.H:800`, `ID_HEADS.H:86`)) and `audio/render.c:20` (`size` after a
+  failed `fseek`; `fail()` exits, so also false, but mark `fail` noreturn).
+- `-Wdangling-else`: `WL_MENU.C:1653`.
+- `-Wstatic-in-inline` (8): `audio/vendor/opl3.c` (vendored Nuked OPL3).
+  Silence per target; do not edit the vendored file.
+
+### D. Platform layer (paths, data, timer)
+
+- **Config and saves** (`port/wl_persist.c:60`): `$XDG_CONFIG_HOME` or
+  `~/.config/raylib_wolf3d`. Works on macOS, but the macOS place is
+  `~/Library/Application Support/raylib_wolf3d`. Use that under `__APPLE__`
+  when `XDG_CONFIG_HOME` is unset (keep `XDG_CONFIG_HOME` for the tests);
+  update `wl_persist.h` and `tests/persist_test.c`. (macOS 4)
+- **Data lookup** (`port/wl_platform.c`): `-data`, `$WOLF3D_DATA`, then the
+  current directory. A Finder-launched `.app` starts with cwd `/`, so add
+  `~/Library/Application Support/raylib_wolf3d/data` (or the bundle's
+  `Contents/Resources`) as a default. stderr is invisible from Finder, so
+  the missing-data message also needs a visible form (e.g. a log file). (macOS 4, macOS 8)
+- The game `chdir`s into the data directory, so relative output (e.g. a
+  raylib `TakeScreenshot`) lands there. No change needed.
+- APFS is case-insensitive by default; `findfirst` uses
+  `fnmatch(FNM_CASEFOLD)` (`port/wl_compat.c`), which Darwin's libc has. OK.
+- `_GNU_SOURCE` in `wl_compat.c`/`wl_timer.c` is harmless on Darwin.
+- Atomics (`_Atomic`, `__atomic_*`), `pthread`, `clock_gettime
+  (CLOCK_MONOTONIC)`, `nanosleep`: all present on macOS 13+. OK.
+- No `/proc`, `endian.h`, `byteswap.h`, `open_memstream`/`fmemopen` or
+  `memfd` users in `port/`, `audio/` or `WOLFSRC/`. On-disk data is read
+  byte-wise (`WL_ReadLE16/32`), no packed structs: no arm64 alignment issue
+  (ASan/UBSan clean on the demos).
+
+### E. raylib backend (Retina, fullscreen, keys, mouse)
+
+- **Retina**: GLFW turns on the Retina framebuffer by default, with or
+  without `FLAG_WINDOW_HIGHDPI`. Measured on a 2x display: screen 960x720
+  points, render 1920x1440 pixels, scale 2.0 in both modes, and the frame
+  fills the window. `EnsureBigTarget` sizes the intermediate texture from
+  `GetScreenWidth()` (points), so it upscales 3x then the GPU stretches 2x
+  (slightly soft). Size it from `GetRenderWidth()` on Apple. Decide whether
+  to set `FLAG_WINDOW_HIGHDPI` explicitly (also changes the window size on
+  Windows/X11, so keep it Apple-only). (macOS 5)
+- **Fullscreen**: Alt+Enter (`id_raylib.c:166-178`) is Option+Return on a
+  Mac keyboard and calls `ToggleBorderlessWindowed`. Mac users expect
+  Ctrl+Cmd+F / the green button (native Spaces fullscreen). Add Cmd+F or
+  Ctrl+Cmd+F, keep Option+Return. (macOS 5)
+- **Cmd keys**: `KEY_LEFT_SUPER`/`KEY_RIGHT_SUPER` are not in the scancode
+  table, so Cmd is ignored by the game, which is right. GLFW's default
+  menu gives Cmd+Q -> window close -> `quit_requested`; Cmd+H/Cmd+M are
+  handled by AppKit. Make sure Cmd+letter shortcuts are not also delivered to
+  the game as letters; verify by hand. (macOS 5)
+- **Mouse capture**: `DisableCursor` on Cocoa hides and pins the cursor
+  (no raw motion on macOS). Needs a manual check that menu mouse and in-game
+  turning feel right on a mouse and a trackpad. (macOS 5)
+- `SetExitKey(KEY_NULL)` and the window-close quit path are fine.
+
+### F. Audio
+
+- raylib 5.5's miniaudio picks Core Audio: `Backend: miniaudio | Core Audio`,
+  48000 Hz stereo, period 1440 frames. `wolf_sd_device` played music, AdLib,
+  PC speaker and digitized sounds; `sound_manager`, `audio_ring`,
+  `audio_contract` pass. Only A3 and the `opl3.c` warnings remain. (macOS 6)
+- `audio/README.md` says realtime pacing uses `clock_nanosleep` "on Ubuntu"
+  and shows `xvfb-run`; add the macOS command lines. (macOS 6)
+
+### G. Scripts, tests and CI
+
+- **`scripts/fetch_shareware.sh:40`**: `realpath -m` fails on macOS
+  (`realpath: illegal option -- m`). Create the directory first and use plain
+  `realpath`, or `cd "$dest" && pwd -P`. Rest of the script works with the
+  stock bash 3.2 (no bash 4 features), `curl` and `unzip`. `sha256sum` is in
+  `/sbin` on this macOS 26 host but missing on older releases; fall back to
+  `shasum -a 256`. With the `realpath` change all 8 WL1 files PASS. (macOS 7)
+- **`demo_sync` / `persist_check`** skip on macOS because they require
+  `xvfb-run`. A Mac (and the GitHub macOS runners) has a window server: run
+  the game directly when `APPLE` (no Xvfb), keeping the scratch
+  `XDG_CONFIG_HOME`. The demo hashes already match. (macOS 7)
+- **No `timeout`/`gtimeout`** in a stock macOS: scripts and docs must not
+  depend on it (CTest `TIMEOUT` is fine). (macOS 7)
+- **CI**: `.github/workflows/build.yml` has Ubuntu x86_64/arm64 jobs only.
+  Add a `macos-15` (arm64) job: Ninja from Homebrew, FetchContent raylib
+  (cache `_deps`), configure with deployment target 13.0, build, `ctest`,
+  and the no-data smoke test (`exit 2`). Not `macos-14`: that image has
+  brownouts and is retired on November 2, 2026; the 13.0 deployment target
+  keeps macOS 13 support whatever the runner runs. The fake-data smoke test
+  opens a window; this should work on the runners without Xvfb (not tested
+  yet). Keep the raylib quarantine check. (macOS 7)
+- **Packaging**: `scripts/package.sh` is Linux-only (GNU `tar --sort
+  --owner --mtime`, `touch -d @`, `dpkg-deb`, `dpkg-shlibdeps`). The `.app`
+  bundle needs its own script (`Info.plist`, icon, `codesign -s -`, a
+  tarball or zip with `ditto`). Local builds are ad-hoc signed by ld and run
+  as-is; a downloaded `.app` needs the quarantine flag explained in the
+  README. (macOS 8)
+- Screen capture from an agent session needs Screen Recording permission
+  (`screencapture` fails with "could not create image from display"). Use an
+  in-game frame dump for evidence. (macOS 7)
+
+### Suggested order
+
+1. macOS 2: deployment target, `-dead_strip`, `macos` preset, raylib
+   message. Rebase on the Windows CMake PRs (#16, #23) first.
+2. macOS 3 and 4: A1, A2 and the warnings, as `__APPLE__` branches next to
+   the `_WIN32` ones from the Windows PRs.
+3. macOS 6: A3.
+4. macOS 7: `fetch_shareware.sh`, Xvfb-free demo/persist tests, CI job.
+5. macOS 5: Retina target size, Cmd+F fullscreen, manual input checks.
+6. macOS 8: `.app` bundle and README.
