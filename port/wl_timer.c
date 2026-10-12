@@ -165,6 +165,22 @@ double WL_TickClock (void)
 
 void WL_SleepUntilTick (double tick)
 {
+#ifdef __APPLE__
+	/* Darwin has no clock_nanosleep. Recompute a relative wait against the
+	 * monotonic deadline after every wakeup, including interrupted sleeps. */
+	double remaining;
+	while ((remaining = (tick - WL_TickClock()) / WL_TICKRATE) > 0)
+	{
+		struct timespec delay;
+		delay.tv_sec = (time_t)remaining;
+		delay.tv_nsec = (long)((remaining - delay.tv_sec) * 1e9);
+		if (nanosleep(&delay, NULL) && errno != EINTR)
+		{
+			perror("raylib_wolf3d: nanosleep");
+			exit(2);
+		}
+	}
+#else
 	struct timespec ts = t0;
 	double secs = tick / WL_TICKRATE;
 
@@ -177,6 +193,7 @@ void WL_SleepUntilTick (double tick)
 	}
 	while (clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME, &ts, NULL) == EINTR)
 		;
+#endif
 }
 
 void WL_Idle (void)

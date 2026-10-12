@@ -101,6 +101,23 @@ Alt + Enter                Toggle fullscreen (this port; never reaches the game)
 The mouse works as in the original (move/turn and buttons).  The original
 Pause key is not mapped by this port yet.
 
+macOS data and save paths
+-------------------------
+
+On macOS, ``-data DIR`` takes precedence over ``WOLF3D_DATA``. Without either,
+startup searches the current directory, the executable's directory,
+``Contents/Resources`` beside an app bundle's ``Contents/MacOS`` directory,
+then ``~/Library/Application Support/raylib_wolf3d``. Each automatic candidate
+must contain all eight required assets. Startup changes the working directory
+to the selected data directory, including when launched from Finder.
+
+Bare shareware ``*.WL1`` asset names are resolved case-insensitively on macOS,
+including on case-sensitive volumes; files are not renamed. Config and saves
+always use ``~/Library/Application Support/raylib_wolf3d``, regardless of the
+data location or ``XDG_CONFIG_HOME``. Keep shareware data outside the repository
+and verify it with ``scripts/fetch_shareware.sh`` before use. The timer uses
+``CLOCK_MONOTONIC`` at 70 Hz with deadline-based relative sleeps on Darwin.
+
 Windows
 -------
 
