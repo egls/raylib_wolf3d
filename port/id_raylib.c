@@ -314,11 +314,35 @@ EMSCRIPTEN_KEEPALIVE void RL_WebTouch (int bits, int movex, int movey, int turn)
 	touch_turn += turn;
 }
 
-/* A key typed on the phone's keyboard (save game names): press and release. */
+/*
+ * Keys typed on the phone's keyboard (save game names).  US_LineInput keeps
+ * one character per poll, so they wait here and RL_PumpEvents posts one
+ * press and release per poll.
+ */
+#define TYPED_SIZE	64
+static struct { unsigned char scan, shift; } typed[TYPED_SIZE];
+static int typed_head, typed_tail;
+
 EMSCRIPTEN_KEEPALIVE void RL_WebTouchKey (int scan, int shift)
 {
-	if (scan <= 0 || scan > 0x7f)
+	int next = (typed_head + 1) % TYPED_SIZE;
+
+	if (scan <= 0 || scan > 0x7f || next == typed_tail)
 		return;
+	typed[typed_head].scan = (unsigned char)scan;
+	typed[typed_head].shift = (unsigned char)(shift != 0);
+	typed_head = next;
+}
+
+static void TypedKeyPump (void)
+{
+	int scan, shift;
+
+	if (typed_tail == typed_head)
+		return;
+	scan = typed[typed_tail].scan;
+	shift = typed[typed_tail].shift;
+	typed_tail = (typed_tail + 1) % TYPED_SIZE;
 	if (shift)
 		PushKey(0x2a, 0, 1);
 	PushKey(scan, 0, 1);
@@ -488,6 +512,7 @@ void RL_PumpEvents (void)
 	PollKeyboard();
 	PollMouse();
 #ifdef __EMSCRIPTEN__
+	TypedKeyPump();
 	TouchCheckIdle();
 #endif
 	if (WindowShouldClose())

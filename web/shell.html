@@ -977,22 +977,10 @@
     o: 24, p: 25, a: 30, s: 31, d: 32, f: 33, g: 34, h: 35, j: 36, k: 37, l: 38,
     z: 44, x: 45, c: 46, v: 47, b: 48, n: 49, m: 50, ',': 51, '.': 52, '/': 53,
     ' ': 57, ';': 39, '\'': 40 };
-  // US_LineInput takes one character per poll, so keys go one at a time.
-  var typed = [], typing = null;
+  // port/id_raylib.c queues them: US_LineInput takes one character per poll.
   function typeKey(scan, shift) {
-    typed.push([scan, shift]);
-    if (!typing)
-      typeNext();
-  }
-  function typeNext() {
-    var k = typed.shift();
-    if (!k) {
-      typing = null;
-      return;
-    }
     if (Module._RL_WebTouchKey)
-      Module._RL_WebTouchKey(k[0], k[1]);
-    typing = setTimeout(typeNext, 60);
+      Module._RL_WebTouchKey(scan, shift);
   }
   function typeText(text) {
     for (var i = 0; i < text.length; i++) {

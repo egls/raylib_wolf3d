@@ -344,6 +344,14 @@ async function phone(deviceName, tag) {
     });
     // BACK (Esc) on the main menu asks to quit: the Y/N prompt must not
     // hang the page (WOLF-42 made Confirm's loop yield), and N stays.
+    // the save starts with its 32-byte name
+    r.saveName = await page.evaluate(() => {
+      try {
+        const b = Module.FS.readFile('/wolf3d/config/shareware/raylib_wolf3d/SAVEGAM0.WL1');
+        return String.fromCharCode(...b.slice(0, 32)).replace(/\0.*$/s, '');
+      } catch (e) { return String(e); }
+    });
+    check(`${tag}: save named with the phone keyboard`, r.saveName === 'touch', r.saveName);
     await tapBtn('#tback');
     await sleep(800);
     await shotPage('12b-quit-prompt');
