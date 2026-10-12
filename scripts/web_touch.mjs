@@ -343,7 +343,7 @@ async function phone(deviceName, tag) {
       } catch (e) { return [String(e)]; }
     });
     // BACK (Esc) on the main menu asks to quit: the Y/N prompt must not
-    // hang the page (WOLF-47 fixed Confirm's loop), and N stays.
+    // hang the page (WOLF-42 made Confirm's loop yield), and N stays.
     await tapBtn('#tback');
     await sleep(800);
     await shotPage('12b-quit-prompt');

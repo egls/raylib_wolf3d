@@ -6,7 +6,6 @@
 ////////////////////////////////////////////////////////////////////
 #include "WL_DEF.H"
 #include "wl_persist.h"	// WOLF-7: WL_UserFile	// WOLF-2: case-sensitive file systems
-#include "wl_timer.h"	// WOLF-47: WL_WebWait
 #ifdef __EMSCRIPTEN__
 #include "id_raylib.h"	// WOLF-47: RL_TouchActive
 #endif
@@ -3709,9 +3708,6 @@ int Confirm(char far *string)
 		if (Keyboard[sc_Tab] && Keyboard[sc_P] && MS_CheckParm("goobers"))
 			PicturePause();
 		#endif
-#ifdef __EMSCRIPTEN__
-		WL_WebWait ();		// WOLF-47: TimeCount moves only when the page runs
-#endif
 
 	#ifdef SPANISH
 	} while(!Keyboard[sc_S] && !Keyboard[sc_N] && !Keyboard[sc_Escape]);

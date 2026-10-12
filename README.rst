@@ -492,7 +492,7 @@ forgetting the data.  It needs Python with Pillow to compare the shots::
 ``scripts/web_touch.mjs`` plays the page with touch in Chromium's Pixel 7 and
 iPhone 14 emulation (real multi-touch events through CDP): taps and swipes
 through the menus to E1M1, moving while firing, turning, opening a door,
-weapons, pause, saving with the phone keyboard (through the quit prompt) and
+weapons, pause, saving with the phone keyboard (through the quit prompt, which must not hang the page) and
 loading.  A desktop pass checks keyboard play, pointer lock and the mouse,
 the pause on leaving pointer lock and ``?touch=1``.  Emulation is not a
 phone: real iOS Safari and Android Chrome need a person with the device::
