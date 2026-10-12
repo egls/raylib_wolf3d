@@ -948,7 +948,7 @@ void DrawScaleds (void)
 		|| ( *(visspot+64) && !*(tilespot+64) )
 		|| ( *(visspot+63) && !*(tilespot+63) ) )
 		{
-			obj->active = true;
+			obj->active = ac_yes;
 			TransformActor (obj);
 			if (!obj->viewheight)
 				continue;						// too close or far away

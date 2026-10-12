@@ -146,7 +146,15 @@ if(MSVC)
   else()
     set(WOLF3D_CHAR_FLAG)
   endif()
-  set(WOLF3D_WARNINGS /W3 /utf-8 ${WOLF3D_CHAR_FLAG})
+  # Mirror the GCC noise filtering below: the untouched id sources carry
+  # Borland pragmas (4068), unused locals/labels kept for the fenced-off asm
+  # (4101/4102), and 16-bit-era sign/narrowing idioms (4018/4244/4267/4305/4146)
+  # that GCC's C -Wall never flags.  Portability findings (4273, 4828, 5286,
+  # 4113) stay enabled and were fixed in the sources instead.
+  set(WOLF3D_WARNINGS /W3 /utf-8
+    /wd4068 /wd4101 /wd4102
+    /wd4018 /wd4244 /wd4267 /wd4305 /wd4146
+    ${WOLF3D_CHAR_FLAG})
   set(WOLF3D_TEST_WARNINGS /W3 ${WOLF3D_CHAR_FLAG})
   add_compile_definitions(_CRT_SECURE_NO_WARNINGS _CRT_NONSTDC_NO_WARNINGS)
 else()

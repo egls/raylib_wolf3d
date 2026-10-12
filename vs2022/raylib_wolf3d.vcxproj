@@ -46,7 +46,12 @@
       <ConformanceMode>false</ConformanceMode>
       <CompileAs>CompileAsC</CompileAs>
       <LanguageStandard_C>stdc11</LanguageStandard_C>
-      <AdditionalOptions>/utf-8 /experimental:c11atomics %(AdditionalOptions)</AdditionalOptions>
+      <!-- /wd4068 Borland pragmas; /wd4101 /wd4102 unused locals/labels kept
+           for the fenced-off asm; /wd4018 /wd4244 /wd4267 /wd4305 /wd4146
+           16-bit-era sign/narrowing idioms (GCC's C -Wall never flags them).
+           Real portability classes (C4273, C4828, C5286, C4113) stay on and
+           are fixed in the sources. -->
+      <AdditionalOptions>/utf-8 /experimental:c11atomics /wd4068 /wd4101 /wd4102 /wd4018 /wd4244 /wd4267 /wd4305 /wd4146 %(AdditionalOptions)</AdditionalOptions>
       <AdditionalIncludeDirectories>$(MSBuildThisFileDirectory)..\port;$(MSBuildThisFileDirectory)..\WOLFSRC;$(MSBuildThisFileDirectory)..\audio;$(MSBuildThisFileDirectory)..\audio\vendor;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;_CRT_NONSTDC_NO_WARNINGS;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>

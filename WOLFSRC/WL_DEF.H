@@ -596,13 +596,17 @@ typedef enum {
 	en_death
 } enemy_t;
 
+/* objtype below is a typedef of struct objstruct; declared early so the
+ * state handlers can take it while keeping the handler assignments in
+ * WL_PLAY.C checked (C4113). */
+struct objstruct;
 
 typedef struct	statestruct
 {
 	boolean	rotate;
 	int		shapenum;			// a shapenum of -1 means get from ob->temp1
 	int		tictime;
-	void	(*think) (),(*action) ();
+	void	(*think) (struct objstruct *),(*action) (struct objstruct *);
 	struct	statestruct	*next;
 } statetype;
 

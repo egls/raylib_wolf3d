@@ -102,7 +102,11 @@ _Noreturn void WL_NotPorted (const char *what, const char *file, int line);
 #define S_IWRITE	0200
 #endif
 
+#ifndef _MSC_VER
+/* MSVC: <io.h> declares filelength (dllimport); redeclaring it here trips
+ * C4273 "inconsistent dll linkage" in every translation unit. */
 long	filelength (int handle);
+#endif
 
 /* fsync(), and rename-over-existing (plain rename() fails on Windows when the
  * target exists).  Both return 0 on success. */
@@ -127,9 +131,13 @@ int		WL_ReplaceFile (const char *from, const char *to);
 #define strnicmp	strncasecmp
 #endif
 
+#ifndef _MSC_VER
+/* MSVC: the CRT declares these in <stdlib.h> (dllimport) with the same
+ * semantics the game relies on (digits lowercase, only radix 10 signed). */
 char	*itoa (int value, char *string, int radix);
 char	*ltoa (long value, char *string, int radix);
 char	*ultoa (unsigned long value, char *string, int radix);
+#endif
 
 /* ------------------------------------------------------------------------
  * ALLOC.H
