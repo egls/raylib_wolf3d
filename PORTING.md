@@ -487,6 +487,13 @@ directly (`raylib_wolf3d -demotest all -viewsize 19`, also under the `asan`
 preset with no ASan/UBSan reports), the title screen renders on a Retina
 display, and `wolf_sd_device` plays through miniaudio's Core Audio backend.
 
+**Status at master `704b936`:** line numbers below are from master
+`9f20fe7`. Since then, A1 and the `WL_INTER.C`/`WL_MENU.C` byte indices
+were fixed by WOLF-61 (PR #29). A2, the config path and the data lookup
+in section D were fixed by WOLF-63 (PR #30). WOLF-35 (PR #23) stopped
+`--gc-sections` reaching Apple ld (section B). Everything else is still
+open.
+
 ### A. Hard blockers (AppleClang compile fails today)
 
 | # | Where | Problem | Fix | Owner |
