@@ -70,3 +70,62 @@ jobs:
           echo "exit code: $rc"
           test "$rc" = 1
           grep -q 'VSWAP: short read' run.txt
+
+  windows:
+    # Depends on the Windows port work under WOLF-29 (WOLF-30..34); the
+    # raylib quarantine and shell-based smoke tests stay Linux-only.
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: [mingw, msvc]
+    runs-on: windows-latest
+    # MSVC support is best effort until the MinGW build is proven.
+    continue-on-error: ${{ matrix.toolchain == 'msvc' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up MinGW-w64 (MSYS2)
+        if: matrix.toolchain == 'mingw'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: false
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+            mingw-w64-x86_64-python
+
+      - name: Set up MSVC
+        if: matrix.toolchain == 'msvc'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Configure and build (MinGW, Ninja)
+        if: matrix.toolchain == 'mingw'
+        shell: msys2 {0}
+        run: |
+          cc --version | head -1
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          cmake --build build
+          ctest --test-dir build --output-on-failure --no-tests=error
+
+      - name: Configure and build (MSVC, Ninja)
+        if: matrix.toolchain == 'msvc'
+        shell: pwsh
+        run: |
+          cmake --version
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          cmake --build build
+          ctest --test-dir build --output-on-failure --no-tests=error -C RelWithDebInfo
+
+      - name: Smoke test (no game data)
+        shell: pwsh
+        run: |
+          # Missing data must be reported, not crash (exit 2).
+          $exe = (Get-ChildItem -Recurse build -Filter raylib_wolf3d.exe | Select-Object -First 1).FullName
+          & $exe -data (Join-Path $env:RUNNER_TEMP 'nodata')
+          Write-Host "exit code: $LASTEXITCODE"
+          # End with an explicit exit: some pwsh versions exit 1 when a -command
+          # script ends on a false-condition if, even after a passing check.
+          if ($LASTEXITCODE -ne 2) { exit 1 }
+          exit 0

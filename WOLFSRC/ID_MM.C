@@ -1,5 +1,11 @@
 /* Flat allocator. Owners are stable pointer slots; purge invalidates the slot.
  * Locked blocks never move or purge. There is no DOS address-space budget. */
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>		/* before ID_HEADS.H: its far/near/pascal macros would break these headers */
+#else
+#include <unistd.h>
+#endif
 #include "ID_HEADS.H"
 #include <limits.h>
 typedef struct MMBlock {
@@ -111,8 +117,19 @@ void MM_Shutdown(void) {
     started = false;
 }
 long MM_UnusedMemory(void) {
+#ifdef _WIN32
+    MEMORYSTATUSEX ms;
+    ms.dwLength = sizeof ms;
+    if (GlobalMemoryStatusEx(&ms) && ms.ullAvailPhys > 0 && ms.ullAvailPhys <= LONG_MAX)
+        return (long)ms.ullAvailPhys;
+    return 64L * 1024 * 1024;
+#elif defined(_SC_AVPHYS_PAGES)
     long pages = sysconf(_SC_AVPHYS_PAGES), size = sysconf(_SC_PAGESIZE);
     return pages > 0 && size > 0 && pages <= LONG_MAX / size ? pages * size : 64L * 1024 * 1024;
+#else
+    /* Available-page queries are not specified by POSIX (e.g. Darwin). */
+    return 64L * 1024 * 1024;
+#endif
 }
 long MM_TotalFree(void) {
     long available = MM_UnusedMemory();

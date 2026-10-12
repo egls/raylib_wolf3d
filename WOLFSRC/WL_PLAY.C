@@ -1,6 +1,7 @@
 // WL_PLAY.C
 
 #include "WL_DEF.H"
+#include "wl_timer.h"
 #pragma hdrstop
 
 
@@ -463,7 +464,11 @@ void PollControls (void)
 	if (demoplayback)
 	{
 		while (TimeCount<lasttimecount+DEMOTICS && !demotest)
+#ifdef __EMSCRIPTEN__
+			WL_WebWait ();		// WOLF-41: no timer thread in the browser
+#else
 		;
+#endif
 		TimeCount = lasttimecount + DEMOTICS;
 		lasttimecount += DEMOTICS;
 		tics = DEMOTICS;
@@ -474,7 +479,11 @@ void PollControls (void)
 // take DEMOTICS or more tics, and modify Timecount to reflect time taken
 //
 		while (TimeCount<lasttimecount+DEMOTICS)
+#ifdef __EMSCRIPTEN__
+			WL_WebWait ();		// WOLF-41: no timer thread in the browser
+#else
 		;
+#endif
 		TimeCount = lasttimecount + DEMOTICS;
 		lasttimecount += DEMOTICS;
 		tics = DEMOTICS;

@@ -807,6 +807,7 @@ boolean		SaveTheGame(int file,int x,int y);
 boolean		SaveGameValid(int file);	// WOLF-7
 void 		ShowViewSize (int width);
 void		ShutdownId (void);
+void		WriteConfig (void);	// WOLF-43: the web build saves it on the fly
 
 
 /*

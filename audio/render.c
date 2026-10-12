@@ -7,6 +7,9 @@
 #include <string.h>
 #include <time.h>
 #include <limits.h>
+#ifdef _WIN32
+#include <windows.h>
+#endif
 
 typedef struct { uint8_t *p; size_t n; } blob;
 static unsigned u16(const uint8_t *p) { return p[0] | (unsigned)p[1]<<8; }
@@ -65,7 +68,12 @@ static unsigned number(const char *p) {
 int main(int argc, char **argv) {
     unsigned index,seconds,rate=44100,sounds; uint64_t frames,done=0;
     blob h={0},d={0},v={0},data={0}; sd_audio *s; FILE *wav,*log=NULL;
-    int realtime=0,allocated=0; struct timespec start;
+    int realtime=0,allocated=0;
+#ifdef _WIN32
+    LARGE_INTEGER freq,t0;
+#else
+    struct timespec start;
+#endif
     if (argc<6) {
         fprintf(stderr,"Usage: %s DATA_DIR music|adlib|pc|pcm INDEX SECONDS OUT.wav [--rate HZ] [--trace OUT.csv] [--realtime]\n",argv[0]);
         return 1;
@@ -75,7 +83,7 @@ int main(int argc, char **argv) {
         if (!strcmp(argv[i],"--realtime")) realtime=1;
         else if (!strcmp(argv[i],"--rate") && i+1<argc) rate=number(argv[++i]);
         else if (!strcmp(argv[i],"--trace") && i+1<argc) {
-            log=fopen(argv[++i],"w"); if (!log) fail("Cannot create trace");
+            log=fopen(argv[++i],"wb"); if (!log) fail("Cannot create trace");
         } else fail("Unknown/missing option");
     }
     frames=(uint64_t)rate*seconds;
@@ -111,13 +119,27 @@ int main(int argc, char **argv) {
     fwrite("RIFF",1,4,wav); put32(wav,(uint32_t)(36+frames*4)); fwrite("WAVEfmt ",1,8,wav);
     put32(wav,16); put16(wav,1); put16(wav,2); put32(wav,rate); put32(wav,rate*4);
     put16(wav,4); put16(wav,16); fwrite("data",1,4,wav); put32(wav,(uint32_t)(frames*4));
+    #ifdef _WIN32
+    if (realtime && (!QueryPerformanceFrequency(&freq) || !QueryPerformanceCounter(&t0))) fail("Cannot read wall clock");
+#else
     if (realtime && clock_gettime(CLOCK_MONOTONIC,&start)) fail("Cannot read wall clock");
+#endif
     while (done<frames) {
         int16_t buffer[512*2]; size_t n=frames-done>512 ? 512 : (size_t)(frames-done);
         sd_audio_mix(s,buffer,n);
         for (size_t i=0;i<n*2;++i) put16(wav,(uint16_t)buffer[i]);
         done+=n;
         if (realtime) {
+#ifdef _WIN32
+            LARGE_INTEGER now;
+            uint64_t target=(uint64_t)t0.QuadPart+done*(uint64_t)freq.QuadPart/rate;
+            for (;;) {
+                if (!QueryPerformanceCounter(&now)) fail("Wall clock pacing failed");
+                if ((uint64_t)now.QuadPart>=target) break;
+                { uint64_t ms=(target-(uint64_t)now.QuadPart)*1000/(uint64_t)freq.QuadPart;
+                  if (ms) Sleep((DWORD)ms); }
+            }
+#else
             uint64_t ns=done*1000000000/rate;
             struct timespec deadline=start;
             deadline.tv_sec+=(time_t)(ns/1000000000);
@@ -126,6 +148,7 @@ int main(int argc, char **argv) {
             int e;
             do { e=clock_nanosleep(CLOCK_MONOTONIC,TIMER_ABSTIME,&deadline,NULL); } while(e==EINTR);
             if (e) fail("Wall clock pacing failed");
+#endif
         }
     }
     if (ferror(wav) || fclose(wav)) fail("Writing WAV failed");
