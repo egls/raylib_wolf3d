@@ -10,7 +10,7 @@
     OutDir\raylib_wolf3d-VERSION-windows-x64.zip
     OutDir\SHA256SUMS-windows
   The zip holds the exe, every non-system runtime DLL it imports (found with
-  objdump or dumpbin; searched for in DllDir, the exe's directory and PATH),
+  objdump or dumpbin; Visual C++ runtime DLLs are bundled too; searched for in DllDir, the exe's directory and PATH),
   scripts\fetch_shareware.ps1, a run.ps1 launcher and doc\ (README, SOURCE.txt,
   licenses\).  No game data is ever packaged.
 #>
@@ -55,15 +55,23 @@ if (-not $raylibLicense) { throw "raylib LICENSE not found (looked in $build\_de
 function Get-Imports([string]$Path) {
   $objdump = Get-Command objdump -ErrorAction SilentlyContinue
   if ($objdump) {
-    return (& $objdump.Source -p $Path) | ForEach-Object { if ($_ -match 'DLL Name:\s*(\S+)') { $Matches[1] } }
+    $lines = & $objdump.Source -p $Path 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "objdump failed on ${Path}: $($lines -join ' ')" }
+    return $lines | ForEach-Object { if ($_ -match 'DLL Name:\s*(\S+)') { $Matches[1] } }
   }
   $dumpbin = Get-Command dumpbin -ErrorAction SilentlyContinue
   if ($dumpbin) {
-    return (& $dumpbin.Source /dependents $Path) | ForEach-Object { if ($_ -match '^\s+(\S+\.dll)\s*$') { $Matches[1] } }
+    $lines = & $dumpbin.Source /dependents $Path 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "dumpbin failed on ${Path}: $($lines -join ' ')" }
+    return $lines | ForEach-Object { if ($_ -match '^\s+(\S+\.dll)\s*$') { $Matches[1] } }
   }
   throw 'need objdump (MinGW) or dumpbin (MSVC Developer PowerShell) on PATH to list DLL imports'
 }
 $system = Join-Path $env:SystemRoot 'System32'
+# The Visual C++ runtime is redistributable, not part of Windows: ship it app-local
+# (taken from -DllDir, the exe's directory, PATH or, last, System32) so the zip
+# does not depend on the builder's or the user's installed redistributable.
+$vcRuntime = '^(vcruntime|msvcp|concrt|vcomp|vccorlib)\d+[\w]*\.dll$'
 $searchDirs = @($DllDir) + @((Split-Path $exe)) + ($env:PATH -split ';' | Where-Object { $_ })
 $dlls = @{}
 $queue = [System.Collections.Generic.Queue[string]]::new()
@@ -74,9 +82,10 @@ while ($queue.Count -gt 0) {
     if ($dlls.ContainsKey($dll.ToLowerInvariant())) { continue }
     # Windows itself and the API-set forwarders are never shipped.
     if ($dll -match '^(api-ms-win-|ext-ms-win-)') { continue }
-    if (Test-Path -LiteralPath (Join-Path $system $dll)) { continue }
+    $isVc = $dll -match $vcRuntime
+    if (-not $isVc -and (Test-Path -LiteralPath (Join-Path $system $dll))) { continue }
     $found = $null
-    foreach ($d in $searchDirs) {
+    foreach ($d in ($searchDirs + $(if ($isVc) { $system }))) {
       if ($d -and (Test-Path -LiteralPath (Join-Path $d $dll))) { $found = Join-Path $d $dll; break }
     }
     if (-not $found) { throw "runtime DLL $dll not found (use -DllDir)" }

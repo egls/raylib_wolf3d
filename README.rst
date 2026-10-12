@@ -161,8 +161,10 @@ Build the zip locally after a build with::
     scripts\package.ps1 -BuildDir build -OutDir dist 0.0.0-local
 
 ``package.ps1`` finds the DLLs with ``objdump`` (MinGW) or ``dumpbin`` (MSVC
-Developer PowerShell) and fails if one cannot be found (``-DllDir`` adds
-search directories).  The zip's SHA-256 goes to ``dist\SHA256SUMS-windows``.
+Developer PowerShell) and fails if the tool errors or a DLL cannot be
+found (``-DllDir`` adds search directories).  The Visual C++ runtime
+(``vcruntime140``, ``msvcp140``, ...) is not part of Windows, so an MSVC build
+gets those DLLs bundled app-local; real system DLLs are not bundled.  The zip's SHA-256 goes to ``dist\SHA256SUMS-windows``.
 
 macOS
 -----
