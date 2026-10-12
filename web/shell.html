@@ -545,6 +545,12 @@
         return;
       FS.mount(IDBFS, {}, CONFROOT);
       FS.mount(IDBFS, {}, USERDIR);
+      // At exit (EXIT_RUNTIME) IDBFS.quit() closes the databases, which
+      // breaks the sync Quit()'s WriteConfig() has just started: IDBFS
+      // throws "The database connection is closing" and never calls back,
+      // so the config is lost and no later sync runs.  The browser closes
+      // them with the page.
+      IDBFS.quit = function () {};
       Module.addRunDependency('idbfs');
       FS.syncfs(true, function (err) {
         if (err)
@@ -572,12 +578,16 @@
       play.onclick = start;
     },
     onExit: function (status) {
-      syncOut();
-      if (status)
-        showOverlay('The game stopped (exit code ' + status + ').\n\n' +
-                    lastlines.join('\n'), true);
-      else
-        showOverlay('Thanks for playing.');
+      var text = status ? 'The game stopped (exit code ' + status + ').\n\n' +
+                          lastlines.join('\n') : 'Thanks for playing.';
+      // "Play again" reloads, so offer it once the last files are stored.
+      showOverlay('Saving…', false);
+      play.disabled = true;
+      syncOut(function (err) {
+        if (err)
+          text += '\n\nYour settings and saves could not be stored: ' + err;
+        showOverlay(text, !!status || !!err);
+      });
     },
     onAbort: function (what) {
       failed = true;
