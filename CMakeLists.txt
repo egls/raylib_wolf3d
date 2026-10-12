@@ -424,3 +424,17 @@ if(BUILD_TESTING)
   endif()
   add_test(NAME audio_ring COMMAND wolf_audio_ring_test)
 endif()
+
+if(BUILD_TESTING AND NOT EMSCRIPTEN)
+  add_executable(wolf_web_audio_policy_test tests/web_audio_policy_test.c port/id_raylib.c)
+  target_include_directories(wolf_web_audio_policy_test PRIVATE port
+    $<TARGET_PROPERTY:raylib,INTERFACE_INCLUDE_DIRECTORIES>)
+  target_compile_definitions(wolf_web_audio_policy_test PRIVATE
+    WOLF3D_AUDIO_BACKEND RL_EXTERNAL_CLOCK RL_WEB_AUDIO_TEST)
+  target_compile_options(wolf_web_audio_policy_test PRIVATE ${WOLF3D_TEST_WARNINGS} ${WOLF3D_NODEBUG_OFF})
+  target_link_libraries(wolf_web_audio_policy_test PRIVATE ${WOLF3D_LIBM})
+  if(APPLE)
+    target_link_libraries(wolf_web_audio_policy_test PRIVATE objc)
+  endif()
+  add_test(NAME web_audio_policy COMMAND wolf_web_audio_policy_test)
+endif()

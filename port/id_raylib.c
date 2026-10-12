@@ -602,7 +602,66 @@ static void RL_MonotonicNow(struct timespec *ts) {
 static void RL_MonotonicNow(struct timespec *ts) { clock_gettime(CLOCK_MONOTONIC,ts); }
 #endif
 #define AUDIO_RING 8192u
+#if defined(__EMSCRIPTEN__) || defined(RL_WEB_AUDIO_TEST)
+#define AUDIO_AHEAD 1536u /* 32 ms, six 256-frame WebAudio blocks */
+/* ScriptProcessor can pull a block before its presentation time. This fixed
+ * allowance absorbs that prefetch without relaxing the 1000 ppm rate cap. */
+#define AUDIO_CLOCK_AHEAD (AUDIO_AHEAD+512u)
+#else
 #define AUDIO_AHEAD 3840u /* 80 ms at 48 kHz */
+#define AUDIO_CLOCK_AHEAD AUDIO_AHEAD
+#endif
+#if defined(__EMSCRIPTEN__) || defined(RL_WEB_AUDIO_TEST)
+/* raylib 5.5/miniaudio uses a main-thread ScriptProcessor, not a worker.
+ * Keep policy here with the device, rather than coupling it to the shell. */
+#ifndef RL_WEB_AUDIO_TEST
+EM_JS(void, WebAudioInit, (void), {
+    var device = window.miniaudio.devices.find(function(d) { return d && d.webaudio; });
+    var ctx = device.webaudio;
+    var state = Module.wolfAudio = { context: ctx, generation: 1 };
+    state.unlock = function() {
+        if (!document.hidden && ctx.state !== 'closed') ctx.resume().catch(function() {});
+    };
+    state.visibility = function() {
+        state.generation++;
+        if (document.hidden) ctx.suspend().catch(function() {});
+        else state.unlock();
+    };
+    state.changed = function() { state.generation++; };
+    document.addEventListener('keydown', state.unlock, true);
+    document.addEventListener('click', state.unlock, true);
+    document.addEventListener('touchend', state.unlock, true);
+    document.addEventListener('visibilitychange', state.visibility);
+    ctx.addEventListener('statechange', state.changed);
+    if (document.hidden) state.visibility();
+});
+EM_JS(unsigned, WebAudioGeneration, (void), {
+    var s = Module.wolfAudio;
+    return s && !document.hidden && s.context.state === 'running' ? s.generation : 0;
+});
+EM_JS(void, WebAudioStats, (unsigned queued, unsigned underruns, unsigned resets, double generated), {
+    Module.wolfAudioStats = { queuedFrames: queued, underruns: underruns,
+        resyncs: resets, generatedFrames: generated,
+        running: !document.hidden && Module.wolfAudio.context.state === 'running' };
+});
+EM_JS(void, WebAudioClose, (void), {
+    var s = Module.wolfAudio;
+    document.removeEventListener('keydown', s.unlock, true);
+    document.removeEventListener('click', s.unlock, true);
+    document.removeEventListener('touchend', s.unlock, true);
+    document.removeEventListener('visibilitychange', s.visibility);
+    s.context.removeEventListener('statechange', s.changed);
+    delete Module.wolfAudio;
+});
+#else
+void WebAudioInit(void);
+unsigned WebAudioGeneration(void);
+void WebAudioStats(unsigned queued, unsigned underruns, unsigned resets, double generated);
+void WebAudioClose(void);
+#endif
+static unsigned audio_web_generation, audio_web_resets;
+static struct timespec audio_web_lastpump;
+#endif
 static short audio_ring[AUDIO_RING*2];
 static _Atomic unsigned audio_read, audio_write;
 static _Atomic unsigned audio_underruns;
@@ -613,6 +672,14 @@ static struct timespec audio_epoch;
 static uint64_t audio_generated;
 static void WolfAudioCallback(void *buffer, unsigned frames) {
     short *out=buffer;
+#if defined(__EMSCRIPTEN__) || defined(RL_WEB_AUDIO_TEST)
+    /* Visibility/state events can run before the next game pump. Silence
+     * immediately, and leave the producer to reset the ring on its next turn. */
+    if (!audio_web_generation || WebAudioGeneration()!=audio_web_generation) {
+        memset(out,0,frames*2*sizeof(*out));
+        return;
+    }
+#endif
     unsigned r=atomic_load_explicit(&audio_read,memory_order_relaxed);
     unsigned w=atomic_load_explicit(&audio_write,memory_order_acquire);
     unsigned n=w-r, i;
@@ -632,11 +699,33 @@ void RL_AudioPump(void) {
     uint64_t due;
     if (!audio_open) return;
     RL_MonotonicNow(&now);
+#if defined(__EMSCRIPTEN__) || defined(RL_WEB_AUDIO_TEST)
+    unsigned generation=WebAudioGeneration();
+    double gap=(now.tv_sec-audio_web_lastpump.tv_sec)+
+               (now.tv_nsec-audio_web_lastpump.tv_nsec)*1e-9;
+    if (generation!=audio_web_generation || gap>0.25) {
+        /* Both callbacks and pumps run on this browser thread. Discard the
+         * pre-suspension ring and rebase the cap: never catch up hidden time.
+         * Stop/play also resets raylib's stream cursor. Sequencer stays paused. */
+        StopAudioStream(audio_stream);
+        atomic_store_explicit(&audio_read,0,memory_order_relaxed);
+        atomic_store_explicit(&audio_write,0,memory_order_relaxed);
+        audio_epoch=now; audio_generated=0;
+        audio_web_generation=generation;
+        ++audio_web_resets;
+        PlayAudioStream(audio_stream);
+    }
+    audio_web_lastpump=now;
+    if (!generation) {
+        WebAudioStats(0,atomic_load(&audio_underruns),audio_web_resets,0);
+        return;
+    }
+#endif
     /* Allow 1000 ppm of DAC clock drift relative to CLOCK_MONOTONIC.
-     * The queue limit still bounds latency to 80 ms; this cap only prevents
+     * The queue bounds synthesis lead to 80 ms native / 32 ms web; this cap prevents
      * a null/racing sink from advancing synthesis without wall-clock time. */
     due=(uint64_t)(((now.tv_sec-audio_epoch.tv_sec)+
-                   (now.tv_nsec-audio_epoch.tv_nsec)*1e-9)*48000*1.001)+AUDIO_AHEAD;
+                   (now.tv_nsec-audio_epoch.tv_nsec)*1e-9)*48000*1.001)+AUDIO_CLOCK_AHEAD;
     r=atomic_load_explicit(&audio_read,memory_order_acquire);
     w=atomic_load_explicit(&audio_write,memory_order_relaxed);
     queued=w-r;
@@ -652,6 +741,9 @@ void RL_AudioPump(void) {
         w+=n; queued+=n; audio_generated+=n;
         atomic_store_explicit(&audio_write,w,memory_order_release);
     }
+#if defined(__EMSCRIPTEN__) || defined(RL_WEB_AUDIO_TEST)
+    WebAudioStats(queued,atomic_load(&audio_underruns),audio_web_resets,(double)audio_generated);
+#endif
 }
 int RL_AudioOpen(void (*mixer)(short *, unsigned)) {
     if (audio_open) return 1;
@@ -667,6 +759,11 @@ int RL_AudioOpen(void (*mixer)(short *, unsigned)) {
     atomic_store_explicit(&audio_underruns,0,memory_order_relaxed);
     audio_generated=0; audio_mixer=mixer;
     RL_MonotonicNow(&audio_epoch);
+#if defined(__EMSCRIPTEN__) || defined(RL_WEB_AUDIO_TEST)
+    WebAudioInit();
+    audio_web_generation=audio_web_resets=0;
+    audio_web_lastpump=audio_epoch;
+#endif
     audio_open=1;
     RL_AudioPump();
     SetAudioStreamCallback(audio_stream,WolfAudioCallback);
@@ -675,6 +772,9 @@ int RL_AudioOpen(void (*mixer)(short *, unsigned)) {
 }
 void RL_AudioClose(void) {
     if (!audio_open) return;
+#if defined(__EMSCRIPTEN__) || defined(RL_WEB_AUDIO_TEST)
+    WebAudioClose();
+#endif
     StopAudioStream(audio_stream);
     UnloadAudioStream(audio_stream);
     CloseAudioDevice();

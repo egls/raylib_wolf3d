@@ -27,6 +27,7 @@ void UnloadAudioStream(AudioStream s) { (void)s; callback=NULL; }
 static void generate(short *out,unsigned n) {
     for (unsigned i=0;i<n;++i) { out[i*2]=(mixed%30000)+1; out[i*2+1]=-out[i*2]; mixed++; }
 }
+#ifndef RL_POLICY_ONLY
 static void test_drift(int ppm) {
     short out[512*2];
     uint64_t consumed=0;
@@ -79,3 +80,5 @@ int main(void) {
     puts("PASS: ring ordering/wrap, silence on underrun, wall-clock throttle, teardown");
     return 0;
 }
+
+#endif /* RL_POLICY_ONLY */
