@@ -159,10 +159,19 @@ static void PushKey (int scan, int ext, int down)
  * PC ones: Control fires and Option is Alt (strafe).
  * Returns 1 if the press of `key` is a shortcut.
  */
+#ifdef __APPLE__
+/*
+ * Command counts for a whole poll: held now, held at the last sync, or
+ * pressed in between.  Cmd+F pressed and released within one poll leaves
+ * only F in raylib's pressed-key queue, with Command already up.
+ */
+static int command, command_was_down, command_tapped;
+#endif
+
 static int Shortcut (int key)
 {
 #ifdef __APPLE__
-	if (IsKeyDown(KEY_LEFT_SUPER) || IsKeyDown(KEY_RIGHT_SUPER))
+	if (command)
 	{
 		if (key == KEY_F || key == KEY_ENTER)
 			RL_ToggleFullscreen();
@@ -184,9 +193,21 @@ static void SyncKeys (void)
 
 	/* raylib's pressed-key queue is the only record of taps shorter than a poll */
 	while ((key = GetKeyPressed()) != 0)
+	{
+#ifdef __APPLE__
+		if (key == KEY_LEFT_SUPER || key == KEY_RIGHT_SUPER)
+			command_tapped = 1;
+#endif
 		for (i = 0; i < NUMKEYS; i++)
 			if (keymap[i].key == key)
 				keymap[i].tapped = 1;
+	}
+#ifdef __APPLE__
+	down = IsKeyDown(KEY_LEFT_SUPER) || IsKeyDown(KEY_RIGHT_SUPER);
+	command = down || command_was_down || command_tapped;
+	command_was_down = down;
+	command_tapped = 0;
+#endif
 
 	for (i = 0; i < NUMKEYS; i++)
 	{

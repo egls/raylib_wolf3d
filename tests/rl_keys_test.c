@@ -207,6 +207,42 @@ int main (void)
 	down[KEY_RIGHT_SUPER] = 0;
 	RL_PumpEvents();
 	Empty();
+
+	/* Cmd+F pressed and released within one poll: only the queue saw them */
+	queue[queued++] = KEY_LEFT_SUPER;
+	queue[queued++] = KEY_F;
+	RL_PumpEvents();
+	CHECK(toggles == 5);
+	Empty();
+
+	/* Command released in the same poll as F is pressed; F stays held */
+	queue[queued++] = KEY_LEFT_SUPER;
+	queue[queued++] = KEY_F;
+	down[KEY_F] = 1;
+	RL_PumpEvents();
+	CHECK(toggles == 6);
+	Empty();
+	down[KEY_F] = 0;
+	RL_PumpEvents();
+	Empty();					/* F's release stays swallowed */
+
+	/* Command held at the last poll, both released before this one */
+	down[KEY_LEFT_SUPER] = 1;
+	RL_PumpEvents();
+	Empty();
+	down[KEY_LEFT_SUPER] = 0;
+	queue[queued++] = KEY_ENTER;
+	RL_PumpEvents();
+	CHECK(toggles == 7);
+	Empty();
+
+	/* after that, F is the game's again */
+	queue[queued++] = KEY_F;
+	RL_PumpEvents();
+	Expect(0x21, 0, 1);
+	Expect(0x21, 0, 0);
+	Empty();
+	CHECK(toggles == 7);
 #endif
 
 	if (!failures)
