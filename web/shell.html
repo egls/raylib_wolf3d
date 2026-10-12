@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Wolfenstein 3-D (raylib)</title>
 <style>
   html, body { margin: 0; height: 100%; background: #000; color: #ddd;
@@ -40,6 +40,62 @@
   #help { position: fixed; right: .4em; top: 2.6em; width: min(24em, 90vw);
           padding: .6em .9em; background: rgba(20, 20, 20, .95);
           border: 1px solid #555; border-radius: 4px; font-size: 13px; }
+  /* Touch controls (WOLF-47): over the game, clear of the notch and the
+     home bar.  Only the controls take touches; the rest of the screen is the
+     canvas, where the page tracks the stick, turn drags and menu taps. */
+  body.playing, #canvas, #touch { touch-action: none; -webkit-user-select: none;
+                                  user-select: none; -webkit-touch-callout: none; }
+  #touch { position: fixed; inset: 0; pointer-events: none;
+           --u: min(11vmin, 64px);
+           --l: max(env(safe-area-inset-left), .6em);
+           --r: max(env(safe-area-inset-right), .6em);
+           --t: max(env(safe-area-inset-top), .5em);
+           --b: max(env(safe-area-inset-bottom), .6em); }
+  #touch button { pointer-events: auto; position: absolute; margin: 0; padding: 0;
+                  border-radius: 50%; border: 2px solid rgba(255, 255, 255, .35);
+                  background: rgba(40, 40, 40, .45); color: rgba(255, 255, 255, .85);
+                  font: bold calc(var(--u) * .24)/1 system-ui, sans-serif;
+                  width: var(--u); height: var(--u); touch-action: none; }
+  #touch button.down, #touch button.on { background: rgba(200, 50, 50, .6);
+                                         border-color: rgba(255, 160, 160, .8); }
+  #ttop button { position: static; border-radius: 6px; width: auto;
+                 height: calc(var(--u) * .62); padding: 0 .9em; margin-right: .4em;
+                 font-size: 13px; }
+  #ttop { position: absolute; left: var(--l); top: var(--t); display: flex; }
+  #touch.menu .play, #touch.play .menu { display: none; }
+  #tfire { right: var(--r); bottom: calc(var(--b) + var(--u) * .9);
+           width: calc(var(--u) * 1.7) !important; height: calc(var(--u) * 1.7) !important; }
+  #tuse { right: calc(var(--r) + var(--u) * 1.9); bottom: calc(var(--b) + var(--u) * .3); }
+  #tstrafe { right: calc(var(--r) + var(--u) * 1.95); bottom: calc(var(--b) + var(--u) * 1.6); }
+  #trun { right: calc(var(--r) + var(--u) * .35); bottom: calc(var(--b) + var(--u) * 2.8); }
+  #tnext { right: var(--r); bottom: var(--b); height: calc(var(--u) * .7) !important;
+           border-radius: 8px !important; width: calc(var(--u) * .8) !important; }
+  #tprev { right: calc(var(--r) + var(--u) * .9); bottom: var(--b);
+           height: calc(var(--u) * .7) !important; border-radius: 8px !important;
+           width: calc(var(--u) * .8) !important; }
+  #stick { position: absolute; width: calc(var(--u) * 2.2); height: calc(var(--u) * 2.2);
+           margin: calc(var(--u) * -1.1) 0 0 calc(var(--u) * -1.1); border-radius: 50%;
+           border: 2px solid rgba(255, 255, 255, .3); background: rgba(40, 40, 40, .3);
+           left: calc(var(--l) + var(--u) * 1.6); top: calc(100% - var(--b) - var(--u) * 1.6); }
+  #knob { position: absolute; left: 50%; top: 50%; width: var(--u); height: var(--u);
+          margin: calc(var(--u) * -.5) 0 0 calc(var(--u) * -.5); border-radius: 50%;
+          background: rgba(255, 255, 255, .35); }
+  #tup, #tdown, #tleft, #tright { border-radius: 10px !important; }
+  #tup { left: calc(var(--l) + var(--u) * 1.1); bottom: calc(var(--b) + var(--u) * 2.2); }
+  #tdown { left: calc(var(--l) + var(--u) * 1.1); bottom: var(--b); }
+  #tleft { left: var(--l); bottom: calc(var(--b) + var(--u) * 1.1); }
+  #tright { left: calc(var(--l) + var(--u) * 2.2); bottom: calc(var(--b) + var(--u) * 1.1); }
+  #tok { right: var(--r); bottom: calc(var(--b) + var(--u) * 1.1);
+         width: calc(var(--u) * 1.4) !important; height: calc(var(--u) * 1.4) !important; }
+  #tback { right: calc(var(--r) + var(--u) * 1.6); bottom: var(--b); }
+  #tyes { right: calc(var(--r) + var(--u) * 1.6); bottom: calc(var(--b) + var(--u) * 2.4); }
+  #tno { right: var(--r); bottom: calc(var(--b) + var(--u) * 2.7); }
+  #tkbd { right: calc(var(--r) + var(--u) * 2.9); bottom: var(--b); }
+  #tinput { position: fixed; left: 0; top: 0; width: 1px; height: 1px; opacity: 0;
+            font-size: 16px; border: 0; padding: 0; }
+  #rotate { position: fixed; left: 50%; bottom: 40%; transform: translateX(-50%);
+            padding: .4em .9em; background: rgba(0, 0, 0, .75); border-radius: 4px;
+            font-size: 14px; text-align: center; pointer-events: none; }
   #drop { position: fixed; inset: 0; display: flex; align-items: center;
           justify-content: center; background: rgba(120, 20, 20, .6);
           font-size: 1.6em; pointer-events: none; }
@@ -56,10 +112,45 @@
 </div>
 <div id="help" class="hidden">
   <b>Controls</b><br>
-  Arrows move, Ctrl fires, Space opens doors, Alt strafes, Shift runs,
-  1&ndash;4 pick a weapon, Esc is the menu (save and load are there).
-  Click the game to use the mouse; Esc lets go. Alt+Enter: fullscreen.
+  <span class="keyhelp">Arrows move, Ctrl fires, Space opens doors, Alt
+  strafes, Shift runs, 1&ndash;4 pick a weapon, Esc is the menu (save and
+  load are there). Click the game to use the mouse (left fires, right
+  strafes, middle opens); Esc lets go and pauses. Alt+Enter: fullscreen.</span>
+  <span class="touchhelp">Left thumb: drag anywhere on the left half to
+  move and turn (with STRAFE held, sideways). Right thumb: FIRE (hold for
+  auto-fire), USE opens doors, RUN on/off, &lsaquo; &rsaquo; change weapon;
+  drag on the right half to turn. MENU is Esc (save and load are there).
+  In menus tap the picture for Enter, swipe or use the arrows to move, Y/N
+  answer questions, &#9000; types a save name.</span>
 </div>
+
+<!-- Touch controls (WOLF-47).  data-bit: RL_WebTouch bits (port/id_raylib.c). -->
+<div id="touch" class="hidden menu">
+  <div id="ttop">
+    <button data-bit="256">MENU</button>
+    <button data-bit="65536">PAUSE</button>
+    <button id="tfull" data-act="full">Fullscreen</button>
+  </div>
+  <div id="stick" class="play"><div id="knob"></div></div>
+  <button id="tfire" class="play" data-bit="1">FIRE</button>
+  <button id="tuse" class="play" data-bit="8">USE</button>
+  <button id="tstrafe" class="play" data-bit="2">STRAFE</button>
+  <button id="trun" class="play" data-act="run">RUN</button>
+  <button id="tprev" class="play" data-bit="32">&lsaquo;</button>
+  <button id="tnext" class="play" data-bit="16">&rsaquo;</button>
+  <button id="tup" class="menu" data-bit="4096">&#9650;</button>
+  <button id="tdown" class="menu" data-bit="8192">&#9660;</button>
+  <button id="tleft" class="menu" data-bit="16384">&#9664;</button>
+  <button id="tright" class="menu" data-bit="32768">&#9654;</button>
+  <button id="tok" class="menu" data-bit="512">OK</button>
+  <button id="tback" class="menu" data-bit="256">BACK</button>
+  <button id="tyes" class="menu" data-bit="1024">Y</button>
+  <button id="tno" class="menu" data-bit="2048">N</button>
+  <button id="tkbd" class="menu" data-act="kbd">&#9000;</button>
+</div>
+<input id="tinput" type="text" autocomplete="off" autocorrect="off"
+       autocapitalize="off" spellcheck="false" enterkeyhint="done" tabindex="-1">
+<div id="rotate" class="hidden">Turn your device sideways for a bigger picture</div>
 
 <div id="overlay">
   <div id="panel">
@@ -80,10 +171,16 @@
       VGAHEAD, VGADICT, VGAGRAPH, AUDIOHED, AUDIOT) or drop them or their
       folder on this page. They are kept in this browser (IndexedDB) and never
       leave it; nothing is uploaded.</small></p>
-    <p><small>Arrows move, Ctrl fires, Space opens doors, Alt strafes,
-      Shift runs, Esc is the menu (save and load are there). Click the game
-      to use the mouse (Esc lets go). Alt+Enter: fullscreen. Saves and
-      settings stay in this browser.</small></p>
+    <p class="keyhelp"><small>Arrows move, Ctrl fires, Space opens doors,
+      Alt strafes, Shift runs, 1&ndash;4 pick a weapon, Esc is the menu (save
+      and load are there). Click the game to use the mouse (Esc lets go).
+      Alt+Enter: fullscreen. Saves and settings stay in this browser.</small></p>
+    <p class="touchhelp"><small>Touch controls: drag on the left half to
+      move and turn, FIRE, USE (doors), RUN and STRAFE on the right, MENU at
+      the top. In menus tap the picture for Enter and swipe to move. Saves
+      and settings stay in this browser. Add <code>?touch=0</code> to the
+      address to turn the touch controls off, <code>?touch=1</code> to force
+      them on.</small></p>
     <p><small>Wolfenstein 3-D &copy; 1992 id Software. Shareware episode 1
       is bundled. Port on <a href="https://www.raylib.com/">raylib</a> with
       the <a href="https://github.com/nukeykt/Nuked-OPL3">Nuked OPL3</a>
@@ -168,6 +265,8 @@
 
   function showOverlay(text, error) {
     running = false;
+    document.body.classList.remove('playing');
+    touchStop();
     hint.classList.add('hidden');
     $('toolbar').classList.add('hidden');
     $('help').classList.add('hidden');
@@ -446,10 +545,19 @@
   });
 
   function fullscreen() {
-    if (document.fullscreenElement)
-      document.exitFullscreen();
-    else
-      document.documentElement.requestFullscreen().catch(function () {});
+    var el = document.documentElement;
+    var req = el.requestFullscreen || el.webkitRequestFullscreen;
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      return;
+    }
+    if (!req)
+      return;                    // iPhone Safari: no fullscreen for pages
+    Promise.resolve(req.call(el)).then(function () {
+      // Phones: landscape, where the browser allows it (fullscreen only)
+      if (touchOn && screen.orientation && screen.orientation.lock)
+        screen.orientation.lock('landscape').catch(function () {});
+    }).catch(function () {});
   }
 
   $('load').onclick = pick;
@@ -498,6 +606,8 @@
       return;
     running = true;
     overlay.classList.add('hidden');
+    document.body.classList.add('playing');
+    touchStart();
     $('toolbar').classList.remove('hidden');
     canvas.focus();
     Module.callMain(gameArgs());
@@ -608,20 +718,333 @@
   canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
   setInterval(function () {
     var locked = document.pointerLockElement === canvas;
-    hint.classList.toggle('hidden', !(running && Module.wolfWantsPointer && !locked));
+    hint.classList.toggle('hidden', !(running && Module.wolfWantsPointer && !locked &&
+                                      (!touchOn || finePointer)));
     $('toolbar').classList.toggle('hidden', !running || locked);
   }, 250);
 
+  // Leaving pointer lock pauses the game, unless the game let go itself or
+  // the Esc that did it reached the game (its menu pauses it already).
+  var lastEsc = 0;
+  document.addEventListener('pointerlockchange', function () {
+    if (document.pointerLockElement !== canvas && running && Module.wolfPlaying &&
+        Module.wolfWantsPointer && performance.now() - lastEsc > 500)
+      tapKey(T_PAUSE);
+  });
+  // So does hiding the tab during play.
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden' && running && Module.wolfPlaying)
+      tapKey(T_PAUSE);
+  });
+
+  // ---- touch controls (WOLF-47) ---------------------------------------------
+
+  // On for devices whose main pointer is a finger; ?touch=1 / ?touch=0
+  // force them on or off.  Keyboard and mouse work either way.
+  var touchArg = query.get('touch');
+  var touchOn = touchArg === '1' ? true : touchArg === '0' ? false
+    : window.matchMedia('(pointer: coarse)').matches;
+  var finePointer = window.matchMedia('(any-pointer: fine)').matches;
+  document.querySelectorAll('.keyhelp').forEach(function (el) {
+    el.classList.toggle('hidden', touchOn);
+  });
+  document.querySelectorAll('.touchhelp').forEach(function (el) {
+    el.classList.toggle('hidden', !touchOn);
+  });
+
+  // Bits of RL_WebTouch (port/id_raylib.c, port/id_raylib.h)
+  var T_RUN = 0x04, T_ESC = 0x100, T_ENTER = 0x200, T_UP = 0x1000, T_DOWN = 0x2000,
+      T_LEFT = 0x4000, T_RIGHT = 0x8000, T_PAUSE = 0x10000;
+  var tbits = 0;             // buttons held
+  var runOn = false;
+  var stickX = 0, stickY = 0;
+  var turnLeft = 0;          // turn drag not yet sent, in counts
+  var fingers = {};          // touch identifier -> what it does
+  var touchEl = $('touch'), stickEl = $('stick'), knob = $('knob'), tinput = $('tinput');
+
+  function sendTouch() {
+    if (!Module._RL_WebTouch)
+      return;
+    var turn = Math.trunc(turnLeft);
+    turnLeft -= turn;
+    Module._RL_WebTouch(tbits | (runOn ? T_RUN : 0), stickX, stickY, turn);
+  }
+
+  // A key tap: down now, up a moment later (the game polls at 70 Hz).
+  function tapKey(bit) {
+    tbits |= bit;
+    sendTouch();
+    setTimeout(function () { tbits &= ~bit; sendTouch(); }, 90);
+  }
+
+  function setMode(playing) {
+    touchEl.classList.toggle('play', !!playing);
+    touchEl.classList.toggle('menu', !playing);
+    if (!playing)
+      resetStick();
+  }
+  Module.wolfOnPlaying = setMode;
+
+  function updateRotate() {
+    $('rotate').classList.toggle('hidden', !(running && touchOn &&
+                                             innerHeight > innerWidth * 1.1));
+  }
+  window.addEventListener('resize', updateRotate);
+
+  function touchStart() {
+    Module.wolfTouchOn = touchOn;
+    if (!touchOn)
+      return;
+    touchEl.classList.remove('hidden');
+    $('tbfull').classList.add('hidden');
+    setMode(Module.wolfPlaying);
+    updateRotate();
+  }
+
+  function touchStop() {
+    touchEl.classList.add('hidden');
+    $('rotate').classList.add('hidden');
+    fingers = {};
+    tbits = 0;
+    resetStick();
+  }
+
+  function stickRadius() {
+    return stickEl.offsetWidth / 2 || 60;
+  }
+
+  function resetStick() {
+    stickX = stickY = 0;
+    stickEl.style.left = stickEl.style.top = '';
+    knob.style.transform = '';
+  }
+
+  function moveStick(f, x, y) {
+    var r = stickRadius(), dx = x - f.x0, dy = y - f.y0;
+    var d = Math.sqrt(dx * dx + dy * dy);
+    if (d > r) {
+      dx *= r / d;
+      dy *= r / d;
+      d = r;
+    }
+    knob.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+    // 12% dead zone, then linear to full speed at the rim
+    var k = d < r * 0.12 ? 0 : (d - r * 0.12) / (r * 0.88) / d;
+    stickX = Math.round(dx * k * 1000) || 0;
+    stickY = Math.round(dy * k * 1000) || 0;
+  }
+
+  function buttonOf(el) {
+    while (el && el !== touchEl && el !== document.body) {
+      if (el.tagName === 'BUTTON' && touchEl.contains(el))
+        return el;
+      el = el.parentNode;
+    }
+    return null;
+  }
+
+  function onTouchStart(e) {
+    if (!touchOn || !running)
+      return;
+    var t0 = e.changedTouches[0];
+    if (t0.target !== canvas && !touchEl.contains(t0.target))
+      return;                    // the toolbar, the help box: normal clicks
+    e.preventDefault();
+    e.stopPropagation();         // raylib's own touch handling stays out
+    $('help').classList.add('hidden');
+    if (document.activeElement === tinput)
+      tinput.blur();
+    for (var i = 0; i < e.changedTouches.length; i++) {
+      var t = e.changedTouches[i];
+      var b = buttonOf(t.target);
+      var f = { x0: t.clientX, y0: t.clientY, t0: performance.now(), x: t.clientX, y: t.clientY };
+      if (b) {
+        f.button = b;
+        b.classList.add('down');
+        if (b.dataset.act === 'run') {
+          runOn = !runOn;
+          b.classList.toggle('on', runOn);
+        } else if (b.dataset.bit) {
+          f.bit = +b.dataset.bit;
+          tbits |= f.bit;
+        }
+      } else if (!Module.wolfPlaying) {
+        f.kind = 'menu';
+      } else if (t.clientX < innerWidth * 0.45) {
+        f.kind = 'stick';
+        stickEl.style.left = t.clientX + 'px';
+        stickEl.style.top = t.clientY + 'px';
+      } else {
+        f.kind = 'turn';
+      }
+      fingers[t.identifier] = f;
+    }
+    sendTouch();
+  }
+
+  function onTouchMove(e) {
+    if (!touchOn || !running)
+      return;
+    var used = false;
+    for (var i = 0; i < e.changedTouches.length; i++) {
+      var t = e.changedTouches[i], f = fingers[t.identifier];
+      if (!f)
+        continue;
+      used = true;
+      if (f.kind === 'stick') {
+        moveStick(f, t.clientX, t.clientY);
+      } else if (f.kind === 'turn') {
+        turnLeft += (t.clientX - f.x) * 2.5;     // like a mouse
+      } else if (f.kind === 'menu') {
+        // a swipe moves the menu cursor, one step per 40 px
+        var step = 40, dx = t.clientX - f.x0, dy = t.clientY - f.y0;
+        if (Math.abs(dy) >= step && Math.abs(dy) >= Math.abs(dx)) {
+          tapKey(dy > 0 ? T_DOWN : T_UP);
+          f.y0 += dy > 0 ? step : -step;
+          f.x0 = t.clientX;
+          f.moved = true;
+        } else if (Math.abs(dx) >= step) {
+          tapKey(dx > 0 ? T_RIGHT : T_LEFT);
+          f.x0 += dx > 0 ? step : -step;
+          f.y0 = t.clientY;
+          f.moved = true;
+        }
+      }
+      f.x = t.clientX;
+      f.y = t.clientY;
+    }
+    if (used) {
+      e.preventDefault();
+      e.stopPropagation();
+      sendTouch();
+    }
+  }
+
+  function onTouchEnd(e) {
+    if (!touchOn)
+      return;
+    var used = false;
+    for (var i = 0; i < e.changedTouches.length; i++) {
+      var t = e.changedTouches[i], f = fingers[t.identifier];
+      if (!f)
+        continue;
+      used = true;
+      delete fingers[t.identifier];
+      if (f.button) {
+        f.button.classList.remove('down');
+        if (f.bit)
+          tbits &= ~f.bit;
+        // These need the user gesture of the touchend.
+        if (e.type === 'touchend' && f.button.dataset.act === 'full')
+          fullscreen();
+        else if (e.type === 'touchend' && f.button.dataset.act === 'kbd')
+          tinput.focus();
+      } else if (f.kind === 'stick') {
+        resetStick();
+      } else if (f.kind === 'menu' && !f.moved && e.type === 'touchend' &&
+                 performance.now() - f.t0 < 600 &&
+                 Math.abs(t.clientX - f.x0) < 15 && Math.abs(t.clientY - f.y0) < 15) {
+        tapKey(T_ENTER);         // a tap on the picture is Enter
+      }
+    }
+    if (used) {
+      if (e.cancelable)
+        e.preventDefault();
+      e.stopPropagation();
+      sendTouch();
+    }
+  }
+
+  // Capture phase: before raylib's listeners on the canvas.
+  var activeOpts = { capture: true, passive: false };
+  document.addEventListener('touchstart', onTouchStart, activeOpts);
+  document.addEventListener('touchmove', onTouchMove, activeOpts);
+  document.addEventListener('touchend', onTouchEnd, activeOpts);
+  document.addEventListener('touchcancel', onTouchEnd, activeOpts);
+  // iOS pinch and double-tap zoom over the game
+  document.addEventListener('gesturestart', function (e) {
+    if (running)
+      e.preventDefault();
+  });
+  document.addEventListener('dblclick', function (e) {
+    if (running)
+      e.preventDefault();
+  });
+
+  // The phone's keyboard, for save game names: letters, digits and a few
+  // signs as PC scan codes.
+  var SCANS = { '1': 2, '2': 3, '3': 4, '4': 5, '5': 6, '6': 7, '7': 8, '8': 9, '9': 10,
+    '0': 11, '-': 12, '=': 13, q: 16, w: 17, e: 18, r: 19, t: 20, y: 21, u: 22, i: 23,
+    o: 24, p: 25, a: 30, s: 31, d: 32, f: 33, g: 34, h: 35, j: 36, k: 37, l: 38,
+    z: 44, x: 45, c: 46, v: 47, b: 48, n: 49, m: 50, ',': 51, '.': 52, '/': 53,
+    ' ': 57, ';': 39, '\'': 40 };
+  // US_LineInput takes one character per poll, so keys go one at a time.
+  var typed = [], typing = null;
+  function typeKey(scan, shift) {
+    typed.push([scan, shift]);
+    if (!typing)
+      typeNext();
+  }
+  function typeNext() {
+    var k = typed.shift();
+    if (!k) {
+      typing = null;
+      return;
+    }
+    if (Module._RL_WebTouchKey)
+      Module._RL_WebTouchKey(k[0], k[1]);
+    typing = setTimeout(typeNext, 60);
+  }
+  function typeText(text) {
+    for (var i = 0; i < text.length; i++) {
+      var c = text[i], lower = c.toLowerCase();
+      if (SCANS[lower])
+        typeKey(SCANS[lower], c !== lower ? 1 : 0);
+    }
+  }
+  tinput.addEventListener('keydown', function (e) {
+    e.stopPropagation();         // not to raylib as well
+    if (e.key === 'Enter' || e.keyCode === 13) {
+      e.preventDefault();
+      typeKey(0x1c, 0);
+      tinput.blur();
+    } else if (e.key === 'Backspace' || e.keyCode === 8) {
+      e.preventDefault();
+      typeKey(0x0e, 0);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      typeKey(0x01, 0);
+      tinput.blur();
+    }
+  });
+  tinput.addEventListener('keyup', function (e) { e.stopPropagation(); });
+  tinput.addEventListener('beforeinput', function (e) {
+    if (e.inputType === 'deleteContentBackward')
+      typeKey(0x0e, 0);
+    else if (e.inputType === 'insertLineBreak' || e.inputType === 'insertParagraph') {
+      typeKey(0x1c, 0);
+      tinput.blur();
+    } else if (e.data)
+      typeText(e.data);
+    e.preventDefault();
+  });
+  tinput.addEventListener('input', function () {
+    // browsers that ignore preventDefault on beforeinput
+    tinput.value = '';
+  });
+
   // Keep the browser's own shortcuts (F1 help, F3 find, F5 reload, Tab,
-  // Space and arrow scrolling, Backspace, Alt menus...) away from the game's
-  // keys.  F11 and F12 stay with the browser.
+  // Space and arrow scrolling, Backspace, Alt menus, Firefox's ' and /
+  // quick find...) away from the game: every key but F11 (fullscreen),
+  // F12 (developer tools) and Command shortcuts.
   function gameKey(e) {
-    return /^(F([1-9]|10)|Tab|Backspace|Escape|Enter|Arrow\w+|PageUp|PageDown|Home|End|Insert|Delete| )$/.test(e.key)
-      || e.key === 'Alt' || e.key === 'Control' || e.ctrlKey || e.altKey;
+    return !/^F1[12]$/.test(e.key) && !e.metaKey;
   }
   window.addEventListener('keydown', function (e) {
     if (!running)
       return;
+    if (e.key === 'Escape')
+      lastEsc = performance.now();
     if (e.key === 'Enter' && e.altKey) {
       fullscreen();
       e.preventDefault();

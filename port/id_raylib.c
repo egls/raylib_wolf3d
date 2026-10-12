@@ -248,6 +248,125 @@ static void PollKeyboard (void)
 	SyncKeys();
 }
 
+#ifdef __EMSCRIPTEN__
+/* ------------------------------------------------------------------------
+ * Touch controls (WOLF-47), drawn and tracked by the page (web/shell.html)
+ * ------------------------------------------------------------------------ */
+
+/*
+ * Bits of RL_WebTouch above the play buttons of id_raylib.h: keys, posted
+ * as scan code events when they go down and up.  Pause is the PC Pause
+ * key: its 0xE1 prefix (`ext` 2) sets Paused, and the NumLock code that
+ * follows it is the key that IN_Ack sees.  The page uses the same values.
+ */
+static const struct { int bit, scan, ext; } touchkeys[] =
+{
+	{0x00100,0x01},			/* Esc */
+	{0x00200,0x1c},			/* Enter */
+	{0x00400,0x15},			/* Y */
+	{0x00800,0x31},			/* N */
+	{0x01000,0x48,1},		/* up */
+	{0x02000,0x50,1},		/* down */
+	{0x04000,0x4b,1},		/* left */
+	{0x08000,0x4d,1},		/* right */
+	{0x10000,0x45,2},		/* Pause */
+};
+#define NUMTOUCHKEYS ((int)(sizeof(touchkeys) / sizeof(touchkeys[0])))
+
+/* The game stops reading the play controls for this long: a menu is up. */
+#define TOUCH_IDLE_MS	250.0
+
+static int		touch_bits;			/* held now */
+static int		touch_pressed;		/* went down since the last RL_TouchControls */
+static int		touch_movex, touch_movey, touch_turn;
+static int		touch_playing;
+static double	touch_lastread;
+
+/* Tells the page which layout to show: play controls or menu controls. */
+EM_JS(void, WebTouchPlaying, (int on), {
+	Module.wolfPlaying = on;
+	if (Module.wolfOnPlaying)
+		Module.wolfOnPlaying(on);
+});
+
+static int TouchClamp (int v)
+{
+	return v < -1000 ? -1000 : v > 1000 ? 1000 : v;
+}
+
+/*
+ * The page calls this whenever a touch control changes: `bits` is
+ * everything held, `movex`/`movey` the stick, `turn` the drag since the
+ * last call.  Keys post their events at once, so a tap shorter than a frame
+ * is still a press and a release.
+ */
+EMSCRIPTEN_KEEPALIVE void RL_WebTouch (int bits, int movex, int movey, int turn)
+{
+	int i, changed = bits ^ touch_bits;
+
+	for (i = 0; i < NUMTOUCHKEYS; i++)
+		if (changed & touchkeys[i].bit)
+			PushKey(touchkeys[i].scan, touchkeys[i].ext, (bits & touchkeys[i].bit) != 0);
+	touch_pressed |= bits & ~touch_bits;
+	touch_bits = bits;
+	touch_movex = TouchClamp(movex);
+	touch_movey = TouchClamp(movey);
+	touch_turn += turn;
+}
+
+/* A key typed on the phone's keyboard (save game names): press and release. */
+EMSCRIPTEN_KEEPALIVE void RL_WebTouchKey (int scan, int shift)
+{
+	if (scan <= 0 || scan > 0x7f)
+		return;
+	if (shift)
+		PushKey(0x2a, 0, 1);
+	PushKey(scan, 0, 1);
+	PushKey(scan, 0, 0);
+	if (shift)
+		PushKey(0x2a, 0, 0);
+}
+
+int RL_TouchControls (int *movex, int *movey, int *turn)
+{
+	int bits;
+
+	touch_lastread = emscripten_get_now();
+	if (!touch_playing)
+	{
+		touch_playing = 1;
+		touch_turn = 0;			/* drags over a menu are not turns */
+		WebTouchPlaying(1);
+	}
+	/* weapon next/previous step once per press */
+	bits = ((touch_bits & ~(RL_TOUCH_NEXTWEAPON | RL_TOUCH_PREVWEAPON)) | touch_pressed) & 0xff;
+	touch_pressed = 0;
+	*movex = touch_movex;
+	*movey = touch_movey;
+	*turn = touch_turn;
+	touch_turn = 0;
+	return bits;
+}
+
+EM_JS(int, WebTouchOn, (void), {
+	return Module.wolfTouchOn ? 1 : 0;
+});
+
+int RL_TouchActive (void)
+{
+	return WebTouchOn();
+}
+
+static void TouchCheckIdle (void)
+{
+	if (touch_playing && emscripten_get_now() - touch_lastread > TOUCH_IDLE_MS)
+	{
+		touch_playing = 0;
+		WebTouchPlaying(0);
+	}
+}
+#endif
+
 /* ------------------------------------------------------------------------
  * Mouse and gamepad
  * ------------------------------------------------------------------------ */
@@ -368,6 +487,9 @@ void RL_PumpEvents (void)
 #endif
 	PollKeyboard();
 	PollMouse();
+#ifdef __EMSCRIPTEN__
+	TouchCheckIdle();
+#endif
 	if (WindowShouldClose())
 		quit_requested = 1;
 }
@@ -506,6 +628,9 @@ void RL_Present (const unsigned char *rgba)
 
 	SyncKeys();
 	PollMouse();
+#ifdef __EMSCRIPTEN__
+	TouchCheckIdle();
+#endif
 	if (WindowShouldClose())
 		quit_requested = 1;
 }

@@ -930,7 +930,7 @@ void IN_PumpEvents (void)
 
 	for (i=0;i<numdeferred;i++)
 	{
-		if (deferred[i].ext)
+		if (deferred[i].ext == 1)
 			INL_KeyService(0xe0);
 		INL_KeyService(deferred[i].scan | 0x80);
 	}
@@ -958,8 +958,10 @@ void IN_PumpEvents (void)
 			made[nummade][1] = ext;
 			nummade++;
 		}
-		if (ext)
+		if (ext == 1)
 			INL_KeyService(0xe0);
+		else if (ext == 2 && down)		// WOLF-47: the Pause key (web touch controls)
+			INL_KeyService(0xe1);
 		INL_KeyService(down? scan : scan | 0x80);
 	}
 	if (RL_QuitRequested())
