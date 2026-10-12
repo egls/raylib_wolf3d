@@ -266,7 +266,10 @@ if(APPLE AND WOLF3D_MACOS_BUNDLE)
   # only, no Developer ID or notarization.
   find_program(WOLF3D_CODESIGN codesign)
   if(WOLF3D_CODESIGN)
-    add_custom_command(TARGET raylib_wolf3d POST_BUILD
+    # Always run after bundle generation, including Info.plist-only changes
+    # that do not cause the executable to relink.
+    add_custom_target(wolf3d_sign_bundle ALL
+      DEPENDS raylib_wolf3d
       COMMAND ${WOLF3D_CODESIGN} --force --sign - $<TARGET_FILE_DIR:raylib_wolf3d>/../..
       COMMENT "Ad-hoc signing raylib_wolf3d.app"
       VERBATIM)
@@ -275,6 +278,11 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+  if(APPLE)
+    add_test(NAME macos_packaging COMMAND Python3::Interpreter
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/macos_packaging_test.py)
+    set_tests_properties(macos_packaging PROPERTIES TIMEOUT 60)
+  endif()
   add_test(NAME registered_stub_guard COMMAND Python3::Interpreter -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/registered_stub_guard.py
     ${CMAKE_C_COMPILER} ${CMAKE_CURRENT_SOURCE_DIR})

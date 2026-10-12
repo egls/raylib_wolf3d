@@ -173,9 +173,14 @@ Prerequisites: the Xcode Command Line Tools (``xcode-select --install``) and
 ninja``; Python 3 comes with the Command Line Tools).  raylib is fetched by
 CMake unless Homebrew's raylib 5.5 is installed.
 
+The commands below fetch static raylib for a portable package. Packaging rejects
+non-system runtime libraries, including shared Homebrew raylib and ``@rpath``
+dependencies; these libraries are not included in the zip.
+
 Build, test and get the data::
 
-    cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+    cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+        -DWOLF3D_USE_SYSTEM_RAYLIB=OFF -DBUILD_SHARED_LIBS=OFF
     cmake --build build
     ctest --test-dir build --output-on-failure
     scripts/fetch_shareware.sh              # -> ~/wolf3d-data/shareware

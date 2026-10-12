@@ -39,6 +39,24 @@ cd "$repo"
 app="$build/raylib_wolf3d.app"
 [ -x "$app/Contents/MacOS/raylib_wolf3d" ] || { echo "no app at $app; build first" >&2; exit 1; }
 
+# A distributable app may depend only on macOS-provided libraries. Shared
+# raylib, Homebrew libraries and @rpath dependencies are not shipped here.
+# Inspect load commands (rather than otool -L, whose names can contain spaces).
+dependencies="$(otool -l "$app/Contents/MacOS/raylib_wolf3d" | awk '
+  $1 == "cmd" { dylib = ($2 ~ /^LC_.*DYLIB$/ && $2 != "LC_ID_DYLIB") }
+  dylib && $1 == "name" {
+    sub(/^[[:space:]]*name /, ""); sub(/ \(offset [0-9]+\)$/, ""); print
+  }
+')"
+while IFS= read -r dependency; do
+  [ -n "$dependency" ] || continue
+  case "$dependency" in
+    /System/Library/*|/usr/lib/*) ;;
+    *) echo "external runtime dependency: $dependency; rebuild with -DWOLF3D_USE_SYSTEM_RAYLIB=OFF -DBUILD_SHARED_LIBS=OFF" >&2
+       exit 1 ;;
+  esac
+done <<< "$dependencies"
+
 arch="$(uname -m)"
 commit="$(git rev-parse HEAD 2>/dev/null || echo unknown)"
 min_os="$(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$app/Contents/Info.plist")"
@@ -85,7 +103,7 @@ Commit: $commit
 Rebuild (macOS, Xcode Command Line Tools + Homebrew cmake/ninja):
   git clone https://github.com/raydelto/raylib_wolf3d
   cd raylib_wolf3d && git checkout $commit
-  cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo && cmake --build build
+  cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo -DWOLF3D_USE_SYSTEM_RAYLIB=OFF -DBUILD_SHARED_LIBS=OFF && cmake --build build
 EOT
 check_no_data "$root"
 
