@@ -54,8 +54,11 @@ else()
   set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
   set(BUILD_GAMES OFF CACHE BOOL "" FORCE)
   set(CUSTOMIZE_BUILD OFF CACHE BOOL "" FORCE)
+  # A local copy of the same tarball (file://...) may be used, e.g. by CI.
+  set(WOLF3D_RAYLIB_URL https://github.com/raysan5/raylib/archive/refs/tags/5.5.tar.gz
+    CACHE STRING "raylib 5.5 source tarball (checked by SHA-256)")
   FetchContent_Declare(raylib
-    URL https://github.com/raysan5/raylib/archive/refs/tags/5.5.tar.gz
+    URL ${WOLF3D_RAYLIB_URL}
     URL_HASH SHA256=aea98ecf5bc5c5e0b789a76de0083a21a70457050ea4cc2aec7566935f5e258e
     PATCH_COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/patch_raylib.cmake)
   FetchContent_MakeAvailable(raylib)
@@ -142,9 +145,12 @@ else()
   set(WOLF3D_WARNINGS -Wall ${WOLF3D_CHAR_FLAG})
   set(WOLF3D_TEST_WARNINGS -Wall -Wextra ${WOLF3D_CHAR_FLAG})
 endif()
-# Only the GNU ld family understands --gc-sections (not link.exe, not Apple ld).
+# Only the GNU ld family understands --gc-sections (not link.exe); Apple ld
+# has -dead_strip.
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang" AND NOT APPLE)
   set(WOLF3D_GC_LINK -Wl,--gc-sections)
+elseif(APPLE)
+  set(WOLF3D_GC_LINK -Wl,-dead_strip)
 endif()
 # libm is a separate library on Unix only (part of the CRT on Windows).
 if(WIN32)
@@ -290,9 +296,14 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/macos_packaging_test.py)
     set_tests_properties(macos_packaging PROPERTIES TIMEOUT 60)
   endif()
+  # AppleClang finds the SDK headers only through -isysroot.
+  set(WOLF3D_GUARD_CFLAGS)
+  if(APPLE AND CMAKE_OSX_SYSROOT)
+    set(WOLF3D_GUARD_CFLAGS -isysroot ${CMAKE_OSX_SYSROOT})
+  endif()
   add_test(NAME registered_stub_guard COMMAND Python3::Interpreter -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/registered_stub_guard.py
-    ${CMAKE_C_COMPILER} ${CMAKE_CURRENT_SOURCE_DIR})
+    ${CMAKE_C_COMPILER} ${CMAKE_CURRENT_SOURCE_DIR} ${WOLF3D_GUARD_CFLAGS})
   set_tests_properties(registered_stub_guard PROPERTIES TIMEOUT 30)
   add_executable(wolf_boss_key_test tests/boss_key_test.c WOLFSRC/WL_MENU.C)
   target_include_directories(wolf_boss_key_test PRIVATE port WOLFSRC)
@@ -358,6 +369,11 @@ if(BUILD_TESTING)
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/persist_check.py
     $<TARGET_FILE:raylib_wolf3d> ${WOLF3D_TEST_DATA} ${CMAKE_CURRENT_BINARY_DIR}/persist_check)
   set_tests_properties(persist_check PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED" TIMEOUT 600)
+
+  add_test(NAME silent_config COMMAND Python3::Interpreter -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/silent_config_check.py
+    $<TARGET_FILE:raylib_wolf3d> ${WOLF3D_TEST_DATA})
+  set_tests_properties(silent_config PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED" TIMEOUT 600)
 
   # No-data smoke test: missing data returns 2, empty placeholder files return 1 (VSWAP short read)
   add_test(NAME smoke_nodata COMMAND Python3::Interpreter -I

@@ -171,6 +171,11 @@ static boolean ReadConfigFile (SDMode *sd, SMMode *sm, SDSMode *sds)
 	return true;
 }
 
+/* Silent sessions keep loaded preferences, while runtime modes remain Off. */
+static SDMode configSoundMode = sdm_AdLib;
+static SMMode configMusicMode = smm_AdLib;
+static SDSMode configDigiMode = sds_SoundBlaster;
+
 void ReadConfig(void)
 {
 	SDMode          sd;
@@ -183,6 +188,10 @@ void ReadConfig(void)
 	//
 	// valid config file
 	//
+
+		configSoundMode = sd;
+		configMusicMode = sm;
+		configDigiMode = sds;
 
 		if (sd == sdm_AdLib && !AdLibPresent && !SoundBlasterPresent)
 		{
@@ -207,6 +216,9 @@ void ReadConfig(void)
 	//
 	// no config file, so select by hardware
 	//
+		configSoundMode = sdm_AdLib;
+		configMusicMode = smm_AdLib;
+		configDigiMode = sds_SoundBlaster;
 		if (SoundBlasterPresent || AdLibPresent)
 		{
 			sd = sdm_AdLib;
@@ -235,6 +247,13 @@ void ReadConfig(void)
 
 		viewsize = 15;
 		mouseadjustment=5;
+	}
+
+	if (SD_IsSilent())
+	{
+		sd = configSoundMode;
+		sm = configMusicMode;
+		sds = configDigiMode;
 	}
 
 	SD_SetMusicMode (sm);
@@ -269,9 +288,9 @@ void WriteConfig(void)
 		WS_W16 (&s,Scores[i].episode);
 	}
 
-	WS_W16 (&s,SoundMode);
-	WS_W16 (&s,MusicMode);
-	WS_W16 (&s,DigiMode);
+	WS_W16 (&s,SD_IsSilent() ? configSoundMode : SoundMode);
+	WS_W16 (&s,SD_IsSilent() ? configMusicMode : MusicMode);
+	WS_W16 (&s,SD_IsSilent() ? configDigiMode : DigiMode);
 
 	WS_W8 (&s,mouseenabled);
 	WS_W8 (&s,joystickenabled);

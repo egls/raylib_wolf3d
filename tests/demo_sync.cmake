@@ -1,9 +1,10 @@
 # demo_sync.cmake - CTest driver for "raylib_wolf3d -demotest all" (WOLF-7).
 #
-# Plays the four shareware demos at full speed under Xvfb and compares the
-# final state of each with the values recorded below.  The id demos were
-# recorded until the player died, so a demo in sync plays every one of its
-# input frames ("left=0") and ends with "end=died".
+# Plays the four shareware demos at full speed under Xvfb (in a real window
+# on macOS) and compares the final state of each with the values recorded
+# below.  The id demos were recorded until the player died, so a demo in
+# sync plays every one of its input frames ("left=0") and ends with
+# "end=died".
 #
 # The demos only stay in sync at view size 19 (full width): GunAttack picks
 # targets within viewwidth/10 pixels of the centre, and at the default size
@@ -11,7 +12,8 @@
 #
 #   cmake -DGAME=<exe> -DDATA=<WL1 dir> -DWORK=<scratch dir> -P demo_sync.cmake
 #
-# Prints SKIPPED (see SKIP_REGULAR_EXPRESSION) without data or xvfb-run.
+# Prints SKIPPED (see SKIP_REGULAR_EXPRESSION) without data or (except on
+# macOS) xvfb-run.
 
 set(expected
   "demotest 0: map=0 frames=1152 left=0 tics=4608 end=died hash=f1e6cd20"
@@ -23,19 +25,29 @@ if(NOT EXISTS "${DATA}/VSWAP.WL1")
   message("SKIPPED: no shareware data in ${DATA}")
   return()
 endif()
-find_program(XVFB_RUN xvfb-run)
-if(NOT XVFB_RUN)
-  message("SKIPPED: xvfb-run not found")
-  return()
+# macOS opens a real Cocoa window in the login session; no Xvfb there.
+if(CMAKE_HOST_APPLE)
+  set(XVFB_CMD)
+else()
+  find_program(XVFB_RUN xvfb-run)
+  if(NOT XVFB_RUN)
+    message("SKIPPED: xvfb-run not found")
+    return()
+  endif()
+  set(XVFB_CMD ${XVFB_RUN} -a -s "-screen 0 640x480x24")
 endif()
 
 # a scratch config dir, so the user's CONFIG.WL1 can't change the result
 file(MAKE_DIRECTORY "${WORK}")
 set(ENV{XDG_CONFIG_HOME} "${WORK}")
+if(CMAKE_HOST_APPLE)
+  # macOS keeps CONFIG.WL1 in $HOME/Library/Application Support (WOLF-63).
+  set(ENV{HOME} "${WORK}")
+endif()
 set(ENV{ALSA_CONFIG_PATH} "")
 
 execute_process(
-  COMMAND ${XVFB_RUN} -a -s "-screen 0 640x480x24"
+  COMMAND ${XVFB_CMD}
           ${GAME} -data ${DATA} -demotest all -viewsize 19
   OUTPUT_VARIABLE out ERROR_VARIABLE err RESULT_VARIABLE rc
   TIMEOUT 240)

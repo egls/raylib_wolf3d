@@ -30,6 +30,16 @@ with tempfile.TemporaryDirectory(prefix="wolf_smoke_fake_") as tmp:
     for name in ("AUDIOHED", "AUDIOT", "GAMEMAPS", "MAPHEAD", "VGADICT", "VGAGRAPH", "VGAHEAD", "VSWAP"):
         (fake_dir / f"{name}.WL1").touch()
 
+    # The headless structural check (no window or GL context) must reject the
+    # placeholder files with exit code 1 on every runner.
+    result = subprocess.run([game, "-data", str(fake_dir), "-datacheck"],
+                            capture_output=True, text=True)
+    combined = (result.stdout or "") + (result.stderr or "")
+    assert result.returncode == 1 and "truncated" in combined, (
+        f"-datacheck on placeholder files: expected exit code 1 and a truncated-data "
+        f"error, got {result.returncode}.\nOutput:\n{combined}"
+    )
+
     cmd = [game, "-data", str(fake_dir)]
     if sys.platform != "win32" and not os.environ.get("DISPLAY") and shutil.which("xvfb-run"):
         cmd = ["xvfb-run", "-a", "-s", "-screen 0 1024x768x24"] + cmd
@@ -37,13 +47,17 @@ with tempfile.TemporaryDirectory(prefix="wolf_smoke_fake_") as tmp:
     result = subprocess.run(cmd, capture_output=True, text=True)
     combined = (result.stdout or "") + (result.stderr or "")
     # GL-less Windows runners (e.g. github windows-latest) have no OpenGL driver,
-    # so raylib's InitWindow fails and the game dies before the VSWAP loader can
-    # reject the placeholders.  The placeholder check needs a display; skip it
-    # there.  Test 1 above (missing data, exit 2) still runs everywhere.
+    # so raylib's InitWindow fails before the VSWAP loader can reject the
+    # placeholders: the patched raylib reports it (exit 2), an unpatched system
+    # raylib crashes (0xC0000005).  The windowed check needs OpenGL; skip it
+    # there.  Test 1 and -datacheck above still run everywhere.
     if (
         sys.platform == "win32"
-        and result.returncode == 3221225477  # 0xC0000005 access violation
         and "does not appear to support OpenGL" in combined
+        and (
+            (result.returncode == 2 and "could not open a window" in combined)
+            or result.returncode == 3221225477  # 0xC0000005 access violation
+        )
     ):
         print("SKIPPED: placeholder smoke needs OpenGL; runner has no GL driver (GLFW WGL error)")
         sys.exit(0)
@@ -55,4 +69,5 @@ with tempfile.TemporaryDirectory(prefix="wolf_smoke_fake_") as tmp:
         f"Expected 'VSWAP: short read' in stderr/stdout, got:\n{combined}"
     )
 
-print("PASS: smoke tests (missing data exit 2, placeholder data exit 1 with 'VSWAP: short read')")
+print("PASS: smoke tests (missing data exit 2, placeholder data exit 1 with 'VSWAP: short read', "
+      "-datacheck exit 1)")
