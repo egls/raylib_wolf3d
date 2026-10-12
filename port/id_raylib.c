@@ -10,6 +10,10 @@
 #include "raylib.h"
 
 #include "id_raylib.h"
+#ifdef _WIN32
+#include <stdio.h>
+#include "wl_glprobe.h"
+#endif
 
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
@@ -370,6 +374,15 @@ int RL_OpenWindow (int width, int height, const char *title)
 	if (window_open)
 		return 1;
 
+#ifdef _WIN32
+	/* raylib 5.5 crashes in InitWindow() when there is no OpenGL driver. */
+	if (!WL_GLAvailable())
+	{
+		fprintf(stderr, "raylib_wolf3d: no OpenGL 3.3 driver available, "
+			"cannot open a window\n");
+		return 0;
+	}
+#endif
 	SetTraceLogLevel(LOG_WARNING);
 	SetConfigFlags(FLAG_WINDOW_RESIZABLE);
 	InitWindow(width, height, title);

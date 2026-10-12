@@ -189,9 +189,12 @@ endif()
 # Quarantine: id_raylib.c is the only translation unit that sees raylib.h.
 # raylib is a PRIVATE dependency of this library, so its include directories
 # never reach the game sources.
-add_library(wolf3d_raylib STATIC port/id_raylib.c)
+add_library(wolf3d_raylib STATIC port/id_raylib.c ${WOLF3D_GL_PROBE_SOURCES})
 target_include_directories(wolf3d_raylib PUBLIC port)
 target_link_libraries(wolf3d_raylib PRIVATE raylib)
+if(WOLF3D_GL_PROBE_LIBS)
+  target_link_libraries(wolf3d_raylib PUBLIC ${WOLF3D_GL_PROBE_LIBS})
+endif()
 
 # The original sources use upper-case .C, which GCC/Clang treat as C++.
 set_source_files_properties(${WOLF3D_GAME_SOURCES} PROPERTIES LANGUAGE C)
@@ -213,8 +216,8 @@ add_custom_command(
 
 # Separate executables preserve the original UPLOAD/GOODTIMES code paths.
 # Keep the established WL1 target/name for scripts and demo_sync.
-add_executable(raylib_wolf3d ${WOLF3D_GAME_SOURCES} ${WOLF3D_PORT_SOURCES} ${WOLF3D_GL_PROBE_SOURCES} ${WOLF3D_OBJDATA} ${WOLF3D_STATES})
-add_executable(wolf3d-wl6 ${WOLF3D_GAME_SOURCES} ${WOLF3D_PORT_SOURCES} ${WOLF3D_GL_PROBE_SOURCES} ${WOLF3D_OBJDATA} ${WOLF3D_STATES})
+add_executable(raylib_wolf3d ${WOLF3D_GAME_SOURCES} ${WOLF3D_PORT_SOURCES} ${WOLF3D_OBJDATA} ${WOLF3D_STATES})
+add_executable(wolf3d-wl6 ${WOLF3D_GAME_SOURCES} ${WOLF3D_PORT_SOURCES} ${WOLF3D_OBJDATA} ${WOLF3D_STATES})
 target_compile_definitions(wolf3d-wl6 PRIVATE WOLF3D_REGISTERED)
 if(NOT WOLF3D_WITH_AUDIO)
   message(FATAL_ERROR "The game requires the audio engine; use -nosound at runtime")
@@ -229,7 +232,7 @@ else()
 endif()
 foreach(game raylib_wolf3d wolf3d-wl6)
   target_include_directories(${game} PRIVATE port WOLFSRC)
-  target_link_libraries(${game} PRIVATE wolf3d_raylib wolf_audio ${WOLF3D_LIBM} ${WOLF3D_GL_PROBE_LIBS})
+  target_link_libraries(${game} PRIVATE wolf3d_raylib wolf_audio ${WOLF3D_LIBM})
   if(EMSCRIPTEN)
     wolf3d_configure_web(${game})
   else()
@@ -283,9 +286,9 @@ if(BUILD_TESTING)
   set_tests_properties(synthetic_wl6 PROPERTIES TIMEOUT 60)
   # Headless timer/startup/path coverage, including the native Windows timer.
   add_executable(wolf_platform_test tests/platform_test.c
-    port/wl_timer.c port/wl_platform.c port/wl_persist.c ${WOLF3D_GL_PROBE_SOURCES})
+    port/wl_timer.c port/wl_platform.c port/wl_persist.c)
   target_include_directories(wolf_platform_test PRIVATE port WOLFSRC)
-  target_link_libraries(wolf_platform_test PRIVATE Threads::Threads ${WOLF3D_GL_PROBE_LIBS})
+  target_link_libraries(wolf_platform_test PRIVATE Threads::Threads)
   add_test(NAME core_platform COMMAND Python3::Interpreter -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/platform_check.py $<TARGET_FILE:wolf_platform_test>)
   set_tests_properties(core_platform PROPERTIES TIMEOUT 30)
@@ -348,10 +351,10 @@ if(BUILD_TESTING)
   # ---------------------------------------------------------------------------
   # Tests (ctest): the raylib keyboard translation against a fake raylib, no display needed.
   # ---------------------------------------------------------------------------
-  add_executable(rl_keys_test tests/rl_keys_test.c port/id_raylib.c)
+  add_executable(rl_keys_test tests/rl_keys_test.c port/id_raylib.c ${WOLF3D_GL_PROBE_SOURCES})
   target_include_directories(rl_keys_test PRIVATE port
     $<TARGET_PROPERTY:raylib,INTERFACE_INCLUDE_DIRECTORIES>)
-  target_link_libraries(rl_keys_test PRIVATE ${WOLF3D_LIBM})
+  target_link_libraries(rl_keys_test PRIVATE ${WOLF3D_LIBM} ${WOLF3D_GL_PROBE_LIBS})
   if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(rl_keys_test PRIVATE -Wall)
   elseif(MSVC)
@@ -385,11 +388,11 @@ if(BUILD_TESTING AND NOT MSVC)
   set_tests_properties(sound_manager PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 30)
 endif()
 if(BUILD_TESTING)
-  add_executable(wolf_audio_ring_test tests/audio_ring_test.c port/id_raylib.c)
+  add_executable(wolf_audio_ring_test tests/audio_ring_test.c port/id_raylib.c ${WOLF3D_GL_PROBE_SOURCES})
   target_include_directories(wolf_audio_ring_test PRIVATE port
     $<TARGET_PROPERTY:raylib,INTERFACE_INCLUDE_DIRECTORIES>)
   target_compile_definitions(wolf_audio_ring_test PRIVATE WOLF3D_AUDIO_BACKEND RL_EXTERNAL_CLOCK)
   target_compile_options(wolf_audio_ring_test PRIVATE ${WOLF3D_TEST_WARNINGS} ${WOLF3D_NODEBUG_OFF})
-  target_link_libraries(wolf_audio_ring_test PRIVATE ${WOLF3D_LIBM})
+  target_link_libraries(wolf_audio_ring_test PRIVATE ${WOLF3D_LIBM} ${WOLF3D_GL_PROBE_LIBS})
   add_test(NAME audio_ring COMMAND wolf_audio_ring_test)
 endif()
