@@ -5,7 +5,7 @@
 #   scripts/deploy_web.sh [--ref REF] [--data DIR] [--host USER@HOST]
 #                         [--root DIR] [--name NAME] [--dry-run]
 #   scripts/deploy_web.sh --root-bypass [--dry-run] [--host USER@HOST] [--root DIR]
-#   scripts/deploy_web.sh --rollback [--host USER@HOST] [--root DIR]
+#   scripts/deploy_web.sh --rollback|--unlock [--host USER@HOST] [--root DIR]
 #
 # REF defaults to origin/master and is resolved to a commit SHA.  The build
 # runs in a temporary `git worktree` of that SHA, so local changes never
@@ -17,9 +17,12 @@
 #   1. take the lock NAME.deploy-lock (default NAME is wolf3d) and create a
 #      new NAME.staging-<sha12>-<UTC stamp>; rsync the release into it;
 #   2. swap staging and NAME in one renameat2(RENAME_EXCHANGE) call, so NAME
-#      is never missing and a failed swap changes nothing; the previous
-#      release becomes NAME.prev (the older NAME.prev is deleted).
-# A failed upload removes the staging directory and the lock again.
+#      is never missing.  The release that was live becomes NAME.prev; the
+#      older NAME.prev is moved aside first and deleted at the end.  If any
+#      step fails, the server switches back to the state before the deploy.
+# A failed upload removes the staging directory and the lock again.  A
+# failed cutover switches back and keeps the lock; --unlock then deletes
+# the unused staging directory (it refuses if the switch-back failed too).
 #
 # --rollback swaps NAME and NAME.prev atomically; run it again to go
 # forward.  Manual fallback (not atomic):
@@ -47,8 +50,9 @@ url=https://www.raydelto.org
 dry_run=0
 root_bypass=0
 rollback=0
+unlock_only=0
 
-usage() { sed -n '2,39p' "$0"; }
+usage() { sed -n '2,40p' "$0"; }
 while [ $# -gt 0 ]; do
   case "$1" in
     --ref) ref="$2"; shift ;;
@@ -59,6 +63,7 @@ while [ $# -gt 0 ]; do
     --dry-run) dry_run=1 ;;
     --root-bypass) root_bypass=1 ;;
     --rollback) rollback=1 ;;
+    --unlock) unlock_only=1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -79,6 +84,10 @@ remote() {
 
 if [ "$root_bypass" = 1 ]; then
   if [ "$dry_run" = 1 ]; then remote bypass --dry-run; else remote bypass; fi
+  exit 0
+fi
+if [ "$unlock_only" = 1 ]; then
+  remote unlock
   exit 0
 fi
 if [ "$rollback" = 1 ]; then
@@ -147,7 +156,10 @@ rsync -rlt --chmod=D755,F644 -e "ssh ${ssh_opts[*]}" \
 # The lock is released by a successful cutover; after a failed one the
 # server keeps it, so a stale state is never overwritten silently.
 locked=0
-remote cutover "$staging"
+if ! remote cutover "$staging"; then
+  echo "Cutover failed; see above.  Discard the upload with: $0 --unlock" >&2
+  exit 1
+fi
 
 echo "Live checks:"
 base="$url/$name"

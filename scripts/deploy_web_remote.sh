@@ -8,8 +8,11 @@
 #   cutover ROOT NAME STAGING
 #                            atomically swap STAGING and NAME (or rename
 #                            STAGING to NAME on the first deploy), keep the
-#                            old release as NAME.prev, release the lock
-#   unlock ROOT NAME         release the lock after a failed upload
+#                            release that was live as NAME.prev, release the
+#                            lock; any failure switches back and keeps it
+#   unlock ROOT NAME         after a failed upload or cutover: delete the
+#                            unused STAGING and release the lock (refused
+#                            while STAGING may hold a published release)
 #   rollback ROOT NAME       atomically swap NAME and NAME.prev (run it
 #                            again to go forward)
 #   bypass ROOT NAME [--dry-run]
@@ -17,8 +20,12 @@
 #                            after a backup; --dry-run only prints the diff
 #
 # The swap is renameat2(RENAME_EXCHANGE) through python3: one system call,
-# so NAME is never missing and a failure leaves both directories as they
-# were.  The host (kernel 4.18, glibc 2.28, ext4) supports it; coreutils
+# so NAME is never missing.  A cutover first moves NAME.prev aside to
+# NAME.retired-<UTC>, swaps, then renames the old release to NAME.prev; if
+# a step fails it undoes the earlier ones with the same renames.  The lock
+# records the phase: "uploaded" (STAGING holds only the new upload, unlock
+# may delete it) or "needs-recovery" (undoing failed too; unlock refuses and
+# the state is fixed by hand).  The host (kernel 4.18, glibc 2.28, ext4) supports it; coreutils
 # 8.30 there has no `mv --exchange`.
 set -euo pipefail
 
@@ -58,6 +65,10 @@ check_staging() {
   esac
 }
 
+# The lock directory records how far a deploy got.
+phase() { cat "$lock/phase" 2>/dev/null || echo uploaded; }
+set_phase() { echo "$1" > "$lock/phase"; }
+
 case "$cmd" in
   lock)
     staging=$4
@@ -82,35 +93,69 @@ case "$cmd" in
     check_staging "$staging"
     [ -d "$lock" ] && grep -q "^$staging " "$lock/owner" || {
       echo "$lock is not held for $staging" >&2; exit 1; }
+    [ "$(phase)" = uploaded ] || {
+      echo "$lock is in phase $(phase); see $PWD/$lock" >&2; exit 1; }
     [ -d "$staging" ] && [ ! -L "$staging" ] && [ -f "$staging/index.html" ] \
       && [ -f "$staging/version.txt" ] || {
       echo "staging upload incomplete: $PWD/$staging" >&2; exit 1; }
     plain_dir_or_absent "$name"
     plain_dir_or_absent "$name.prev"
-    if [ -e "$name" ]; then
-      # The switch.  After it, $staging holds the previous release.
-      rename2 exchange "$staging" "$name"
-      echo "live: $(head -1 "$name/version.txt")"
-      # Housekeeping: the previous release becomes $name.prev, swapped in
-      # too, so $name.prev is never missing.  The new release is already
-      # live, so a failure here only warns.
-      if [ -e "$name.prev" ]; then
-        housekeeping() { rename2 exchange "$staging" "$name.prev" && rm -rf -- "$staging"; }
-      else
-        housekeeping() { rename2 noreplace "$staging" "$name.prev"; }
-      fi
-      if ! housekeeping; then
-        echo "warning: previous release left in $PWD/$staging, not $name.prev" >&2
-      fi
-    else
+    if [ ! -e "$name" ]; then
       rename2 noreplace "$staging" "$name"
       echo "live: $(head -1 "$name/version.txt")"
+      rm -r "$lock"
+      exit 0
+    fi
+    # Every step below is a rename.  Until the last one succeeds, a failure
+    # puts everything back and keeps the lock in phase "uploaded" ($staging
+    # holds the new release, so `unlock` may delete it).  If putting back
+    # fails too, the phase is "needs-recovery" and `unlock` refuses.
+    retired=
+    if [ -e "$name.prev" ]; then
+      retired="$name.retired-$(date -u +%Y%m%dT%H%M%SZ)"
+      echo "$retired" > "$lock/retired"
+      rename2 noreplace "$name.prev" "$retired"     # nothing changed if this fails
+    fi
+    restore_prev() {
+      [ -z "$retired" ] || rename2 noreplace "$retired" "$name.prev"
+    }
+    give_up() {
+      set_phase needs-recovery
+      echo "$1; manual recovery needed, state:" >&2
+      ls -d "$name" "$name".* >&2 || true
+      echo "the lock $PWD/$lock stays until the state is fixed by hand" >&2
+      exit 1
+    }
+    set_phase swapping
+    if ! rename2 exchange "$staging" "$name"; then
+      restore_prev || give_up "could not restore $name.prev from $retired"
+      set_phase uploaded
+      echo "switch failed; nothing changed, lock kept" >&2
+      exit 1
+    fi
+    # $name is the new release, $staging the one that was live until now.
+    if ! rename2 noreplace "$staging" "$name.prev"; then
+      rename2 exchange "$staging" "$name" \
+        || give_up "could not move the previous release to $name.prev or switch back"
+      restore_prev || give_up "switched back, but could not restore $name.prev from $retired"
+      set_phase uploaded
+      echo "could not keep the previous release as $name.prev; switched back, lock kept" >&2
+      exit 1
+    fi
+    echo "live: $(head -1 "$name/version.txt")"
+    if [ -n "$retired" ] && ! rm -rf -- "$retired"; then
+      echo "warning: could not delete $PWD/$retired" >&2
     fi
     rm -r "$lock"
     ;;
 
   unlock)
     if [ -d "$lock" ]; then
+      if [ "$(phase)" != uploaded ]; then
+        echo "$lock is in phase $(phase): $(cat "$lock/owner")" >&2
+        echo "the staging directory may hold a published release; not unlocking" >&2
+        exit 1
+      fi
       staging=$(cut -d' ' -f1 "$lock/owner")
       check_staging "$staging"
       echo "removing unused $staging and $lock"
