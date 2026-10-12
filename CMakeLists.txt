@@ -1,4 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
+# macOS 13 is the oldest supported release; must be set before project().
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+  set(CMAKE_OSX_DEPLOYMENT_TARGET 13.0 CACHE STRING "Minimum macOS version")
+endif()
 project(raylib_wolf3d LANGUAGES C)
 
 # The portable sound manager always links the standalone audio engine.
@@ -242,6 +246,31 @@ if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(wolf3d_raylib PRIVATE ${WOLF3D_WARNINGS})
 elseif(MSVC)
   target_compile_options(wolf3d_raylib PRIVATE ${WOLF3D_WARNINGS})
+endif()
+
+# macOS: build the shareware game as build/raylib_wolf3d.app (WOLF-66), ad-hoc
+# signed.  No game data goes into the bundle at build time; see
+# scripts/macos_bundle_data.sh and README.rst, section "macOS".
+if(APPLE)
+  option(WOLF3D_MACOS_BUNDLE "Build raylib_wolf3d as a macOS .app bundle" ON)
+endif()
+if(APPLE AND WOLF3D_MACOS_BUNDLE)
+  set(WOLF3D_BUNDLE_ID "com.raydelto.raylib-wolf3d" CACHE STRING "CFBundleIdentifier of the .app")
+  set(WOLF3D_BUNDLE_VERSION "0.0.0" CACHE STRING "CFBundleShortVersionString of the .app")
+  set(WOLF3D_BUNDLE_EXECUTABLE raylib_wolf3d)
+  configure_file(cmake/macos/Info.plist.in ${CMAKE_CURRENT_BINARY_DIR}/Info.plist @ONLY)
+  set_target_properties(raylib_wolf3d PROPERTIES
+    MACOSX_BUNDLE ON
+    MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_BINARY_DIR}/Info.plist)
+  # Sign the whole bundle (Info.plist, resources) so it verifies; ad-hoc
+  # only, no Developer ID or notarization.
+  find_program(WOLF3D_CODESIGN codesign)
+  if(WOLF3D_CODESIGN)
+    add_custom_command(TARGET raylib_wolf3d POST_BUILD
+      COMMAND ${WOLF3D_CODESIGN} --force --sign - $<TARGET_FILE_DIR:raylib_wolf3d>/../..
+      COMMENT "Ad-hoc signing raylib_wolf3d.app"
+      VERBATIM)
+  endif()
 endif()
 
 include(CTest)
