@@ -216,6 +216,7 @@ extern	void	SD_SetPosition(int leftvol,int rightvol),
 				SD_FadeOutMusic(void),
 
 				SD_SetUserHook(void (*hook)(void));
+extern	boolean	SD_IsSilent(void);
 extern	boolean	SD_MusicPlaying(void),
 				SD_SetSoundMode(SDMode mode),
 				SD_SetMusicMode(SMMode mode);

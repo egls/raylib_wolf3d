@@ -117,6 +117,7 @@ void SD_Shutdown(void) {
     free(DigiList); DigiList=NULL; NumDigi=0;
     started=false;
 }
+boolean SD_IsSilent(void) { return silent; }
 boolean SD_SetSoundMode(SDMode mode) {
     SD_StopSound();
     if (silent) mode=sdm_Off;
