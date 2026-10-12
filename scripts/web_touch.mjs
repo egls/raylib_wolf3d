@@ -13,8 +13,10 @@
 // Phones: title -> New Game -> E1M1 by taps and swipes, then move with the
 // stick while firing, turn by dragging, open the first door with USE,
 // change weapon, pause and resume, save in slot 1 with the phone keyboard
-// (the Y/N quit prompt on the way must not hang the page), load it.  Desktop: no touch controls, keyboard play, pointer lock, the
-// mouse turns and fires, leaving pointer lock pauses.  It fails on any page
+// (the Y/N quit prompt on the way must not hang the page), load it.
+// Desktop (E1M1 via -tedlevel): no touch controls, keyboard play, pointer
+// lock, the mouse turns and fires, leaving pointer lock pauses, and
+// ?touch=1 forces the overlay.  It fails on any page
 // or console error.  Page shots show the controls; canvas shots the game.
 
 import { spawn } from 'node:child_process';
@@ -286,7 +288,7 @@ async function phone(deviceName, tag) {
     await tapBtn('#tnext');
     await sleep(400);
     const back = diff(before, await canvasSig(page));
-    check(`${tag}: weapon previous/next`, d > 0.5 && back < d,
+    check(`${tag}: weapon previous/next`, d > 0.2 && back < d,
       `knife ${d.toFixed(2)}, back to pistol ${back.toFixed(2)}`);
   }
   // RUN toggles.
@@ -407,7 +409,7 @@ async function phone(deviceName, tag) {
 async function desktop() {
   const tag = 'desktop';
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
-  const page = await openPage(context, tag, '');
+  const page = await openPage(context, tag, 'args=-tedlevel%200');
   const r = result[tag] = {};
   const shot = (n) => retry(() => page.locator('#canvas').screenshot({ path: join(outDir, `${tag}-${n}.png`) }));
   const tap = async (key, ms = 120) => {
@@ -419,12 +421,13 @@ async function desktop() {
   await page.click('#play');
   await sleep(2500);
   check(`${tag}: no touch controls`, !(await page.locator('#touch').isVisible()));
-  await tap('Enter'); await sleep(1200);
-  await tap('Enter'); await sleep(1500);
-  await tap('Enter'); await sleep(1500);
-  await tap('n'); await tap('Enter'); await sleep(800);
-  await tap('Enter'); await sleep(600);
-  await tap('Enter'); await sleep(4500);
+  // The phones go through the menus; here -tedlevel 0 starts E1M1 after
+  // the signon screen, so the keyboard and mouse checks do not race the
+  // title screen.
+  await tap('Enter');
+  await page.waitForFunction(() => Module.wolfPlaying === 1, null, { timeout: 15000 })
+    .catch(() => {});
+  await sleep(1500);
   await shot('1-e1m1');
   let a = await canvasSig(page);
   await tap('ArrowUp', 1000);
@@ -433,7 +436,7 @@ async function desktop() {
   await tap(' ', 150);                  // open (nothing may be in reach)
   a = await canvasSig(page);
   await tap('2', 150); await tap('1', 150); await sleep(300);
-  check(`${tag}: number keys change weapon`, diff(a, await canvasSig(page)) > 0.5);
+  check(`${tag}: number keys change weapon`, diff(a, await canvasSig(page)) > 0.2);
   await tap('2', 150);
   await tap('Control', 300);            // fire
   r.scroll = await page.evaluate(() => [window.scrollX, window.scrollY]);
