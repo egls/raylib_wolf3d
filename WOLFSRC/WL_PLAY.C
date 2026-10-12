@@ -2,6 +2,9 @@
 
 #include "WL_DEF.H"
 #include "wl_timer.h"
+#ifdef __EMSCRIPTEN__
+#include "id_raylib.h"	// WOLF-47: touch controls
+#endif
 #pragma hdrstop
 
 
@@ -438,6 +441,51 @@ void PollJoystickMove (void)
 }
 
 
+#ifdef __EMSCRIPTEN__
+/*
+===================
+=
+= PollTouchControls
+=
+= WOLF-47: the web page's touch controls.  The stick moves like an analog
+= joystick and the drag turns like the mouse.  Weapon next/previous picks
+= the next or previous weapon the player has, as keys 1-4 would.
+=
+===================
+*/
+
+void PollTouchControls (void)
+{
+	int	bits,movex,movey,turn,speed,weapon;
+
+	bits = RL_TouchControls (&movex,&movey,&turn);
+
+	if (bits & RL_TOUCH_FIRE)
+		buttonstate[bt_attack] = true;
+	if (bits & RL_TOUCH_STRAFE)
+		buttonstate[bt_strafe] = true;
+	if (bits & RL_TOUCH_RUN)
+		buttonstate[bt_run] = true;
+	if (bits & RL_TOUCH_USE)
+		buttonstate[bt_use] = true;
+	if (bits & (RL_TOUCH_NEXTWEAPON|RL_TOUCH_PREVWEAPON))
+	{
+		weapon = gamestate.chosenweapon + ((bits & RL_TOUCH_NEXTWEAPON)? 1 : -1);
+		if (weapon > gamestate.bestweapon)
+			weapon = wp_knife;
+		else if (weapon < wp_knife)
+			weapon = gamestate.bestweapon;
+		buttonstate[bt_readyknife+weapon-wp_knife] = true;
+	}
+
+	speed = buttonstate[bt_run]? RUNMOVE : BASEMOVE;
+	controlx += movex*speed*(int)tics/1000;
+	controly += movey*speed*(int)tics/1000;
+	controlx += turn*10/(13-mouseadjustment);
+}
+#endif
+
+
 /*
 ===================
 =
@@ -542,6 +590,10 @@ void PollControls (void)
 
 	if (joystickenabled)
 		PollJoystickMove ();
+
+#ifdef __EMSCRIPTEN__
+	PollTouchControls ();
+#endif
 
 //
 // bound movement to a maximum
