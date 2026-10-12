@@ -18,6 +18,11 @@
 #include "id_raylib.h"
 #include "wl_timer.h"
 #include "wl_persist.h"
+#include "wl_asset.h"
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#include <limits.h>
+#endif
 
 #define WL_WINDOW_W		960		// 4:3, 3x the 320x200 frame; resizable, letterboxed
 #define WL_WINDOW_H		720
@@ -61,9 +66,68 @@ void WL_NotPorted (const char *what, const char *file, int line)
 
 /*
  * The data directory is, in order: "-data <dir>" on the command line, the
- * WOLF3D_DATA environment variable, or the current directory.  The DOS code
+ * WOLF3D_DATA environment variable, or automatic platform discovery (the
+ * current directory on other platforms). The DOS code
  * opens its files by bare name, so we chdir() there.
  */
+#ifdef __APPLE__
+static int WL_HasData(const char *dir)
+{
+	char previous[PATH_MAX];
+	unsigned i;
+	int ok = 1;
+	if (!getcwd(previous, sizeof(previous)) || chdir(dir)) return 0;
+	for (i = 0; i < sizeof(data_files) / sizeof(data_files[0]); i++)
+	{
+		struct stat st;
+		const char *name = WL_AssetName(data_files[i]);
+		if (access(name, R_OK) || stat(name, &st) || !S_ISREG(st.st_mode)) ok = 0;
+	}
+	if (chdir(previous)) { perror("restore working directory"); exit(2); }
+	return ok;
+}
+
+static const char *WL_MacDataDir(void)
+{
+	static char candidate[PATH_MAX];
+	char executable[PATH_MAX], resolved[PATH_MAX], *slash;
+	uint32_t size = sizeof(executable);
+	/* Preserve terminal launches; Finder's cwd is usually unrelated to assets. */
+	if (WL_HasData(".")) return ".";
+	if (!_NSGetExecutablePath(executable, &size) && realpath(executable, resolved))
+	{
+		slash = strrchr(resolved, '/');
+		if (slash)
+		{
+			*slash = 0;
+			if (WL_HasData(resolved))
+			{
+				snprintf(candidate, sizeof(candidate), "%s", resolved);
+				return candidate;
+			}
+			/* Resources is a sibling of MacOS only inside an actual bundle. */
+			slash = strrchr(resolved, '/');
+			if (slash && !strcmp(slash, "/MacOS"))
+			{
+				*slash = 0;
+				slash = strrchr(resolved, '/');
+				if (slash && !strcmp(slash, "/Contents") &&
+				    strlen(resolved) + sizeof("/Resources") <= sizeof(candidate))
+				{
+					strcpy(candidate, resolved);
+					strcat(candidate, "/Resources");
+					if (WL_HasData(candidate)) return candidate;
+				}
+			}
+		}
+	}
+	/* Data can share the writable Application Support directory. */
+	snprintf(candidate, sizeof(candidate), "%s", WL_UserFile(""));
+	if (WL_HasData(candidate)) return candidate;
+	return ".";
+}
+#endif
+
 static const char *WL_FindDataDir (int argc, char **argv)
 {
 	const char	*dir = NULL;
@@ -82,7 +146,11 @@ static const char *WL_FindDataDir (int argc, char **argv)
 	if (!dir)
 		dir = getenv("WOLF3D_DATA");
 	if (!dir || !*dir)
+#ifdef __APPLE__
+		dir = WL_MacDataDir();
+#else
 		dir = ".";
+#endif
 	return dir;
 }
 
@@ -94,7 +162,7 @@ void WL_PlatformStartup (int argc, char **argv)
 	_argc = argc;
 	_argv = argv;
 
-#ifdef _WIN32
+#if defined(_WIN32) || defined(__APPLE__)
 	/* Cache an absolute writable path before switching to the asset directory. */
 	(void)WL_UserFile("CONFIG.WL1");
 #endif
@@ -105,7 +173,7 @@ void WL_PlatformStartup (int argc, char **argv)
 		exit(2);
 	}
 	for (i = 0; i < sizeof(data_files) / sizeof(data_files[0]); i++)
-		if (WL_ACCESS(data_files[i]))
+		if (WL_ACCESS(WL_AssetName(data_files[i])))
 		{
 			fprintf(stderr, WOLF3D_PROGRAM_NAME ": %s not found in '%s'.\n"
 				"Use the matching " WOLF3D_DATA_EXT " data set and pass "

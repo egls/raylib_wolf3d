@@ -113,7 +113,7 @@ set(WOLF3D_PORT_SOURCES
   port/wl_persist.c)
 
 # Borland C's char was signed, so the build pins -fsigned-char (plain char is
-# unsigned on ARM).  WOLF3D_UNSIGNED_CHAR builds with -funsigned-char instead,
+# unsigned on some ARM targets; Apple arm64 defaults to signed).  WOLF3D_UNSIGNED_CHAR builds with -funsigned-char instead,
 # to check that the code no longer depends on it (WOLF-19).
 option(WOLF3D_UNSIGNED_CHAR "Build with -funsigned-char (portability check)" OFF)
 if(WOLF3D_UNSIGNED_CHAR)
