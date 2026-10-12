@@ -487,6 +487,7 @@ int RL_WindowIsOpen (void)
  * callback. The ring contains 16-bit stereo frames. */
 #ifdef WOLF3D_AUDIO_BACKEND
 #include <stdatomic.h>
+#include <stdio.h>
 /* Monotonic clock for pacing.  A test defines RL_EXTERNAL_CLOCK and supplies
  * RL_MonotonicNow() itself to script time (MinGW's clock_gettime is an inline
  * function, so unlike on Linux it cannot be replaced at link time).  The MSVC
@@ -507,6 +508,7 @@ static void RL_MonotonicNow(struct timespec *ts) { clock_gettime(CLOCK_MONOTONIC
 #define AUDIO_AHEAD 3840u /* 80 ms at 48 kHz */
 static short audio_ring[AUDIO_RING*2];
 static _Atomic unsigned audio_read, audio_write;
+static _Atomic unsigned audio_underruns;
 static AudioStream audio_stream;
 static int audio_open;
 static void (*audio_mixer)(short *, unsigned);
@@ -518,6 +520,7 @@ static void WolfAudioCallback(void *buffer, unsigned frames) {
     unsigned w=atomic_load_explicit(&audio_write,memory_order_acquire);
     unsigned n=w-r, i;
     if (n>frames) n=frames;
+    if (n<frames) atomic_fetch_add_explicit(&audio_underruns,1,memory_order_relaxed);
     for (i=0;i<n;++i) {
         out[i*2]=audio_ring[((r+i)%AUDIO_RING)*2];
         out[i*2+1]=audio_ring[((r+i)%AUDIO_RING)*2+1];
@@ -564,6 +567,7 @@ int RL_AudioOpen(void (*mixer)(short *, unsigned)) {
     if (!IsAudioStreamValid(audio_stream)) { CloseAudioDevice(); return 0; }
     atomic_store_explicit(&audio_read,0,memory_order_relaxed);
     atomic_store_explicit(&audio_write,0,memory_order_relaxed);
+    atomic_store_explicit(&audio_underruns,0,memory_order_relaxed);
     audio_generated=0; audio_mixer=mixer;
     RL_MonotonicNow(&audio_epoch);
     audio_open=1;
@@ -577,6 +581,8 @@ void RL_AudioClose(void) {
     StopAudioStream(audio_stream);
     UnloadAudioStream(audio_stream);
     CloseAudioDevice();
+    fprintf(stderr,"Wolf audio: 48000 Hz, signed 16-bit stereo, underrun callbacks: %u\n",
+            atomic_load_explicit(&audio_underruns,memory_order_relaxed));
     audio_open=0; audio_mixer=NULL;
 }
 #else
