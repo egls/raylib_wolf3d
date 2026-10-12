@@ -2343,7 +2343,7 @@ void EnterCtrlData(int index,CustomCtrls *cust,void (*DrawRtn)(int),void (*Print
 	 case KEYBOARDBTNS:
 	   if (LastScan)
 	   {
-	buttonscan[order[which]]=LastScan;
+	buttonscan[(unsigned char)order[which]]=LastScan;
 	picked=1;
 	ShootSnd();
 	IN_ClearKeysDown();
@@ -2749,7 +2749,7 @@ void DrawCustJoy(int hilight)
 void PrintCustKeybd(int i)
 {
 	PrintX=CST_START+CST_SPC*i;
-	US_Print(IN_GetScanName(buttonscan[order[i]]));
+	US_Print(IN_GetScanName(buttonscan[(unsigned char)order[i]]));
 }
 
 void DrawCustKeybd(int hilight)
@@ -3813,7 +3813,7 @@ void Message(char far *string)
 			h+=font->height;
 		}
 		else
-			w+=font->width[string[i]];
+			w+=font->width[(unsigned char)string[i]];
 
 	if (w+10>mw)
 		mw=w+10;

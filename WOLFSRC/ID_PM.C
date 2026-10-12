@@ -1,6 +1,7 @@
 /* VSWAP pages remain resident. Sparse entries retain NULL addresses. */
 #include "ID_HEADS.H"
 #include "wl_data.h"
+#include "wl_asset.h"
 boolean XMSPresent, EMSPresent;
 word XMSPagesAvail, EMSPagesAvail;
 word ChunksInFile, PMSpriteStart, PMSoundStart;
@@ -30,7 +31,7 @@ void PM_Startup(void) {
         return;
     dot = strchr(PageFileName, '.');
     snprintf(name, sizeof name, "%s%s", PageFileName, dot && dot[1] ? "" : extension);
-    fd = open(name, O_RDONLY | O_BINARY);
+    fd = open(WL_AssetName(name), O_RDONLY | O_BINARY);
     if (fd < 0)
         Quit("Can't open VSWAP." WOLF3D_DATA_EXT);
     filesize = filelength(fd);

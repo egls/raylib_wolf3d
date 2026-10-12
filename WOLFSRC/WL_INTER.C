@@ -339,7 +339,7 @@ void Write(int x,int y,char *string)
 	L_UPIC,L_VPIC,L_WPIC,L_XPIC,L_YPIC,L_ZPIC};
 
  int i,ox,nx,ny;
- char ch;
+ int ch;
 
 
  ox=nx=x*8;
@@ -352,7 +352,7 @@ void Write(int x,int y,char *string)
    }
    else
    {
-	ch=string[i];
+	ch=(unsigned char)string[i];
 	if (ch>='a')
 	  ch-=('a'-'A');
 	ch-='0';
@@ -381,7 +381,8 @@ void Write(int x,int y,char *string)
 	   break;
 
 	 default:
-	   VWB_DrawPic(nx,ny,alpha[ch]);
+	   if (ch >= 0 && ch < (int)(sizeof alpha / sizeof alpha[0]))
+	     VWB_DrawPic(nx,ny,alpha[ch]);
 	}
 	nx+=16;
    }

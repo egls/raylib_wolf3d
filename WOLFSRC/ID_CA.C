@@ -1,6 +1,7 @@
 /* Portable cache manager: disk bytes are never native structs or pointers. */
 #include "ID_HEADS.H"
 #include "wl_data.h"
+#include "wl_asset.h"
 #include <stddef.h>
 byte *tinf;
 int mapon = -1;
@@ -56,7 +57,7 @@ static int openfile(const char *base) {
     char name[20];
     int fd;
     snprintf(name, sizeof name, "%s%s", base, extension);
-    fd = open(name, O_RDONLY | O_BINARY);
+    fd = open(WL_AssetName(name), O_RDONLY | O_BINARY);
     if (fd < 0) {
         char error[80];
         snprintf(error, sizeof error, "Can't open %s", name);
@@ -91,7 +92,7 @@ static byte *whole(const char *base, size_t *n) {
     return p;
 }
 boolean CA_ReadFile(char *name, memptr *slot) {
-    int fd = open(name, O_RDONLY | O_BINARY);
+    int fd = open(WL_AssetName(name), O_RDONLY | O_BINARY);
     long n;
     boolean ok;
     if (fd < 0)
@@ -102,7 +103,7 @@ boolean CA_ReadFile(char *name, memptr *slot) {
     return ok;
 }
 boolean CA_LoadFile(char *name, memptr *slot) {
-    int fd = open(name, O_RDONLY | O_BINARY);
+    int fd = open(WL_AssetName(name), O_RDONLY | O_BINARY);
     long n;
     boolean ok;
     if (fd < 0)
