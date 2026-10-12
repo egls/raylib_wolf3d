@@ -294,6 +294,7 @@ void WriteConfig(void)
 		if (!WS_WriteFile (file,&s))
 			fprintf (stderr,"raylib_wolf3d: could not write %s\n",WL_UserFile(configname));
 		close(file);
+		WL_UserFilesChanged ();	// WOLF-43
 	}
 	WS_Free (&s);
 }
@@ -1356,7 +1357,6 @@ void DoJukebox(void)
 			XTOWER2_MUS              // 23
 #endif
 		};
-	struct dostime_t time;
 
 
 
@@ -1369,8 +1369,8 @@ void DoJukebox(void)
 
 #ifndef SPEAR
 #ifndef UPLOAD
-	_dos_gettime(&time);
-	start = (time.hsecond%3)*6;
+	/* Select one of the three jukebox pages from the portable 70 Hz clock. */
+	start = (TimeCount % 3) * 6;
 #else
 	start = 0;
 #endif
@@ -1636,7 +1636,7 @@ void Quit (char *error)
 {
     /* Print before teardown: CA startup errors must never recurse into CA. */
     int status=error && *error ? 1 : 0;
-    if(status) fprintf(stderr,"raylib_wolf3d: %s\n",error);
+    if(status) fprintf(stderr,WOLF3D_PROGRAM_NAME ": %s\n",error);
     if(!status) WriteConfig();
     ShutdownId();
     exit(status);

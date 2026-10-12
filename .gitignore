@@ -11,3 +11,4 @@ build*/
 *.sdm
 dist/
 web-smoke/
+web-shell/

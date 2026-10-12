@@ -12,7 +12,10 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <sys/wait.h>
+#ifdef _WIN32
+int _mkdir(const char *path);
+int _rmdir(const char *path);
+#endif
 #include <unistd.h>
 
 #include "WL_DEF.H"
@@ -36,7 +39,11 @@ static statetype s_one, s_two, s_three, s_unknown;
 statetype *const wl_states[] = {&s_one, &s_two, &s_three};
 const int wl_numstates = sizeof(wl_states) / sizeof(wl_states[0]);
 
+#ifndef _WIN32
 static char tmpdir[] = "/tmp/wl_persist_testXXXXXX";
+#else
+static char tmpdir[1024];
+#endif
 
 /* every width writes exactly its bytes, low byte first, and reads them back */
 static void test_layout(void) {
@@ -123,13 +130,13 @@ static void test_file_roundtrip(void) {
         WS_W32(&out, (uint32_t)(i * 2654435761u));
     CHECK(out.len == 80000);
 
-    fd = open(path, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_BINARY, 0644);
     CHECK(fd != -1);
     CHECK(write(fd, "header", 6) == 6);
     CHECK(WS_WriteFile(fd, &out));
     CHECK(close(fd) == 0);
 
-    fd = open(path, O_RDONLY);
+    fd = open(path, O_RDONLY | O_BINARY);
     CHECK(fd != -1);
     CHECK(lseek(fd, 6, SEEK_SET) == 6); /* like a save after its 32-byte name */
     WS_Init(&in);
@@ -142,7 +149,7 @@ static void test_file_roundtrip(void) {
     CHECK(!in.bad && in.pos == in.len);
 
     /* reading into a used stream starts over */
-    fd = open(path, O_RDONLY);
+    fd = open(path, O_RDONLY | O_BINARY);
     CHECK(WS_ReadFile(fd, &in));
     close(fd);
     CHECK(in.len == out.len + 6 && in.pos == 0 && memcmp(in.buf, "header", 6) == 0);
@@ -184,31 +191,44 @@ static void test_states(void) {
     printf("PASS: state index table\n");
 }
 
-/* WL_UserFile caches its directory, so each environment runs in a child */
-static void user_file_case(const char *xdg, const char *home, const char *expect_dir) {
-    pid_t pid = fork();
-    int status;
+static int make_dir(const char *path) {
+#ifdef _WIN32
+    return _mkdir(path);
+#else
+    return mkdir(path, 0755);
+#endif
+}
 
-    CHECK(pid != -1);
-    if (pid == 0) {
-        char expect[1100];
-        struct stat st;
+static void set_env(const char *name, const char *value) {
+#ifdef _WIN32
+    _putenv_s(name, value ? value : "");
+#else
+    if (value)
+        setenv(name, value, 1);
+    else
+        unsetenv(name);
+#endif
+}
 
-        if (xdg)
-            setenv("XDG_CONFIG_HOME", xdg, 1);
-        else
-            unsetenv("XDG_CONFIG_HOME");
-        setenv("HOME", home, 1);
+/* WL_UserFile caches its directory, so reset it before each environment */
+static void user_file_case(const char *expect_dir) {
+    char expect[1100], got[1100];
+    struct stat st;
+    char *c;
 
-        snprintf(expect, sizeof(expect), "%s/CONFIG.WL1", expect_dir);
-        CHECK(strcmp(WL_UserFile("CONFIG.WL1"), expect) == 0);
-        CHECK(stat(expect_dir, &st) == 0 && S_ISDIR(st.st_mode)); /* created */
-        snprintf(expect, sizeof(expect), "%s/SAVEGAM3.WL1", expect_dir);
-        CHECK(strcmp(WL_UserFile("SAVEGAM3.WL1"), expect) == 0);
-        _exit(0);
-    }
-    CHECK(waitpid(pid, &status, 0) == pid);
-    CHECK(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    snprintf(expect, sizeof(expect), "%s/CONFIG.WL1", expect_dir);
+    snprintf(got, sizeof(got), "%s", WL_UserFile("CONFIG.WL1"));
+    for (c = got; *c; c++)
+        if (*c == '\\')
+            *c = '/';
+    CHECK(strcmp(got, expect) == 0);
+    CHECK(stat(expect_dir, &st) == 0 && S_ISDIR(st.st_mode)); /* created */
+    snprintf(expect, sizeof(expect), "%s/SAVEGAM3.WL1", expect_dir);
+    snprintf(got, sizeof(got), "%s", WL_UserFile("SAVEGAM3.WL1"));
+    for (c = got; *c; c++)
+        if (*c == '\\')
+            *c = '/';
+    CHECK(strcmp(got, expect) == 0);
 }
 
 static void test_user_file(void) {
@@ -216,30 +236,82 @@ static void test_user_file(void) {
 
     snprintf(xdg, sizeof(xdg), "%s/xdg", tmpdir);
     snprintf(home, sizeof(home), "%s/home", tmpdir);
-    CHECK(mkdir(xdg, 0755) == 0 && mkdir(home, 0755) == 0);
+    CHECK(make_dir(xdg) == 0 && make_dir(home) == 0);
 
+#ifdef _WIN32
+    /* %APPDATA%, falling back to %LOCALAPPDATA% */
+    set_env("APPDATA", xdg);
+    set_env("LOCALAPPDATA", home);
+    WL_ResetUserFileCache();
     snprintf(dir, sizeof(dir), "%s/raylib_wolf3d", xdg);
-    user_file_case(xdg, home, dir);
+    user_file_case(dir);
+
+    set_env("APPDATA", NULL);
+    WL_ResetUserFileCache();
+    snprintf(dir, sizeof(dir), "%s/raylib_wolf3d", home);
+    user_file_case(dir);
+    printf("PASS: Windows user directory\n");
+#else
+    set_env("HOME", home);
+    set_env("XDG_CONFIG_HOME", xdg);
+    WL_ResetUserFileCache();
+    snprintf(dir, sizeof(dir), "%s/raylib_wolf3d", xdg);
+    user_file_case(dir);
 
     /* unset, empty or relative XDG_CONFIG_HOME: ~/.config (XDG spec) */
     snprintf(dir, sizeof(dir), "%s/.config/raylib_wolf3d", home);
-    user_file_case(NULL, home, dir);
-    user_file_case("", home, dir);
-    user_file_case("relative/dir", home, dir);
+    set_env("XDG_CONFIG_HOME", NULL);
+    WL_ResetUserFileCache();
+    user_file_case(dir);
+    set_env("XDG_CONFIG_HOME", "");
+    WL_ResetUserFileCache();
+    user_file_case(dir);
+    set_env("XDG_CONFIG_HOME", "relative/dir");
+    WL_ResetUserFileCache();
+    user_file_case(dir);
     printf("PASS: XDG config directory\n");
+#endif
 }
 
 int main(void) {
+#ifndef _WIN32
     char cmd[sizeof(tmpdir) + 16];
 
     CHECK(mkdtemp(tmpdir) != NULL);
+#else
+    const char *temp = getenv("TEMP");
+    if (!temp || !*temp) temp = getenv("TMP");
+    if (!temp || !*temp) temp = ".";
+    snprintf(tmpdir, sizeof(tmpdir), "%s/wl_persist_%u", temp, (unsigned)getpid());
+    for (char *c = tmpdir; *c; c++)
+        if (*c == '\\')
+            *c = '/';
+    _mkdir(tmpdir);
+#endif
     test_layout();
     test_short_reads();
     test_file_roundtrip();
     test_checksum();
     test_states();
     test_user_file();
+#ifndef _WIN32
     snprintf(cmd, sizeof(cmd), "rm -rf %s", tmpdir);
     CHECK(system(cmd) == 0);
+#else
+    char roundtrip_file[sizeof(tmpdir) + 32];
+    snprintf(roundtrip_file, sizeof(roundtrip_file), "%s/roundtrip", tmpdir);
+    unlink(roundtrip_file);
+    {
+        static const char *const sub[] = {"xdg/raylib_wolf3d", "xdg", "home/raylib_wolf3d", "home"};
+        char d[sizeof(tmpdir) + 32];
+        size_t i;
+
+        for (i = 0; i < sizeof(sub) / sizeof(sub[0]); i++) {
+            snprintf(d, sizeof(d), "%s/%s", tmpdir, sub[i]);
+            CHECK(_rmdir(d) == 0);
+        }
+    }
+    CHECK(_rmdir(tmpdir) == 0);
+#endif
     return 0;
 }
