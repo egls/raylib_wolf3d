@@ -15,6 +15,12 @@
 #include "wl_glprobe.h"
 #endif
 
+#ifdef __APPLE__
+/* The Objective-C runtime that GLFW's Cocoa backend already links. */
+#include <objc/message.h>
+#include <objc/runtime.h>
+#endif
+
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 
@@ -74,7 +80,7 @@ EM_JS(void, WebMouseWant, (int on), {
 });
 #endif
 
-#define MAX_SCALE		8
+#define MAX_SCALE		12		/* a 2400-pixel-high picture: 4K, and Retina fullscreen */
 #define KEYQ_SIZE		256
 
 static int window_open;
@@ -95,6 +101,7 @@ typedef struct
 	int		ext;
 	int		down;		/* last reported state */
 	int		tapped;		/* seen in the pressed-key queue since the last sync */
+	int		swallowed;	/* the press was a shortcut: its release is not reported */
 } keymap_t;
 
 static keymap_t keymap[] =
@@ -134,7 +141,6 @@ static keymap_t keymap[] =
 typedef struct { short scan; unsigned char ext, down; } keyevent_t;
 static keyevent_t	keyq[KEYQ_SIZE];
 static int			keyq_head, keyq_tail;
-static int			swallow_enter;
 
 static void PushKey (int scan, int ext, int down)
 {
@@ -148,6 +154,42 @@ static void PushKey (int scan, int ext, int down)
 	keyq_head = next;
 }
 
+/*
+ * Shortcuts that never reach the game.  Alt+Enter (Option+Return on a Mac)
+ * toggles fullscreen everywhere.  On macOS, Command is the shortcut key: the
+ * game never sees Command, Cmd+F and Cmd+Return toggle fullscreen, and other
+ * keys pressed with Command are left to the system (Cmd+Q, Cmd+H and Cmd+M
+ * are menu shortcuts that GLFW's menu bar handles).  Mac keyboards play like
+ * PC ones: Control fires and Option is Alt (strafe).
+ * Returns 1 if the press of `key` is a shortcut.
+ */
+#ifdef __APPLE__
+/*
+ * Command counts for a whole poll: held now, held at the last sync, or
+ * pressed in between.  Cmd+F pressed and released within one poll leaves
+ * only F in raylib's pressed-key queue, with Command already up.
+ */
+static int command, command_was_down, command_tapped;
+#endif
+
+static int Shortcut (int key)
+{
+#ifdef __APPLE__
+	if (command)
+	{
+		if (key == KEY_F || key == KEY_ENTER)
+			RL_ToggleFullscreen();
+		return 1;
+	}
+#endif
+	if (key == KEY_ENTER && (IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT)))
+	{
+		RL_ToggleFullscreen();
+		return 1;
+	}
+	return 0;
+}
+
 /* Compares raylib's key state with what was last reported and posts events. */
 static void SyncKeys (void)
 {
@@ -155,9 +197,21 @@ static void SyncKeys (void)
 
 	/* raylib's pressed-key queue is the only record of taps shorter than a poll */
 	while ((key = GetKeyPressed()) != 0)
+	{
+#ifdef __APPLE__
+		if (key == KEY_LEFT_SUPER || key == KEY_RIGHT_SUPER)
+			command_tapped = 1;
+#endif
 		for (i = 0; i < NUMKEYS; i++)
 			if (keymap[i].key == key)
 				keymap[i].tapped = 1;
+	}
+#ifdef __APPLE__
+	down = IsKeyDown(KEY_LEFT_SUPER) || IsKeyDown(KEY_RIGHT_SUPER);
+	command = down || command_was_down || command_tapped;
+	command_was_down = down;
+	command_tapped = 0;
+#endif
 
 	for (i = 0; i < NUMKEYS; i++)
 	{
@@ -167,9 +221,7 @@ static void SyncKeys (void)
 		if (k->tapped && !k->down && !down)
 		{
 			/* pressed and released between two polls: report both */
-			if (k->key == KEY_ENTER && (IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT)))
-				RL_ToggleFullscreen();		/* a quick Alt+Enter tap still toggles */
-			else
+			if (!Shortcut(k->key))		/* a quick shortcut tap still counts */
 			{
 				PushKey(k->scan, k->ext, 1);
 				PushKey(k->scan, k->ext, 0);
@@ -177,13 +229,10 @@ static void SyncKeys (void)
 		}
 		else if (down != k->down)
 		{
-			if (k->key == KEY_ENTER && down && (IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT)))
-			{
-				RL_ToggleFullscreen();		/* Alt+Enter never reaches the game */
-				swallow_enter = 1;
-			}
-			else if (k->key == KEY_ENTER && !down && swallow_enter)
-				swallow_enter = 0;
+			if (down && Shortcut(k->key))
+				k->swallowed = 1;		/* neither the press nor the release */
+			else if (!down && k->swallowed)
+				k->swallowed = 0;
 			else
 				PushKey(k->scan, k->ext, down);
 		}
@@ -347,6 +396,22 @@ int RL_QuitRequested (void)
  * Window and presentation
  * ------------------------------------------------------------------------ */
 
+/*
+ * The size of the window's framebuffer in pixels.  On a Mac (Retina) display
+ * raylib's screen size is in points and the framebuffer has two (or more)
+ * pixels per point; drawing still uses points.
+ */
+static void FramebufferSize (int *w, int *h)
+{
+#ifdef __APPLE__
+	*w = GetRenderWidth();
+	*h = GetRenderHeight();
+#else
+	*w = GetScreenWidth();
+	*h = GetScreenHeight();
+#endif
+}
+
 static void EnsureBigTarget (int win_w, int win_h)
 {
 	int s = (win_h + RL_FRAME_H - 1) / RL_FRAME_H;
@@ -384,6 +449,13 @@ int RL_OpenWindow (int width, int height, const char *title)
 	}
 #endif
 	SetTraceLogLevel(LOG_WARNING);
+	/*
+	 * Not FLAG_WINDOW_HIGHDPI: on macOS GLFW already gives the window a
+	 * Retina framebuffer (GLFW_SCALE_FRAMEBUFFER defaults to true) and raylib
+	 * 5.5 draws in points scaled to it.  The flag only adds a content-scale
+	 * callback that scales the drawing a second time once the window moves
+	 * from a 1x display back to a Retina one.
+	 */
 	SetConfigFlags(FLAG_WINDOW_RESIZABLE);
 	InitWindow(width, height, title);
 	if (!IsWindowReady())
@@ -410,7 +482,7 @@ int RL_OpenWindow (int width, int height, const char *title)
 void RL_Present (const unsigned char *rgba)
 {
 	RL_AudioPump();
-	int		w, h;
+	int		w, h, pw, ph;
 	float	s, dw, dh;
 
 	if (!window_open)
@@ -421,7 +493,8 @@ void RL_Present (const unsigned char *rgba)
 	UpdateTexture(frame_tex, rgba);
 	w = GetScreenWidth();
 	h = GetScreenHeight();
-	EnsureBigTarget(w, h);
+	FramebufferSize(&pw, &ph);
+	EnsureBigTarget(pw, ph);
 
 	BeginTextureMode(big_rt);
 	DrawTexturePro(frame_tex,
@@ -450,11 +523,35 @@ void RL_Present (const unsigned char *rgba)
 		quit_requested = 1;
 }
 
+#ifdef __APPLE__
+/*
+ * macOS fullscreen is the window's own Space, the same as the green window
+ * button and View > Enter Full Screen (Ctrl+Cmd+F): -[NSWindow
+ * toggleFullScreen:] keeps the menu bar, the notch and Mission Control
+ * right, where a borderless window would sit under the menu bar.
+ */
+static int MacToggleFullscreen (void)
+{
+	void *window = GetWindowHandle();	/* the NSWindow */
+
+	if (!window)
+		return 0;
+	((void (*)(void *, SEL, void *))objc_msgSend)(window,
+		sel_registerName("toggleFullScreen:"), NULL);
+	return 1;
+}
+#endif
+
 void RL_ToggleFullscreen (void)
 {
 #ifndef __EMSCRIPTEN__		/* the browser wants a user gesture; the page does Alt+Enter */
-	if (window_open)
-		ToggleBorderlessWindowed();
+	if (!window_open)
+		return;
+#ifdef __APPLE__
+	if (MacToggleFullscreen())
+		return;
+#endif
+	ToggleBorderlessWindowed();
 #endif
 }
 
@@ -500,6 +597,7 @@ int RL_WindowIsOpen (void)
  * callback. The ring contains 16-bit stereo frames. */
 #ifdef WOLF3D_AUDIO_BACKEND
 #include <stdatomic.h>
+#include <stdio.h>
 /* Monotonic clock for pacing.  A test defines RL_EXTERNAL_CLOCK and supplies
  * RL_MonotonicNow() itself to script time (MinGW's clock_gettime is an inline
  * function, so unlike on Linux it cannot be replaced at link time).  The MSVC
@@ -520,6 +618,7 @@ static void RL_MonotonicNow(struct timespec *ts) { clock_gettime(CLOCK_MONOTONIC
 #define AUDIO_AHEAD 3840u /* 80 ms at 48 kHz */
 static short audio_ring[AUDIO_RING*2];
 static _Atomic unsigned audio_read, audio_write;
+static _Atomic unsigned audio_underruns;
 static AudioStream audio_stream;
 static int audio_open;
 static void (*audio_mixer)(short *, unsigned);
@@ -531,6 +630,7 @@ static void WolfAudioCallback(void *buffer, unsigned frames) {
     unsigned w=atomic_load_explicit(&audio_write,memory_order_acquire);
     unsigned n=w-r, i;
     if (n>frames) n=frames;
+    if (n<frames) atomic_fetch_add_explicit(&audio_underruns,1,memory_order_relaxed);
     for (i=0;i<n;++i) {
         out[i*2]=audio_ring[((r+i)%AUDIO_RING)*2];
         out[i*2+1]=audio_ring[((r+i)%AUDIO_RING)*2+1];
@@ -583,6 +683,7 @@ int RL_AudioOpen(void (*mixer)(short *, unsigned)) {
     if (!IsAudioStreamValid(audio_stream)) { CloseAudioDevice(); return 0; }
     atomic_store_explicit(&audio_read,0,memory_order_relaxed);
     atomic_store_explicit(&audio_write,0,memory_order_relaxed);
+    atomic_store_explicit(&audio_underruns,0,memory_order_relaxed);
     audio_generated=0; audio_mixer=mixer;
     RL_MonotonicNow(&audio_epoch);
     audio_open=1;
@@ -596,6 +697,8 @@ void RL_AudioClose(void) {
     StopAudioStream(audio_stream);
     UnloadAudioStream(audio_stream);
     CloseAudioDevice();
+    fprintf(stderr,"Wolf audio: 48000 Hz, signed 16-bit stereo, underrun callbacks: %u\n",
+            atomic_load_explicit(&audio_underruns,memory_order_relaxed));
     audio_open=0; audio_mixer=NULL;
 }
 #else

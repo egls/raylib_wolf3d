@@ -38,7 +38,7 @@ supported.  They are never committed and no release package contains them.
 ``scripts/fetch_shareware.sh`` downloads the shareware archive, checks its
 SHA-256 and the SHA-256 of each of the eight ``*.WL1`` files, and copies them
 into a cache outside the repository (``curl``, ``unzip`` and ``sha256sum``
-are needed)::
+are needed; on macOS ``shasum`` is used when ``sha256sum`` is missing)::
 
     scripts/fetch_shareware.sh              # -> ~/wolf3d-data/shareware
     scripts/fetch_shareware.sh --check-only # verify an existing copy
@@ -160,6 +160,79 @@ Build the zip locally after a build with::
 ``package.ps1`` finds the DLLs with ``objdump`` (MinGW) or ``dumpbin`` (MSVC
 Developer PowerShell) and fails if one cannot be found (``-DllDir`` adds
 search directories).  The zip's SHA-256 goes to ``dist\SHA256SUMS-windows``.
+
+macOS
+-----
+
+Target: Apple Silicon (arm64), macOS 13 or later, with AppleClang and raylib
+5.5 (GLFW/Cocoa window, OpenGL 3.3, CoreAudio through miniaudio).  Only the
+shareware (WL1) data is supported, as on Linux.
+
+Prerequisites: the Xcode Command Line Tools (``xcode-select --install``) and
+`Homebrew <https://brew.sh>`_ for CMake and Ninja (``brew install cmake
+ninja``; Python 3 comes with the Command Line Tools).  raylib is fetched by
+CMake unless Homebrew's raylib 5.5 is installed.
+
+The commands below fetch static raylib for a portable package. Packaging rejects
+non-system runtime libraries, including shared Homebrew raylib and ``@rpath``
+dependencies; these libraries are not included in the zip.
+
+Build, test and get the data::
+
+    cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+        -DWOLF3D_USE_SYSTEM_RAYLIB=OFF -DBUILD_SHARED_LIBS=OFF
+    cmake --build build
+    ctest --test-dir build --output-on-failure
+    scripts/fetch_shareware.sh              # -> ~/wolf3d-data/shareware
+
+The game is built as ``build/raylib_wolf3d.app`` (bundle id
+``com.raydelto.raylib-wolf3d``, HiDPI capable, minimum macOS 13.0) and is
+ad-hoc signed after every build (``codesign -s -``; there is no Developer ID
+signature and no notarization).  ``-DWOLF3D_MACOS_BUNDLE=OFF`` builds a plain
+``build/raylib_wolf3d`` executable instead.  Run it from a terminal with::
+
+    build/raylib_wolf3d.app/Contents/MacOS/raylib_wolf3d -data ~/wolf3d-data/shareware
+    # or through LaunchServices, like a Finder launch:
+    open build/raylib_wolf3d.app --env WOLF3D_DATA=$HOME/wolf3d-data/shareware
+
+The data is never part of the build or of a package.  Where the game looks
+for the ``*.WL1`` files:
+
+* ``-data DIR`` and ``WOLF3D_DATA``, as on every platform.
+* Inside the app, ``raylib_wolf3d.app/Contents/Resources/``.  For your own
+  machine, ``scripts/macos_bundle_data.sh [APP] [DATA_DIR]`` checks the
+  eight files against the SHA-256 sums in ``fetch_shareware.sh``, copies them
+  there and signs the app again.  Never give away an app with the data inside
+  (see "Releases").
+* Next to ``raylib_wolf3d.app``, and in
+  ``~/Library/Application Support/raylib_wolf3d/``.
+
+The lookups in the last two items come with the
+macOS platform layer (WOLF-63); until it lands the game only checks
+``-data``, ``WOLF3D_DATA`` and the current directory, and a Finder launch
+starts in ``/``.  Use ``-data``, ``WOLF3D_DATA`` or ``open --env`` as above
+until then.
+
+Package the app (without data) as
+``dist/raylib_wolf3d-VERSION-macos-arm64.zip`` with::
+
+    scripts/package_macos.sh -B build -o dist 0.0.0-local
+
+The zip holds ``raylib_wolf3d.app``, ``scripts/fetch_shareware.sh``,
+``scripts/macos_bundle_data.sh`` and ``doc/`` (README, ``SOURCE.txt``,
+``licenses/``); its SHA-256 goes to ``dist/SHA256SUMS-macos``.  The script
+refuses an app that has ``*.WL1`` files inside.
+
+Gatekeeper: an app that is only ad-hoc signed and was downloaded (from a
+release or a CI artifact, through a browser) is quarantined, and macOS says
+it "cannot be opened" or "is damaged".  Remove the quarantine flag once, then
+open it as usual::
+
+    xattr -dr com.apple.quarantine raylib_wolf3d.app
+
+(or Control-click the app, choose Open, and confirm; on macOS 15 and later,
+allow it under System Settings > Privacy & Security).  A locally built app
+is not quarantined.
 
 Command-line options
 --------------------
