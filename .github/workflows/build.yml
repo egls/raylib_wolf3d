@@ -198,3 +198,71 @@ jobs:
           # script ends on a false-condition if, even after a passing check.
           if ($LASTEXITCODE -ne 2) { exit 1 }
           exit 0
+
+  # The browser build (WOLF-41/WOLF-98): ASYNCIFY page plus the headless core
+  # tests compiled to wasm32 and run under node.  No game data, no deploy:
+  # core_wl1_data and sound_manager skip.
+  web:
+    runs-on: ubuntu-24.04
+    env:
+      EMSDK_VERSION: 6.0.10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build python3
+
+      - name: Cache emsdk
+        id: emsdk-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/emsdk
+          key: emsdk-${{ env.EMSDK_VERSION }}-${{ runner.os }}
+
+      - name: Install emsdk
+        if: steps.emsdk-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+          "$HOME/emsdk/emsdk" install "$EMSDK_VERSION"
+          "$HOME/emsdk/emsdk" activate "$EMSDK_VERSION"
+
+      - name: Toolchain
+        run: |
+          source "$HOME/emsdk/emsdk_env.sh" >/dev/null
+          emcc --version | head -1
+          node --version
+          cmake --version | head -1
+
+      - name: raylib quarantine
+        run: |
+          # Only port/id_raylib.c may include raylib.h
+          hits=$(grep -rIlE --include='*.[ch]' --include='*.[CH]' '#[[:space:]]*include[[:space:]]*[<"]raylib\.h[">]' WOLFSRC port | grep -v '^port/id_raylib\.c$' || true)
+          if [ -n "$hits" ]; then echo "raylib.h included from: $hits"; exit 1; fi
+
+      - name: Configure (no game data)
+        run: |
+          source "$HOME/emsdk/emsdk_env.sh" >/dev/null
+          cmake --preset web -DWOLF3D_WEB_DATA=
+
+      - name: Build
+        run: |
+          set -o pipefail
+          source "$HOME/emsdk/emsdk_env.sh" >/dev/null
+          cmake --build --preset web 2>&1 | tee build.log
+          echo "Game warnings: $(grep -E '/(WOLFSRC|port)/.*warning:' build.log | wc -l)"
+
+      - name: Check the output
+        run: |
+          for f in raylib_wolf3d wolf3d-wl6; do
+            ls -l build-web/$f.html build-web/$f.js build-web/$f.wasm
+          done
+          # never bundle game data in CI
+          test ! -e build-web/raylib_wolf3d.data
+          test ! -e build-web/wolf3d-wl6.data
+
+      - name: Core tests under node (data tests skip without WL1)
+        run: |
+          source "$HOME/emsdk/emsdk_env.sh" >/dev/null
+          ctest --preset web

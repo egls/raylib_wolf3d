@@ -10,15 +10,18 @@ from pathlib import Path
 
 if len(sys.argv) > 1 and sys.argv[1] == "--session":
     game, data, log, *flags = sys.argv[2:]
+    # Fixed wait for the "Get Psyched!" level load to finish before F10; slow
+    # hosts (aarch64 Xvfb/llvmpipe) need ~30 s.  Override with SILENT_CONFIG_STARTUP_MS.
+    startup_ms = os.environ.get("SILENT_CONFIG_STARTUP_MS", "35000")
     driver = Path(__file__).resolve().parents[1] / "scripts" / "xdrive.py"
     with open(log, "w") as output:
         process = subprocess.Popen([game, "-data", data, "tedlevel", "0", "nowait"] + flags,
                                    stdout=output, stderr=subprocess.STDOUT)
         try:
-            subprocess.run([sys.executable, str(driver), "wait:15", "sleep:15000",
+            subprocess.run([sys.executable, str(driver), "wait:30", "sleep:" + startup_ms,
                             "key:F10", "sleep:800", "key:y", "sleep:1500"],
-                           check=True, timeout=40)
-            sys.exit(process.wait(timeout=10))
+                           check=True, timeout=90)
+            sys.exit(process.wait(timeout=20))
         finally:
             if process.poll() is None:
                 process.terminate()
@@ -42,7 +45,7 @@ with tempfile.TemporaryDirectory(prefix="wolf-silent-config-") as work:
         if flag:
             command.append("-nosound")
         result = subprocess.run(command, env=session_env, capture_output=True,
-                                text=True, timeout=90)
+                                text=True, timeout=150)
         if result.returncode:
             raise RuntimeError(result.stdout + result.stderr +
                                Path(work, "session.log").read_text())

@@ -32,9 +32,12 @@ development packages raylib needs)::
 raylib 5.5 is downloaded by CMake (pinned by SHA-256) unless an installed
 raylib 5.5 is found.  The downloaded copy gets a small patch
 (``cmake/patch_raylib.cmake``): a failed window/OpenGL setup is reported
-(exit 2) instead of crashing, and on a Mac without a GPU (e.g. a CI VM) the
-Apple software renderer is used.  ``-DWOLF3D_ALL_WARNINGS=ON`` shows the full
-``-Wall`` output for the original sources.
+(exit 2) instead of crashing, a window opens on an X server that reports no
+connected monitor (e.g. a GPU box without a screen plugged in), and on a Mac
+without a GPU (e.g. a CI VM) the Apple software renderer is used.  An installed
+raylib 5.5 lacks that patch; use ``-DWOLF3D_USE_SYSTEM_RAYLIB=OFF`` if you need
+it.  ``-DWOLF3D_ALL_WARNINGS=ON`` shows the full ``-Wall`` output for the
+original sources.
 
 Game data: only the freely distributable shareware v1.4 files (``*.WL1``) are
 supported.  They are never committed and no release package contains them.
@@ -161,8 +164,10 @@ Build the zip locally after a build with::
     scripts\package.ps1 -BuildDir build -OutDir dist 0.0.0-local
 
 ``package.ps1`` finds the DLLs with ``objdump`` (MinGW) or ``dumpbin`` (MSVC
-Developer PowerShell) and fails if one cannot be found (``-DllDir`` adds
-search directories).  The zip's SHA-256 goes to ``dist\SHA256SUMS-windows``.
+Developer PowerShell) and fails if the tool errors or a DLL cannot be
+found (``-DllDir`` adds search directories).  The Visual C++ runtime
+(``vcruntime140``, ``msvcp140``, ...) is not part of Windows, so an MSVC build
+gets those DLLs bundled app-local; real system DLLs are not bundled.  The zip's SHA-256 goes to ``dist\SHA256SUMS-windows``.
 
 macOS
 -----
@@ -436,7 +441,41 @@ The page (WOLF-43):
   choice, else shareware); ``?args=...`` adds command-line options, e.g.
   ``?args=-tedlevel%200%20-nowait``.
 
+Touch controls (WOLF-47): on phones and tablets (``matchMedia('(pointer:
+coarse)')``) the page draws controls over the game; ``?touch=1`` / ``?touch=0``
+force them on or off, and keyboard and mouse work either way.
+
+* Playing: drag anywhere on the left half for an analog stick (forward/back
+  and turn, sideways while STRAFE is held), drag on the right half to turn
+  like the mouse.  FIRE (hold for auto-fire), USE (doors), STRAFE, RUN
+  (on/off) and weapon previous/next on the right; MENU (Esc), PAUSE and
+  Fullscreen at the top.  Several fingers at once work.
+* Menus and prompts: a tap on the picture is Enter, a swipe moves the cursor,
+  and there are arrows, OK, BACK, Y and N.  The keyboard button opens the
+  phone's keyboard for save names; touch players get "Save N" as the default.
+* The page shows the play layout while the game reads the play controls
+  (port/id_raylib.c, ``RL_TouchControls``) and the menu layout otherwise.
+  Controls stay clear of the notch and home bar (``env(safe-area-inset-*)``);
+  the page blocks scrolling, zooming and the long-press menu over the game,
+  locks landscape in fullscreen where the browser allows it and suggests
+  turning the device in portrait.
+* One input path: the page calls ``RL_WebTouch`` (buttons held, stick, turn)
+  and ``RL_WebTouchKey`` (typed letters) in ``port/id_raylib.c``.  Menu keys
+  become scan code events; ``PollControls`` (``WL_PLAY.C``) reads the play
+  controls each frame into ``buttonstate[]`` and ``controlx``/``controly``,
+  whatever the key bindings.  Native builds do not have this code.
+
+On desktops, leaving pointer lock or hiding the tab during play pauses the
+game, and every key but F11, F12 and Command shortcuts stays with the game.
+
 Limits for now: no sound (the page runs the game with ``-nosound``).
+
+The headless core tests (codecs, renderer, WL1 data, sound manager and the
+registered boss key) are also built for wasm32 and run under node; the data
+tests skip without the shareware files.  CI builds the page without game data
+and runs them on every pull request::
+
+    ctest --preset web
 
 ``scripts/web_smoke.mjs`` checks a build in headless Chromium or Firefox with
 Playwright: the four demos must reach the same state hashes as the native
@@ -454,6 +493,17 @@ forgetting the data.  It needs Python with Pillow to compare the shots::
 
     PLAYWRIGHT=/path/to/node_modules/playwright/index.mjs \
         node scripts/web_shell.mjs build-web web-shell [--browser firefox] [--data ~/wolf3d-data/shareware]
+
+``scripts/web_touch.mjs`` plays the page with touch in Chromium's Pixel 7 and
+iPhone 14 emulation (real multi-touch events through CDP): taps and swipes
+through the menus to E1M1, moving while firing, turning, opening a door,
+weapons, pause, saving with the phone keyboard (through the quit prompt, which must not hang the page) and
+loading.  A desktop pass checks keyboard play, pointer lock and the mouse,
+the pause on leaving pointer lock and ``?touch=1``.  Emulation is not a
+phone: real iOS Safari and Android Chrome need a person with the device::
+
+    PLAYWRIGHT=/path/to/node_modules/playwright/index.mjs \
+        node scripts/web_touch.mjs build-web web-touch [--only pixel7|iphone14|desktop]
 
 Original release notes
 ----------------------

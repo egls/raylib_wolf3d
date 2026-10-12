@@ -32,6 +32,7 @@ extern _Atomic uint32_t TimeCount;
  * browser its turn.  Ticks are never lost, as with the thread.
  */
 #include <emscripten.h>
+#include "id_raylib.h"
 
 static double		t0;			// ms, emscripten_get_now()
 static int			started;
@@ -65,15 +66,21 @@ void WL_SleepUntilTick (double tick)
 	// emscripten_sleep is a setTimeout, so it can wake early or late
 	while (ms > 0)
 	{
-		emscripten_sleep((unsigned)ms ? (unsigned)ms : 1);
+		/* Long VBL waits must still service the single-thread audio producer. */
+		RL_AudioPump();
+		unsigned delay = ms > 8 ? 8 : (unsigned)ms;
+		emscripten_sleep(delay ? delay : 1);
 		ms = tick * 1000.0 / WL_TICKRATE - (emscripten_get_now() - t0);
 	}
+	RL_AudioPump();
 	WL_TickClock();
 }
 
 void WL_Idle (void)
 {
+	RL_AudioPump();
 	emscripten_sleep(0);
+	RL_AudioPump();
 	WL_TickClock();
 }
 

@@ -252,6 +252,149 @@ static void PollKeyboard (void)
 	SyncKeys();
 }
 
+#ifdef __EMSCRIPTEN__
+/* ------------------------------------------------------------------------
+ * Touch controls (WOLF-47), drawn and tracked by the page (web/shell.html)
+ * ------------------------------------------------------------------------ */
+
+/*
+ * Bits of RL_WebTouch above the play buttons of id_raylib.h: keys, posted
+ * as scan code events when they go down and up.  Pause is the PC Pause
+ * key: its 0xE1 prefix (`ext` 2) sets Paused, and the NumLock code that
+ * follows it is the key that IN_Ack sees.  The page uses the same values.
+ */
+static const struct { int bit, scan, ext; } touchkeys[] =
+{
+	{0x00100,0x01},			/* Esc */
+	{0x00200,0x1c},			/* Enter */
+	{0x00400,0x15},			/* Y */
+	{0x00800,0x31},			/* N */
+	{0x01000,0x48,1},		/* up */
+	{0x02000,0x50,1},		/* down */
+	{0x04000,0x4b,1},		/* left */
+	{0x08000,0x4d,1},		/* right */
+	{0x10000,0x45,2},		/* Pause */
+};
+#define NUMTOUCHKEYS ((int)(sizeof(touchkeys) / sizeof(touchkeys[0])))
+
+/* The game stops reading the play controls for this long: a menu is up. */
+#define TOUCH_IDLE_MS	250.0
+
+static int		touch_bits;			/* held now */
+static int		touch_pressed;		/* went down since the last RL_TouchControls */
+static int		touch_movex, touch_movey, touch_turn;
+static int		touch_playing;
+static double	touch_lastread;
+
+/* Tells the page which layout to show: play controls or menu controls. */
+EM_JS(void, WebTouchPlaying, (int on), {
+	Module.wolfPlaying = on;
+	if (Module.wolfOnPlaying)
+		Module.wolfOnPlaying(on);
+});
+
+static int TouchClamp (int v)
+{
+	return v < -1000 ? -1000 : v > 1000 ? 1000 : v;
+}
+
+/*
+ * The page calls this whenever a touch control changes: `bits` is
+ * everything held, `movex`/`movey` the stick, `turn` the drag since the
+ * last call.  Keys post their events at once, so a tap shorter than a frame
+ * is still a press and a release.
+ */
+EMSCRIPTEN_KEEPALIVE void RL_WebTouch (int bits, int movex, int movey, int turn)
+{
+	int i, changed = bits ^ touch_bits;
+
+	for (i = 0; i < NUMTOUCHKEYS; i++)
+		if (changed & touchkeys[i].bit)
+			PushKey(touchkeys[i].scan, touchkeys[i].ext, (bits & touchkeys[i].bit) != 0);
+	touch_pressed |= bits & ~touch_bits;
+	touch_bits = bits;
+	touch_movex = TouchClamp(movex);
+	touch_movey = TouchClamp(movey);
+	touch_turn += turn;
+}
+
+/*
+ * Keys typed on the phone's keyboard (save game names).  US_LineInput keeps
+ * one character per poll, so they wait here and RL_PumpEvents posts one
+ * press and release per poll.
+ */
+#define TYPED_SIZE	64
+static struct { unsigned char scan, shift; } typed[TYPED_SIZE];
+static int typed_head, typed_tail;
+
+EMSCRIPTEN_KEEPALIVE void RL_WebTouchKey (int scan, int shift)
+{
+	int next = (typed_head + 1) % TYPED_SIZE;
+
+	if (scan <= 0 || scan > 0x7f || next == typed_tail)
+		return;
+	typed[typed_head].scan = (unsigned char)scan;
+	typed[typed_head].shift = (unsigned char)(shift != 0);
+	typed_head = next;
+}
+
+static void TypedKeyPump (void)
+{
+	int scan, shift;
+
+	if (typed_tail == typed_head)
+		return;
+	scan = typed[typed_tail].scan;
+	shift = typed[typed_tail].shift;
+	typed_tail = (typed_tail + 1) % TYPED_SIZE;
+	if (shift)
+		PushKey(0x2a, 0, 1);
+	PushKey(scan, 0, 1);
+	PushKey(scan, 0, 0);
+	if (shift)
+		PushKey(0x2a, 0, 0);
+}
+
+int RL_TouchControls (int *movex, int *movey, int *turn)
+{
+	int bits;
+
+	touch_lastread = emscripten_get_now();
+	if (!touch_playing)
+	{
+		touch_playing = 1;
+		touch_turn = 0;			/* drags over a menu are not turns */
+		WebTouchPlaying(1);
+	}
+	/* weapon next/previous step once per press */
+	bits = ((touch_bits & ~(RL_TOUCH_NEXTWEAPON | RL_TOUCH_PREVWEAPON)) | touch_pressed) & 0xff;
+	touch_pressed = 0;
+	*movex = touch_movex;
+	*movey = touch_movey;
+	*turn = touch_turn;
+	touch_turn = 0;
+	return bits;
+}
+
+EM_JS(int, WebTouchOn, (void), {
+	return Module.wolfTouchOn ? 1 : 0;
+});
+
+int RL_TouchActive (void)
+{
+	return WebTouchOn();
+}
+
+static void TouchCheckIdle (void)
+{
+	if (touch_playing && emscripten_get_now() - touch_lastread > TOUCH_IDLE_MS)
+	{
+		touch_playing = 0;
+		WebTouchPlaying(0);
+	}
+}
+#endif
+
 /* ------------------------------------------------------------------------
  * Mouse and gamepad
  * ------------------------------------------------------------------------ */
@@ -372,6 +515,10 @@ void RL_PumpEvents (void)
 #endif
 	PollKeyboard();
 	PollMouse();
+#ifdef __EMSCRIPTEN__
+	TypedKeyPump();
+	TouchCheckIdle();
+#endif
 	if (WindowShouldClose())
 		quit_requested = 1;
 }
@@ -519,6 +666,9 @@ void RL_Present (const unsigned char *rgba)
 
 	SyncKeys();
 	PollMouse();
+#ifdef __EMSCRIPTEN__
+	TouchCheckIdle();
+#endif
 	if (WindowShouldClose())
 		quit_requested = 1;
 }
@@ -615,7 +765,66 @@ static void RL_MonotonicNow(struct timespec *ts) {
 static void RL_MonotonicNow(struct timespec *ts) { clock_gettime(CLOCK_MONOTONIC,ts); }
 #endif
 #define AUDIO_RING 8192u
+#if defined(__EMSCRIPTEN__) || defined(RL_WEB_AUDIO_TEST)
+#define AUDIO_AHEAD 1536u /* 32 ms, six 256-frame WebAudio blocks */
+/* ScriptProcessor can pull a block before its presentation time. This fixed
+ * allowance absorbs that prefetch without relaxing the 1000 ppm rate cap. */
+#define AUDIO_CLOCK_AHEAD (AUDIO_AHEAD+512u)
+#else
 #define AUDIO_AHEAD 3840u /* 80 ms at 48 kHz */
+#define AUDIO_CLOCK_AHEAD AUDIO_AHEAD
+#endif
+#if defined(__EMSCRIPTEN__) || defined(RL_WEB_AUDIO_TEST)
+/* raylib 5.5/miniaudio uses a main-thread ScriptProcessor, not a worker.
+ * Keep policy here with the device, rather than coupling it to the shell. */
+#ifndef RL_WEB_AUDIO_TEST
+EM_JS(void, WebAudioInit, (void), {
+    var device = window.miniaudio.devices.find(function(d) { return d && d.webaudio; });
+    var ctx = device.webaudio;
+    var state = Module.wolfAudio = { context: ctx, generation: 1 };
+    state.unlock = function() {
+        if (!document.hidden && ctx.state !== 'closed') ctx.resume().catch(function() {});
+    };
+    state.visibility = function() {
+        state.generation++;
+        if (document.hidden) ctx.suspend().catch(function() {});
+        else state.unlock();
+    };
+    state.changed = function() { state.generation++; };
+    document.addEventListener('keydown', state.unlock, true);
+    document.addEventListener('click', state.unlock, true);
+    document.addEventListener('touchend', state.unlock, true);
+    document.addEventListener('visibilitychange', state.visibility);
+    ctx.addEventListener('statechange', state.changed);
+    if (document.hidden) state.visibility();
+});
+EM_JS(unsigned, WebAudioGeneration, (void), {
+    var s = Module.wolfAudio;
+    return s && !document.hidden && s.context.state === 'running' ? s.generation : 0;
+});
+EM_JS(void, WebAudioStats, (unsigned queued, unsigned underruns, unsigned resets, double generated), {
+    Module.wolfAudioStats = { queuedFrames: queued, underruns: underruns,
+        resyncs: resets, generatedFrames: generated,
+        running: !document.hidden && Module.wolfAudio.context.state === 'running' };
+});
+EM_JS(void, WebAudioClose, (void), {
+    var s = Module.wolfAudio;
+    document.removeEventListener('keydown', s.unlock, true);
+    document.removeEventListener('click', s.unlock, true);
+    document.removeEventListener('touchend', s.unlock, true);
+    document.removeEventListener('visibilitychange', s.visibility);
+    s.context.removeEventListener('statechange', s.changed);
+    delete Module.wolfAudio;
+});
+#else
+void WebAudioInit(void);
+unsigned WebAudioGeneration(void);
+void WebAudioStats(unsigned queued, unsigned underruns, unsigned resets, double generated);
+void WebAudioClose(void);
+#endif
+static unsigned audio_web_generation, audio_web_resets;
+static struct timespec audio_web_lastpump;
+#endif
 static short audio_ring[AUDIO_RING*2];
 static _Atomic unsigned audio_read, audio_write;
 static _Atomic unsigned audio_underruns;
@@ -626,6 +835,14 @@ static struct timespec audio_epoch;
 static uint64_t audio_generated;
 static void WolfAudioCallback(void *buffer, unsigned frames) {
     short *out=buffer;
+#if defined(__EMSCRIPTEN__) || defined(RL_WEB_AUDIO_TEST)
+    /* Visibility/state events can run before the next game pump. Silence
+     * immediately, and leave the producer to reset the ring on its next turn. */
+    if (!audio_web_generation || WebAudioGeneration()!=audio_web_generation) {
+        memset(out,0,frames*2*sizeof(*out));
+        return;
+    }
+#endif
     unsigned r=atomic_load_explicit(&audio_read,memory_order_relaxed);
     unsigned w=atomic_load_explicit(&audio_write,memory_order_acquire);
     unsigned n=w-r, i;
@@ -645,11 +862,33 @@ void RL_AudioPump(void) {
     uint64_t due;
     if (!audio_open) return;
     RL_MonotonicNow(&now);
+#if defined(__EMSCRIPTEN__) || defined(RL_WEB_AUDIO_TEST)
+    unsigned generation=WebAudioGeneration();
+    double gap=(now.tv_sec-audio_web_lastpump.tv_sec)+
+               (now.tv_nsec-audio_web_lastpump.tv_nsec)*1e-9;
+    if (generation!=audio_web_generation || gap>0.25) {
+        /* Both callbacks and pumps run on this browser thread. Discard the
+         * pre-suspension ring and rebase the cap: never catch up hidden time.
+         * Stop/play also resets raylib's stream cursor. Sequencer stays paused. */
+        StopAudioStream(audio_stream);
+        atomic_store_explicit(&audio_read,0,memory_order_relaxed);
+        atomic_store_explicit(&audio_write,0,memory_order_relaxed);
+        audio_epoch=now; audio_generated=0;
+        audio_web_generation=generation;
+        ++audio_web_resets;
+        PlayAudioStream(audio_stream);
+    }
+    audio_web_lastpump=now;
+    if (!generation) {
+        WebAudioStats(0,atomic_load(&audio_underruns),audio_web_resets,0);
+        return;
+    }
+#endif
     /* Allow 1000 ppm of DAC clock drift relative to CLOCK_MONOTONIC.
-     * The queue limit still bounds latency to 80 ms; this cap only prevents
+     * The queue bounds synthesis lead to 80 ms native / 32 ms web; this cap prevents
      * a null/racing sink from advancing synthesis without wall-clock time. */
     due=(uint64_t)(((now.tv_sec-audio_epoch.tv_sec)+
-                   (now.tv_nsec-audio_epoch.tv_nsec)*1e-9)*48000*1.001)+AUDIO_AHEAD;
+                   (now.tv_nsec-audio_epoch.tv_nsec)*1e-9)*48000*1.001)+AUDIO_CLOCK_AHEAD;
     r=atomic_load_explicit(&audio_read,memory_order_acquire);
     w=atomic_load_explicit(&audio_write,memory_order_relaxed);
     queued=w-r;
@@ -665,6 +904,9 @@ void RL_AudioPump(void) {
         w+=n; queued+=n; audio_generated+=n;
         atomic_store_explicit(&audio_write,w,memory_order_release);
     }
+#if defined(__EMSCRIPTEN__) || defined(RL_WEB_AUDIO_TEST)
+    WebAudioStats(queued,atomic_load(&audio_underruns),audio_web_resets,(double)audio_generated);
+#endif
 }
 int RL_AudioOpen(void (*mixer)(short *, unsigned)) {
     if (audio_open) return 1;
@@ -686,6 +928,11 @@ int RL_AudioOpen(void (*mixer)(short *, unsigned)) {
     atomic_store_explicit(&audio_underruns,0,memory_order_relaxed);
     audio_generated=0; audio_mixer=mixer;
     RL_MonotonicNow(&audio_epoch);
+#if defined(__EMSCRIPTEN__) || defined(RL_WEB_AUDIO_TEST)
+    WebAudioInit();
+    audio_web_generation=audio_web_resets=0;
+    audio_web_lastpump=audio_epoch;
+#endif
     audio_open=1;
     RL_AudioPump();
     SetAudioStreamCallback(audio_stream,WolfAudioCallback);
@@ -694,6 +941,9 @@ int RL_AudioOpen(void (*mixer)(short *, unsigned)) {
 }
 void RL_AudioClose(void) {
     if (!audio_open) return;
+#if defined(__EMSCRIPTEN__) || defined(RL_WEB_AUDIO_TEST)
+    WebAudioClose();
+#endif
     StopAudioStream(audio_stream);
     UnloadAudioStream(audio_stream);
     CloseAudioDevice();
