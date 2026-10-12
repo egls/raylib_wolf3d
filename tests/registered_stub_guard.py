@@ -9,7 +9,8 @@ import re
 import subprocess
 import sys
 
-compiler, directory = sys.argv[1:]
+# Extra arguments are compiler flags (e.g. -isysroot on macOS).
+compiler, directory, *cflags = sys.argv[1:]
 root = Path(directory)
 # Discover remaining compatibility/assembly stubs rather than hard-code their names.
 functions = re.compile(r'^\w[^\n;{}]*?\b(\w+)\s*\([^{};]*\)\s*\{', re.M)
@@ -38,7 +39,7 @@ for source in sorted((root / 'WOLFSRC').glob('*.C')):
     for defines in ([], ['-DWOLF3D_REGISTERED']):
         text = subprocess.check_output([compiler, '-E', '-P', '-x', 'c', '-std=gnu99',
                                        '-I' + str(root / 'port'), '-I' + str(root / 'WOLFSRC'),
-                                       '-I' + str(root / 'audio'),
+                                       '-I' + str(root / 'audio'), *cflags,
                                        *defines, str(source)], text=True)
         # Common declarations cancel out. Compare each stub separately so removal
         # of one stub cannot mask introduction of another.

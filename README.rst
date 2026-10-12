@@ -30,8 +30,11 @@ development packages raylib needs)::
     cmake --build build -j2
 
 raylib 5.5 is downloaded by CMake (pinned by SHA-256) unless an installed
-raylib 5.5 is found.  ``-DWOLF3D_ALL_WARNINGS=ON`` shows the full ``-Wall``
-output for the original sources.
+raylib 5.5 is found.  The downloaded copy gets a small patch
+(``cmake/patch_raylib.cmake``): a failed window/OpenGL setup is reported
+(exit 2) instead of crashing, and on a Mac without a GPU (e.g. a CI VM) the
+Apple software renderer is used.  ``-DWOLF3D_ALL_WARNINGS=ON`` shows the full
+``-Wall`` output for the original sources.
 
 Game data: only the freely distributable shareware v1.4 files (``*.WL1``) are
 supported.  They are never committed and no release package contains them.
@@ -368,7 +371,8 @@ Audio integration tests and device recordings are described in
 ``audio/README.md``.
 
 ``demo_sync`` (see above) needs the data and ``xvfb-run``, and skips without
-them.
+them.  On macOS it and ``persist_check`` open a real window instead of using
+Xvfb.
 
 WebAssembly build
 -----------------
