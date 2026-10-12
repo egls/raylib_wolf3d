@@ -392,10 +392,10 @@ if(BUILD_TESTING)
   # ---------------------------------------------------------------------------
   # Tests (ctest): the raylib keyboard translation against a fake raylib, no display needed.
   # ---------------------------------------------------------------------------
-  add_executable(rl_keys_test tests/rl_keys_test.c port/id_raylib.c ${WOLF3D_GL_PROBE_SOURCES})
+  add_executable(rl_keys_test tests/rl_keys_test.c port/id_raylib.c)
   target_include_directories(rl_keys_test PRIVATE port
     $<TARGET_PROPERTY:raylib,INTERFACE_INCLUDE_DIRECTORIES>)
-  target_link_libraries(rl_keys_test PRIVATE ${WOLF3D_LIBM} ${WOLF3D_GL_PROBE_LIBS})
+  target_link_libraries(rl_keys_test PRIVATE ${WOLF3D_LIBM})
   if(APPLE)
     target_link_libraries(rl_keys_test PRIVATE objc)
   endif()
@@ -432,12 +432,12 @@ if(BUILD_TESTING AND NOT MSVC)
   set_tests_properties(sound_manager PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 30)
 endif()
 if(BUILD_TESTING)
-  add_executable(wolf_audio_ring_test tests/audio_ring_test.c port/id_raylib.c ${WOLF3D_GL_PROBE_SOURCES})
+  add_executable(wolf_audio_ring_test tests/audio_ring_test.c port/id_raylib.c)
   target_include_directories(wolf_audio_ring_test PRIVATE port
     $<TARGET_PROPERTY:raylib,INTERFACE_INCLUDE_DIRECTORIES>)
   target_compile_definitions(wolf_audio_ring_test PRIVATE WOLF3D_AUDIO_BACKEND RL_EXTERNAL_CLOCK)
   target_compile_options(wolf_audio_ring_test PRIVATE ${WOLF3D_TEST_WARNINGS} ${WOLF3D_NODEBUG_OFF})
-  target_link_libraries(wolf_audio_ring_test PRIVATE ${WOLF3D_LIBM} ${WOLF3D_GL_PROBE_LIBS})
+  target_link_libraries(wolf_audio_ring_test PRIVATE ${WOLF3D_LIBM})
   if(APPLE)
     target_link_libraries(wolf_audio_ring_test PRIVATE objc)
   endif()

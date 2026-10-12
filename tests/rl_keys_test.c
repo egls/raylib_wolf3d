@@ -26,6 +26,7 @@ bool IsGamepadAvailable (int g)			{ (void)g; return 0; }
 bool IsGamepadButtonDown (int g, int b)	{ (void)g; (void)b; return 0; }
 float GetGamepadAxisMovement (int g, int a) { (void)g; (void)a; return 0; }
 void ToggleBorderlessWindowed (void)	{ toggles++; }
+int  WL_GLAvailable (void)				{ return 1; }	/* fake raylib: no real GL needed */
 void SetTraceLogLevel (int l)			{ (void)l; }
 void SetConfigFlags (unsigned f)		{ (void)f; }
 void InitWindow (int w, int h, const char *t) { (void)w; (void)h; (void)t; }
