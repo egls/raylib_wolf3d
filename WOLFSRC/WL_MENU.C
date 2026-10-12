@@ -65,7 +65,9 @@ void CP_NewGameMenu(int item) { (void)item; CP_NewGame(); }
 void CP_SoundMenu(int item) { (void)item; CP_Sound(); }
 void CP_ControlMenu(int item) { (void)item; CP_Control(); }
 void CP_ChangeViewMenu(int item) { (void)item; CP_ChangeView(); }
+#if !defined(GOODTIMES) && !defined(SPEAR)
 void CP_ReadThisMenu(int item) { (void)item; CP_ReadThis(); }
+#endif
 void CP_ViewScoresMenu(int item) { (void)item; CP_ViewScores(); }
 static void MouseSensitivityMenu(int item) { (void)item; MouseSensitivity(); }
 void CustomControlsMenu(int item) { (void)item; CustomControls(); }
@@ -640,10 +642,12 @@ void CP_ReadThis(void)
 void BossKey(void)
 {
 	SD_MusicOff();
-	_AX = 3;
-	geninterrupt(0x10);
-	printf("C>");
+	/* Hide the game in the existing framebuffer; there is no DOS text mode. */
+	VW_Bar(0, 0, 320, 200, 0);
+	VW_UpdateScreen();
+	IN_ClearKeysDown();
 	while (!Keyboard[sc_Escape])
+		IN_SpinWait(); /* Pumps input and yields on native and web. */
 	IN_ClearKeysDown();
 
 	SD_MusicOn();
@@ -1581,11 +1585,12 @@ static boolean WriteSaveFile(char *name,char *title,int x,int y)
 	if (handle != -1)
 	{
 		ok=write(handle,header,32) == 32 && SaveTheGame(handle,x,y);
-		ok=fsync(handle) == 0 && ok;
+		ok=WL_Fsync(handle) == 0 && ok;
 		ok=close(handle) == 0 && ok;
-		ok=ok && rename(tmp,path) == 0;
+		ok=ok && WL_ReplaceFile(tmp,path) == 0;
 		if (!ok)
 			unlink(tmp);
+		WL_UserFilesChanged();	// WOLF-43
 	}
 	if (!ok)
 	{
@@ -2338,7 +2343,7 @@ void EnterCtrlData(int index,CustomCtrls *cust,void (*DrawRtn)(int),void (*Print
 	 case KEYBOARDBTNS:
 	   if (LastScan)
 	   {
-	buttonscan[order[which]]=LastScan;
+	buttonscan[(unsigned char)order[which]]=LastScan;
 	picked=1;
 	ShootSnd();
 	IN_ClearKeysDown();
@@ -2744,7 +2749,7 @@ void DrawCustJoy(int hilight)
 void PrintCustKeybd(int i)
 {
 	PrintX=CST_START+CST_SPC*i;
-	US_Print(IN_GetScanName(buttonscan[order[i]]));
+	US_Print(IN_GetScanName(buttonscan[(unsigned char)order[i]]));
 }
 
 void DrawCustKeybd(int hilight)
@@ -3153,6 +3158,11 @@ void CleanupControlPanel(void)
 #endif
 
 	fontnumber = 0;
+
+#ifdef __EMSCRIPTEN__
+	// WOLF-43: a browser tab is closed, not quit, so keep the options now
+	WriteConfig();
+#endif
 }
 
 
@@ -3803,7 +3813,7 @@ void Message(char far *string)
 			h+=font->height;
 		}
 		else
-			w+=font->width[string[i]];
+			w+=font->width[(unsigned char)string[i]];
 
 	if (w+10>mw)
 		mw=w+10;

@@ -44,6 +44,50 @@ memptr PM_GetPage(int n) {
     CHECK(n >= 0 && n <= 16);
     return n == 16 ? sprite : wall;
 }
+/*
+ * Workaround for Windows PE-COFF linker behavior:
+ * GNU ld on Windows with PE-COFF does not discard unreferenced symbols as aggressively
+ * as ELF with -Wl,--gc-sections because x64 .pdata/.xdata unwind tables keep symbols alive.
+ * As a result, linking wolf_render_test against WL_DRAW.C and WL_STATE.C requires these
+ * unused game-loop and actor-state stubs on _WIN32.
+ */
+#ifdef _WIN32
+void PM_NextFrame(void) {}
+boolean demotest, fizzlein, demoplayback, demorecord;
+unsigned screenofs, displayofs, bufferofs, tics;
+int focallength;
+_Atomic longword TimeCount;
+statetype s_deathcam, s_blinkychase1, s_hitlerchase1, s_mechachase1, s_fakechase1;
+statetype s_schabbchase1, s_fatchase1, s_giftchase1, s_gretelchase1, s_bosschase1;
+statetype s_dogchase1, s_sschase1, s_mutchase1, s_ofcchase1, s_grdchase1;
+statetype s_hitlerdie1, s_mechadie1, s_fakedie1, s_schabbdie1, s_fatdie1;
+statetype s_giftdie1, s_greteldie1, s_bossdie1, s_dogdie1, s_ssdie1;
+statetype s_mutdie1, s_ofcdie1, s_grddie1;
+statetype s_sspain, s_sspain1, s_mutpain, s_mutpain1, s_ofcpain, s_ofcpain1, s_grdpain, s_grdpain1;
+unsigned plux, pluy;
+boolean areabyplayer[NUMAREAS];
+objtype *new, *player;
+statobj_t statobjlist[MAXSTATS], *laststatobj;
+int dirangle[9];
+int mapon;
+boolean madenoise;
+gametype gamestate;
+void GivePoints(long points) { (void)points; }
+void PlaceItemType(int itemtype, int tilex, int tiley) { (void)itemtype; (void)tilex; (void)tiley; }
+boolean SD_PlaySound(soundnames sound) { (void)sound; return true; }
+void PlaySoundLocGlobal(word s, fixed gx, fixed gy) { (void)s; (void)gx; (void)gy; }
+void WL_NotPorted(const char *what, const char *file, int line) { (void)what;(void)file;(void)line; exit(1); }
+void VL_Refresh (boolean force) { (void)force; }
+void VL_SetCRTC (int crtc) { (void)crtc; }
+void VL_SetScreen (int crtc, int pelpan) { (void)crtc; (void)pelpan; }
+void VL_Hlin (unsigned x, unsigned y, unsigned width, unsigned color) { (void)x; (void)y; (void)width; (void)color; }
+void VL_ScreenToScreen (unsigned source, unsigned dest, int width, int height) { (void)source; (void)dest; (void)width; (void)height; }
+boolean FizzleFade (unsigned source, unsigned dest, unsigned width, unsigned height, unsigned frames, boolean abortable) { (void)source; (void)dest; (void)width; (void)height; (void)frames; (void)abortable; return true; }
+void GetNewActor (void) {}
+void TakeDamage (int points, objtype *attacker) { (void)points; (void)attacker; }
+void GetBonus (statobj_t *check) { (void)check; }
+void A_DeathScream (objtype *ob) { (void)ob; }
+#endif
 static void setup(int angle) {
     int i;
     memset(tilemap, 0, sizeof tilemap);

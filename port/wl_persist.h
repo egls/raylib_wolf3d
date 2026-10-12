@@ -15,12 +15,23 @@
 #include <stdint.h>
 
 /*
- * Config and save files go to $XDG_CONFIG_HOME/raylib_wolf3d/, or
+ * On Windows, config and saves go to %APPDATA%/raylib_wolf3d/
+ * (LOCALAPPDATA is the fallback). On Linux they go to
+ * $XDG_CONFIG_HOME/raylib_wolf3d/, or
  * ~/.config/raylib_wolf3d/ when XDG_CONFIG_HOME is unset (the directory is
  * created on first use).  Returns the full path of `name` there, in a
  * static buffer that the next call overwrites.
  */
 const char	*WL_UserFile (const char *name);
+
+/* Forget the resolved directory so the next WL_UserFile() re-reads the
+ * environment (for tests). */
+void		WL_ResetUserFileCache (void);
+
+/* Call after writing or renaming a file in that directory.  The web build
+ * copies the directory to IndexedDB then (WOLF-43); elsewhere it does
+ * nothing. */
+void		WL_UserFilesChanged (void);
 
 /* A growable byte buffer with a read cursor.  Reads past the end return 0
  * and set `bad`, so a parser can read everything and check once. */

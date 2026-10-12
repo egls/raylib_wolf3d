@@ -44,6 +44,23 @@ cmake --build build-audio-spear -j2
 ctest --test-dir build-audio-spear --output-on-failure
 ```
 
+### Windows 11 (PowerShell)
+
+The engine, renderer and tests build with MinGW-w64/Ninja or MSVC; `--realtime`
+pacing uses `QueryPerformanceCounter`/`Sleep` there instead of `clock_nanosleep`.
+
+```powershell
+# MinGW (MSYS2 mingw64 on PATH)
+cmake -S audio -B build-audio -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build-audio
+ctest --test-dir build-audio --output-on-failure
+# MSVC: run the same from an "x64 Native Tools" prompt with -DCMAKE_C_COMPILER=cl
+python audio/tests/fetch_shareware.py --dir $HOME\wolf3d-data\shareware
+build-audio\wolf_audio_render.exe $HOME\wolf3d-data\shareware music 0 12 corner.wav --realtime
+# Reference check: a Wolf4SDL checkout at the pinned SHA; needs gcc/clang/cc on PATH (or $env:CC)
+python audio/tests/compare_reference.py C:\src\Wolf4SDL $HOME\wolf3d-data\shareware build-audio\wolf_audio_render.exe
+```
+
 ## Shareware data and on-disk layouts
 
 `fetch_shareware.py` uses the [Wolf3D.net v1.4 shareware repack](https://beta.wolf3d.net/games/29/downloads/4477),

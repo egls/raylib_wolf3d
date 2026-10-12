@@ -7,11 +7,10 @@
 #include <stdint.h>
 static AudioCallback callback;
 static unsigned mixed;
-static long clock_ns;
-int clock_gettime(clockid_t id,struct timespec *out) {
-    assert(id==CLOCK_MONOTONIC);
-    out->tv_sec=clock_ns/1000000000L; out->tv_nsec=clock_ns%1000000000L;
-    return 0;
+static int64_t clock_ns;
+/* The backend's clock (built with RL_EXTERNAL_CLOCK): scripted time. */
+void RL_MonotonicNow(struct timespec *out) {
+    out->tv_sec=(time_t)(clock_ns/1000000000L); out->tv_nsec=(long)(clock_ns%1000000000L);
 }
 void InitAudioDevice(void) { }
 void CloseAudioDevice(void) { }
@@ -39,7 +38,7 @@ static void test_drift(int ppm) {
      * Integer scheduling avoids accumulated floating-point clock error. */
     for (unsigned tick=0;tick<=3600u*70u;++tick) {
         uint64_t target=(uint64_t)tick*48000u*(1000000+ppm)/(70u*1000000u)+1024u;
-        clock_ns=(long)((uint64_t)tick*1000000000u/70u);
+        clock_ns=(int64_t)((uint64_t)tick*1000000000u/70u);
         while (consumed+512<=target) {
             callback(out,512);
             for (unsigned i=0;i<512;++i) {

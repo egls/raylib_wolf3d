@@ -6,7 +6,9 @@
       "displayName": "RelWithDebInfo",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "RelWithDebInfo" }
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+      }
     },
     {
       "name": "asan",
@@ -18,14 +20,97 @@
         "WOLF3D_SANITIZERS": "ON",
         "WOLF3D_CORE_SANITIZERS": "ON"
       }
+    },
+    {
+      "name": "web",
+      "displayName": "WebAssembly (Emscripten; source ~/emsdk/emsdk_env.sh first)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-web",
+      "toolchainFile": "$env{EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "windows-mingw",
+      "displayName": "Windows MinGW-w64 + Ninja (RelWithDebInfo)",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build-mingw",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "CMAKE_C_COMPILER": "gcc"
+      }
+    },
+    {
+      "name": "windows-msvc",
+      "displayName": "Windows MSVC (Visual Studio 2022, x64)",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "${sourceDir}/build-msvc",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Windows"
+      }
     }
   ],
   "buildPresets": [
-    { "name": "release", "configurePreset": "release" },
-    { "name": "asan", "configurePreset": "asan" }
+    {
+      "name": "release",
+      "configurePreset": "release"
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan"
+    },
+    {
+      "name": "web",
+      "configurePreset": "web"
+    },
+    {
+      "name": "windows-mingw",
+      "configurePreset": "windows-mingw"
+    },
+    {
+      "name": "windows-msvc",
+      "configurePreset": "windows-msvc",
+      "configuration": "RelWithDebInfo"
+    }
   ],
   "testPresets": [
-    { "name": "release", "configurePreset": "release", "output": { "outputOnFailure": true } },
-    { "name": "asan", "configurePreset": "asan", "output": { "outputOnFailure": true } }
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-mingw",
+      "configurePreset": "windows-mingw",
+      "output": {
+        "outputOnFailure": true
+      }
+    },
+    {
+      "name": "windows-msvc",
+      "configurePreset": "windows-msvc",
+      "configuration": "RelWithDebInfo",
+      "output": {
+        "outputOnFailure": true
+      }
+    }
   ]
 }

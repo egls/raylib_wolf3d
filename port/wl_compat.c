@@ -2,8 +2,13 @@
  * wl_compat.c - Borland C runtime / DOS API replacements (see wl_compat.h).
  */
 #define _GNU_SOURCE		// FNM_CASEFOLD
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#else
 #include <dirent.h>
 #include <fnmatch.h>
+#endif
 
 #include "wl_compat.h"
 
@@ -81,9 +86,33 @@ char *ultoa (unsigned long value, char *string, int radix)
  */
 int findnext (struct ffblk *ffblk)
 {
+	long	seen = 0;
+
+#ifdef _WIN32
+	WIN32_FIND_DATAA	fd;
+	HANDLE				h = FindFirstFileA(ffblk->ff_pattern, &fd);
+	BOOL				more = h != INVALID_HANDLE_VALUE;
+
+	// the Win32 search is already case-insensitive and does its own wildcards
+	for (; more; more = FindNextFileA(h, &fd))
+	{
+		if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY)
+			continue;
+		if (seen++ < ffblk->ff_found)
+			continue;
+		snprintf(ffblk->ff_name, sizeof(ffblk->ff_name), "%.255s", fd.cFileName);
+		ffblk->ff_attrib = FA_ARCH;
+		ffblk->ff_fsize = (long)fd.nFileSizeLow;
+		ffblk->ff_ftime = ffblk->ff_fdate = 0;
+		ffblk->ff_found++;
+		FindClose(h);
+		return 0;
+	}
+	if (h != INVALID_HANDLE_VALUE)
+		FindClose(h);
+#else
 	struct dirent	*de;
 	DIR				*dir;
-	long			seen = 0;
 
 	dir = opendir(".");
 	if (!dir)
@@ -107,6 +136,7 @@ int findnext (struct ffblk *ffblk)
 		return 0;
 	}
 	closedir(dir);
+#endif
 	errno = ENOENT;
 	return -1;
 }
@@ -117,6 +147,24 @@ int findfirst (const char *pathname, struct ffblk *ffblk, int attrib)
 	memset(ffblk, 0, sizeof(*ffblk));
 	snprintf(ffblk->ff_pattern, sizeof(ffblk->ff_pattern), "%s", pathname);
 	return findnext(ffblk);
+}
+
+int WL_Fsync (int handle)
+{
+#ifdef _WIN32
+	return _commit(handle);
+#else
+	return fsync(handle);
+#endif
+}
+
+int WL_ReplaceFile (const char *from, const char *to)
+{
+#ifdef _WIN32
+	return MoveFileExA(from, to, MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH) ? 0 : -1;
+#else
+	return rename(from, to);
+#endif
 }
 
 /* ------------------------------------------------------------------------

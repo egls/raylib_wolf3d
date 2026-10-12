@@ -7,6 +7,11 @@
 #include "wl_data.h"
 #include <assert.h>
 #include <time.h>
+#ifdef _WIN32
+/* no setenv/unsetenv in the Windows CRT; ID_SD.C reads these with getenv() */
+#define setenv(name, value, overwrite) _putenv_s((name), (value))
+#define unsetenv(name) _putenv_s((name), "")
+#endif
 pictabletype *pictable;
 void VL_Plot(int x,int y,int c) { (void)x; (void)y; (void)c; }
 int VW_MarkUpdateBlock(int x,int y,int xx,int yy) { (void)x; (void)y; (void)xx; (void)yy; return 0; }

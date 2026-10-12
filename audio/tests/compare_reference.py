@@ -7,12 +7,22 @@ a temporary directory. Pass a reference checkout at the documented SHA.
 import argparse
 import csv
 import hashlib
+import os
 import pathlib
 import re
+import shutil
 import struct
 import subprocess
 import tempfile
 import wave
+
+
+def find_cc():
+    # $CC, then cc/gcc/clang (MinGW or MSYS2 gcc on Windows)
+    for cand in (os.environ.get('CC'), 'cc', 'gcc', 'clang'):
+        if cand and shutil.which(cand.split()[0]):
+            return cand.split()
+    raise SystemExit('No C compiler found (set CC or put gcc/clang on PATH)')
 
 
 def extract(source, name):
@@ -77,7 +87,7 @@ SUFFIX = r'''
 int main(int argc,char **argv) {
  (void)argc;
  FILE *in=fopen(argv[2],"rb"),*out=fopen(argv[3],"wb");
- tracefile=fopen(argv[4],"w");
+ tracefile=fopen(argv[4],"wb");
  if(!in || !out || !tracefile) return 1;
  fseek(in,0,SEEK_END); long size=ftell(in); rewind(in);
  byte *data=malloc(size); if(!data || fread(data,1,size,in)!=(size_t)size) return 1;
@@ -123,7 +133,7 @@ def main():
     repo = pathlib.Path(__file__).resolve().parents[1]
     source = subprocess.check_output(
         ['git', '-C', str(args.reference), 'show', expected + ':id_sd.c'],
-        text=True)
+        text=True, encoding='utf-8', errors='replace').replace('\r\n', '\n')
     functions = ['SDL_ALStopSound', 'SDL_AlSetFXInst', 'SDL_ALPlaySound',
                  'SDL_IMFMusicPlayer', 'SDL_PCMixCallback', 'GetSample']
     h = (args.data / 'AUDIOHED.WL1').read_bytes()
@@ -138,10 +148,12 @@ def main():
     with tempfile.TemporaryDirectory(prefix='wolf-audio-reference-') as tmp:
         tmp = pathlib.Path(tmp)
         (tmp / 'reference.c').write_text(
-            PREFIX + '\n'.join(extract(source, f) for f in functions) + SUFFIX)
-        subprocess.run(['cc', '-std=c11', '-O0', '-I', str(repo / 'vendor'),
+            PREFIX + '\n'.join(extract(source, f) for f in functions) + SUFFIX,
+            encoding='utf-8')
+        exe = '.exe' if os.name == 'nt' else ''
+        subprocess.run(find_cc() + ['-std=c11', '-O0', '-I', str(repo / 'vendor'),
                         str(tmp / 'reference.c'), str(repo / 'vendor/opl3.c'),
-                        '-o', str(tmp / 'reference')], check=True)
+                        '-o', str(tmp / ('reference' + exe))], check=True)
         cases = [('music', 0, 12), ('adlib', 0, 2), ('adlib', 24, 2),
                  ('adlib', 26, 2), ('pc', 0, 2), ('pc', 24, 2),
                  ('pcm', 0, 2), ('pcm', 1, 2), ('pcm', 2, 4)]
@@ -154,7 +166,7 @@ def main():
                 slot = index + {'music': 261, 'adlib': 87, 'pc': 0}[kind]
                 raw = d[offsets[slot]:offsets[slot+1]]
             (tmp / 'chunk').write_bytes(raw)
-            subprocess.run([str(tmp / 'reference'), kind, str(tmp / 'chunk'),
+            subprocess.run([str(tmp / ('reference' + exe)), kind, str(tmp / 'chunk'),
                             str(tmp / 'ref.raw'), str(tmp / 'ref.csv'),
                             str(seconds)], check=True)
             subprocess.run([str(args.renderer.resolve()), str(args.data), kind,
@@ -186,7 +198,7 @@ def main():
             if len(raw) < 2 or struct.unpack_from('<H', raw)[0] != 0:
                 continue
             (tmp / 'chunk').write_bytes(raw)
-            subprocess.run([str(tmp / 'reference'), 'music', str(tmp / 'chunk'),
+            subprocess.run([str(tmp / ('reference' + exe)), 'music', str(tmp / 'chunk'),
                             str(tmp / 'ref.raw'), str(tmp / 'ref.csv'), '1'],
                            check=True)
             if any((tmp / 'ref.raw').read_bytes()):
