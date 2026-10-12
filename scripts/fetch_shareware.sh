@@ -37,16 +37,27 @@ for arg in "$@"; do
 done
 
 repo="$(cd "$(dirname "$0")/.." && pwd -P)"
-dest="$(realpath -m "$dest")"
+# realpath -m (GNU) also resolves a directory that does not exist yet; macOS's
+# realpath has no -m, so create the directory first there.
+if ! dest_abs="$(realpath -m "$dest" 2>/dev/null)"; then
+  mkdir -p "$dest"
+  dest_abs="$(cd "$dest" && pwd -P)"
+fi
+dest="$dest_abs"
 case "$dest/" in
   "$repo"/*) echo "Keep game data outside the repository ($repo)" >&2; exit 1 ;;
 esac
 mkdir -p "$dest"
 
-sha() { sha256sum "$1" | cut -d' ' -f1; }
+# sha256sum is missing before macOS 15; shasum ships with every macOS.
+if command -v sha256sum >/dev/null; then
+  sha() { sha256sum "$1" | cut -d' ' -f1; }
+else
+  sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
+fi
 
 if [ "$check_only" = 0 ]; then
-  for tool in curl unzip sha256sum; do
+  for tool in curl unzip; do
     command -v "$tool" >/dev/null || { echo "missing tool: $tool" >&2; exit 1; }
   done
   tmp="$(mktemp -d)"
