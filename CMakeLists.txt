@@ -122,6 +122,13 @@ set(WOLF3D_PORT_SOURCES
   port/wl_raycast.c
   port/wl_demotest.c
   port/wl_persist.c)
+# Windows: probe for an OpenGL 3.3 driver before raylib opens the window.
+set(WOLF3D_GL_PROBE_SOURCES)
+set(WOLF3D_GL_PROBE_LIBS)
+if(WIN32)
+  set(WOLF3D_GL_PROBE_SOURCES port/wl_glprobe.c)
+  set(WOLF3D_GL_PROBE_LIBS opengl32 gdi32)
+endif()
 
 # Borland C's char was signed, so the build pins -fsigned-char (plain char is
 # unsigned on some ARM targets; Apple arm64 defaults to signed).  WOLF3D_UNSIGNED_CHAR builds with -funsigned-char instead,
@@ -196,9 +203,12 @@ endif()
 # Quarantine: id_raylib.c is the only translation unit that sees raylib.h.
 # raylib is a PRIVATE dependency of this library, so its include directories
 # never reach the game sources.
-add_library(wolf3d_raylib STATIC port/id_raylib.c)
+add_library(wolf3d_raylib STATIC port/id_raylib.c ${WOLF3D_GL_PROBE_SOURCES})
 target_include_directories(wolf3d_raylib PUBLIC port)
 target_link_libraries(wolf3d_raylib PRIVATE raylib)
+if(WOLF3D_GL_PROBE_LIBS)
+  target_link_libraries(wolf3d_raylib PUBLIC ${WOLF3D_GL_PROBE_LIBS})
+endif()
 # id_raylib.c toggles macOS fullscreen through the Objective-C runtime.
 if(APPLE)
   target_link_libraries(wolf3d_raylib PRIVATE objc)
@@ -300,15 +310,30 @@ if(BUILD_TESTING)
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/macos_packaging_test.py)
     set_tests_properties(macos_packaging PROPERTIES TIMEOUT 60)
   endif()
-  # AppleClang finds the SDK headers only through -isysroot.
-  set(WOLF3D_GUARD_CFLAGS)
-  if(APPLE AND CMAKE_OSX_SYSROOT)
-    set(WOLF3D_GUARD_CFLAGS -isysroot ${CMAKE_OSX_SYSROOT})
+  # A source-level guard that drives a GNU-style preprocessor (-E -P -x c);
+  # cl.exe does not take those flags, and the GCC jobs cover the same sources.
+  if(NOT MSVC)
+    # AppleClang finds the SDK headers only through -isysroot.
+    set(WOLF3D_GUARD_CFLAGS)
+    if(APPLE AND CMAKE_OSX_SYSROOT)
+      set(WOLF3D_GUARD_CFLAGS -isysroot ${CMAKE_OSX_SYSROOT})
+    endif()
+    add_test(NAME registered_stub_guard COMMAND Python3::Interpreter -I
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/registered_stub_guard.py
+      ${CMAKE_C_COMPILER} ${CMAKE_CURRENT_SOURCE_DIR} ${WOLF3D_GUARD_CFLAGS})
+    set_tests_properties(registered_stub_guard PROPERTIES TIMEOUT 30)
   endif()
-  add_test(NAME registered_stub_guard COMMAND Python3::Interpreter -I
-    ${CMAKE_CURRENT_SOURCE_DIR}/tests/registered_stub_guard.py
-    ${CMAKE_C_COMPILER} ${CMAKE_CURRENT_SOURCE_DIR} ${WOLF3D_GUARD_CFLAGS})
-  set_tests_properties(registered_stub_guard PROPERTIES TIMEOUT 30)
+  # Links all of WL_MENU.C against only the stubs it needs by discarding unused
+  # sections (--gc-sections); link.exe still reports their unresolved symbols.
+  if(NOT MSVC)
+    add_executable(wolf_boss_key_test tests/boss_key_test.c WOLFSRC/WL_MENU.C)
+    target_include_directories(wolf_boss_key_test PRIVATE port WOLFSRC)
+    target_compile_definitions(wolf_boss_key_test PRIVATE WOLF3D_REGISTERED)
+    target_compile_options(wolf_boss_key_test PRIVATE ${WOLF3D_TEST_WARNINGS} ${WOLF3D_GAME_FLAGS} ${WOLF3D_SECTION_FLAGS} ${WOLF3D_NODEBUG_OFF})
+    target_link_options(wolf_boss_key_test PRIVATE ${WOLF3D_GC_LINK})
+    add_test(NAME registered_boss_key COMMAND wolf_boss_key_test)
+    set_tests_properties(registered_boss_key PROPERTIES TIMEOUT 5)
+  endif()
   # Web deploy cutover, rollback and .htaccess edit, offline (WOLF-46).
   if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
     find_program(WOLF3D_BASH bash)
@@ -318,13 +343,6 @@ if(BUILD_TESTING)
       set_tests_properties(deploy_web_check PROPERTIES TIMEOUT 60)
     endif()
   endif()
-  add_executable(wolf_boss_key_test tests/boss_key_test.c WOLFSRC/WL_MENU.C)
-  target_include_directories(wolf_boss_key_test PRIVATE port WOLFSRC)
-  target_compile_definitions(wolf_boss_key_test PRIVATE WOLF3D_REGISTERED)
-  target_compile_options(wolf_boss_key_test PRIVATE ${WOLF3D_TEST_WARNINGS} ${WOLF3D_GAME_FLAGS} ${WOLF3D_SECTION_FLAGS} ${WOLF3D_NODEBUG_OFF})
-  target_link_options(wolf_boss_key_test PRIVATE ${WOLF3D_GC_LINK})
-  add_test(NAME registered_boss_key COMMAND wolf_boss_key_test)
-  set_tests_properties(registered_boss_key PROPERTIES TIMEOUT 5)
   add_executable(wolf_wl6_layout tests/wl6_layout.c)
   target_include_directories(wolf_wl6_layout PRIVATE port WOLFSRC)
   target_compile_definitions(wolf_wl6_layout PRIVATE WOLF3D_REGISTERED)
@@ -431,7 +449,8 @@ if(BUILD_TESTING)
   endif()
 endif()
 
-if(BUILD_TESTING)
+# The sound manager tests use POSIX nanosleep/clock_gettime/fstat: not on MSVC.
+if(BUILD_TESTING AND NOT MSVC)
   foreach(t wolf_sd_test wolf_sd_device)
     add_executable(${t} tests/sd_integration_test.c WOLFSRC/ID_SD.C
       WOLFSRC/ID_MM.C WOLFSRC/ID_PM.C WOLFSRC/ID_CA.C port/wl_data.c)

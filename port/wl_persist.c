@@ -12,6 +12,9 @@
 /* MinGW's <direct.h> renames diskfree_t, which the Borland shim declares. */
 #undef diskfree_t
 #define mkdir(path, mode) _mkdir(path)
+#ifndef S_ISDIR
+#define S_ISDIR(m) (((m) & _S_IFMT) == _S_IFDIR)  /* MSVC <sys/stat.h> */
+#endif
 #else
 #include <unistd.h>
 #endif

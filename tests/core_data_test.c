@@ -1,6 +1,9 @@
 #include "WL_DEF.H"
 #include "wl_data.h"
 #include <assert.h>
+#ifndef R_OK
+#define R_OK 4  /* MSVC <io.h> has no R_OK; _access takes 4 for read */
+#endif
 pictabletype *pictable;
 SDMode SoundMode;
 int viewwidth = 320, viewheight = 200;

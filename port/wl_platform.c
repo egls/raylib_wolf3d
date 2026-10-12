@@ -19,6 +19,8 @@
 #include "wl_timer.h"
 #include "wl_persist.h"
 #include "wl_asset.h"
+#ifdef _WIN32
+#endif
 #ifdef __APPLE__
 #include <mach-o/dyld.h>
 #include <limits.h>

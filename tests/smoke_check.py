@@ -53,10 +53,16 @@ with tempfile.TemporaryDirectory(prefix="wolf_smoke_fake_") as tmp:
     # there.  Test 1 and -datacheck above still run everywhere.
     if (
         sys.platform == "win32"
-        and "does not appear to support OpenGL" in combined
         and (
-            (result.returncode == 2 and "could not open a window" in combined)
-            or result.returncode == 3221225477  # 0xC0000005 access violation
+            # wl_glprobe.c finds no OpenGL 3.3 before the window opens
+            (result.returncode == 2 and "no OpenGL 3.3 driver available" in combined)
+            or (
+                "does not appear to support OpenGL" in combined
+                and (
+                    (result.returncode == 2 and "could not open a window" in combined)
+                    or result.returncode == 3221225477  # 0xC0000005 access violation
+                )
+            )
         )
     ):
         print("SKIPPED: placeholder smoke needs OpenGL; runner has no GL driver (GLFW WGL error)")
