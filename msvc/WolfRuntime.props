@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Runtime settings for running from Visual Studio (F5). Import from the game
+  .vcxproj with:
+    <Import Project="$(MSBuildThisFileDirectory)msvc\WolfRuntime.props" />
+  (adjust the path to where the project sits).
+
+  Shareware data (*.WL1) is not in git. Point WOLF3D_DATA at the directory
+  holding it (environment variable or MSBuild property). If unset, the game
+  looks next to the exe, then in %USERPROFILE%\wolf3d-data\shareware, which is
+  where scripts\fetch_shareware.ps1 puts it.
+-->
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <WOLF3D_DATA Condition="'$(WOLF3D_DATA)' == ''">$(USERPROFILE)\wolf3d-data\shareware</WOLF3D_DATA>
+    <!-- F5 defaults to $(ProjectDir); run next to the exe instead. -->
+    <LocalDebuggerWorkingDirectory>$(OutDir)</LocalDebuggerWorkingDirectory>
+    <LocalDebuggerEnvironment>WOLF3D_DATA=$(WOLF3D_DATA)
+$(LocalDebuggerEnvironment)</LocalDebuggerEnvironment>
+    <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
+  </PropertyGroup>
+
+  <!-- Optional: copy *.WL1 next to the exe so the exe also runs standalone.
+       Never fails the build if the data is absent. -->
+  <Target Name="WolfCopyData" AfterTargets="Build" Condition="Exists('$(WOLF3D_DATA)\VSWAP.WL1')">
+    <ItemGroup>
+      <WolfData Include="$(WOLF3D_DATA)\*.WL1" />
+    </ItemGroup>
+    <Copy SourceFiles="@(WolfData)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" ContinueOnError="true" />
+  </Target>
+</Project>

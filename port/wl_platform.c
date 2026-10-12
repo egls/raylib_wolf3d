@@ -69,7 +69,7 @@ void WL_NotPorted (const char *what, const char *file, int line)
 /*
  * The data directory is, in order: "-data <dir>" on the command line, the
  * WOLF3D_DATA environment variable, or automatic platform discovery (the
- * current directory on other platforms). The DOS code
+ * current directory on other platforms; on Windows also the exe directory). The DOS code
  * opens its files by bare name, so we chdir() there.
  */
 #ifdef __APPLE__
@@ -130,6 +130,55 @@ static const char *WL_MacDataDir(void)
 }
 #endif
 
+#ifdef _WIN32
+/* True when dir holds every data file (no chdir; WL_AssetName is identity here). */
+static int WL_HasData(const char *dir)
+{
+	char path[1024];
+	unsigned i;
+	for (i = 0; i < sizeof(data_files) / sizeof(data_files[0]); i++)
+	{
+		snprintf(path, sizeof(path), "%s\\%s", dir, data_files[i]);
+		if (WL_ACCESS(path)) return 0;
+	}
+	return 1;
+}
+
+/*
+ * Visual Studio F5 starts in $(ProjectDir), not next to the exe, and the
+ * shareware data lives outside git.  When neither -data nor WOLF3D_DATA is
+ * given, try the current directory, then the exe's directory (and its
+ * parents, for x64\Debug under the solution), then the fetch script's default
+ * %USERPROFILE%\wolf3d-data\shareware.  Falls back to "." so the usual
+ * "not found" message still names the directory.
+ */
+static const char *WL_WinDataDir(void)
+{
+	static char candidate[1024];
+	char *exe = NULL, *slash;
+	const char *home;
+	int depth;
+
+	if (WL_HasData(".")) return ".";
+	if (!_get_pgmptr(&exe) && exe && strlen(exe) < sizeof(candidate))
+	{
+		strcpy(candidate, exe);
+		for (depth = 0; depth < 4 && (slash = strrchr(candidate, '\\')); depth++)
+		{
+			*slash = 0;
+			if (WL_HasData(candidate)) return candidate;
+		}
+	}
+	home = getenv("USERPROFILE");
+	if (home && strlen(home) + sizeof("\\wolf3d-data\\shareware") <= sizeof(candidate))
+	{
+		snprintf(candidate, sizeof(candidate), "%s\\wolf3d-data\\shareware", home);
+		if (WL_HasData(candidate)) return candidate;
+	}
+	return ".";
+}
+#endif
+
 static const char *WL_FindDataDir (int argc, char **argv)
 {
 	const char	*dir = NULL;
@@ -150,6 +199,8 @@ static const char *WL_FindDataDir (int argc, char **argv)
 	if (!dir || !*dir)
 #ifdef __APPLE__
 		dir = WL_MacDataDir();
+#elif defined(_WIN32)
+		dir = WL_WinDataDir();
 #else
 		dir = ".";
 #endif

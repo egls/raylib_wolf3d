@@ -150,6 +150,13 @@ If scripts are blocked, run ``powershell -ExecutionPolicy Bypass -File
 scripts\fetch_shareware.ps1`` (or ``Set-ExecutionPolicy -Scope CurrentUser
 RemoteSigned``).
 
+On Windows, without ``-data`` or ``WOLF3D_DATA`` the game looks in the current
+directory, then the exe's directory (and up to three parents, so ``x64\Debug``
+works), then ``%USERPROFILE%\wolf3d-data\shareware``.  For Visual Studio (F5),
+import ``msvc\WolfRuntime.props`` in the project: it sets the debugger working
+directory to ``$(OutDir)``, passes ``WOLF3D_DATA`` and copies ``*.WL1`` next to
+the exe after a build when that directory has the data.
+
 The Windows release package is
 ``raylib_wolf3d-VERSION-windows-x64.zip``: ``raylib_wolf3d.exe``, the
 non-system runtime DLLs it needs (for MinGW ``libwinpthread-1.dll`` and
