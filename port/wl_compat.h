@@ -31,6 +31,12 @@
 #include <io.h>				/* open/read/write/close/unlink; no unistd.h or strings.h */
 #include <BaseTsd.h>
 typedef SSIZE_T ssize_t;
+#ifndef S_ISDIR
+#define S_ISDIR(m)	(((m) & _S_IFMT) == _S_IFDIR)
+#endif
+#ifndef S_ISREG
+#define S_ISREG(m)	(((m) & _S_IFMT) == _S_IFREG)
+#endif
 #else
 #include <strings.h>
 #include <unistd.h>
