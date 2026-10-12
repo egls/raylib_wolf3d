@@ -145,9 +145,22 @@ int main(int argc, char **argv) {
             deadline.tv_sec+=(time_t)(ns/1000000000);
             deadline.tv_nsec+=(long)(ns%1000000000);
             if (deadline.tv_nsec>=1000000000) { ++deadline.tv_sec; deadline.tv_nsec-=1000000000; }
+#ifdef __APPLE__
+            /* Darwin has no clock_nanosleep: sleep the remaining relative time. */
+            for (;;) {
+                struct timespec now, rel;
+                if (clock_gettime(CLOCK_MONOTONIC,&now)) fail("Wall clock pacing failed");
+                rel.tv_sec=deadline.tv_sec-now.tv_sec; rel.tv_nsec=deadline.tv_nsec-now.tv_nsec;
+                if (rel.tv_nsec<0) { --rel.tv_sec; rel.tv_nsec+=1000000000; }
+                if (rel.tv_sec<0 || (rel.tv_sec==0 && rel.tv_nsec==0)) break;
+                if (nanosleep(&rel,NULL)==0) break;
+                if (errno!=EINTR) fail("Wall clock pacing failed");
+            }
+#else
             int e;
             do { e=clock_nanosleep(CLOCK_MONOTONIC,TIMER_ABSTIME,&deadline,NULL); } while(e==EINTR);
             if (e) fail("Wall clock pacing failed");
+#endif
 #endif
         }
     }
