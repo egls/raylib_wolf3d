@@ -5,7 +5,10 @@
 #      5.5 called rlglInit() without a GL context and crashed (upstream fix).
 #   2. rcore_desktop_glfw.c: do not ask a window that failed to open for its
 #      position (glfwGetWindowPos(NULL) crashed before the error was seen).
-#   3. GLFW nsgl_context.m: when macOS has no accelerated OpenGL pixel format
+#   3. rcore_desktop_glfw.c: a windowed request with an explicit size does not
+#      need a monitor (an X server whose outputs are all disconnected, e.g. a
+#      headless GPU box); keep the requested size and skip centering.
+#   4. GLFW nsgl_context.m: when macOS has no accelerated OpenGL pixel format
 #      (a VM without a GPU, such as the GitHub macOS runners), retry without
 #      NSOpenGLPFAAccelerated so the Apple software renderer is used.  Macs
 #      with a GPU get the same pixel format as before.
@@ -39,6 +42,24 @@ wolf3d_patch(src/platforms/rcore_desktop_glfw.c
 "            glfwGetWindowPos(platform.handle, &wcx, &wcy);
 "
 "            if (platform.handle != NULL) glfwGetWindowPos(platform.handle, &wcx, &wcy);
+")
+
+wolf3d_patch(src/platforms/rcore_desktop_glfw.c
+"            // The monitor for the window-manager-created window can not be determined, so it can not be centered.
+            glfwTerminate();
+            TRACELOG(LOG_WARNING, \"GLFW: Failed to determine Monitor to center Window\");
+            return -1;
+"
+"            // The monitor for the window-manager-created window can not be determined, so it can not be centered.
+            // raylib_wolf3d: a window of explicit size works without one (headless X server).
+            TRACELOG(LOG_WARNING, \"GLFW: Failed to determine Monitor to center Window\");
+            if (requestWindowedFullscreen) { glfwTerminate(); return -1; }
+")
+
+wolf3d_patch(src/platforms/rcore_desktop_glfw.c
+"        glfwGetMonitorWorkarea(monitor, &monitorX, &monitorY, &monitorWidth, &monitorHeight);
+"
+"        if (monitor != NULL) glfwGetMonitorWorkarea(monitor, &monitorX, &monitorY, &monitorWidth, &monitorHeight);
 ")
 
 wolf3d_patch(src/external/glfw/src/nsgl_context.m

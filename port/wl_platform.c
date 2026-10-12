@@ -204,7 +204,8 @@ void WL_PlatformStartup (int argc, char **argv)
 
 	if (!RL_OpenWindow(WL_WINDOW_W, WL_WINDOW_H, "Wolfenstein 3-D (raylib)"))
 	{
-		fprintf(stderr, WOLF3D_PROGRAM_NAME ": could not open a window\n");
+		fprintf(stderr, WOLF3D_PROGRAM_NAME ": could not open a window "
+			"(no X/Wayland display or no OpenGL 3.3 context; see the raylib warnings above)\n");
 		exit(2);
 	}
 	WL_TimerStart();		// 70 Hz TimeCount, replaces the PIT interrupt
