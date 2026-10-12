@@ -56,6 +56,17 @@ const char *WL_UserFile (const char *name)
 			Quit("APPDATA or LOCALAPPDATA is required for save files");
 		if (!_fullpath(user_dir, base, sizeof(user_dir)))
 			Quit("Save directory path is too long");
+#elif defined(__APPLE__)
+		base = getenv("HOME");
+		if (!base || base[0] != '/')
+			Quit("An absolute HOME is required for save files");
+		if (snprintf(user_dir, sizeof(user_dir), "%s/Library", base) >= (int)sizeof(user_dir))
+			Quit("Save directory path is too long");
+		if (!MakeDir(user_dir))
+			Quit("Cannot create Library directory");
+		if (strlen(user_dir) + sizeof("/Application Support") > sizeof(user_dir))
+			Quit("Save directory path is too long");
+		strcat(user_dir, "/Application Support");
 #else
 		base = getenv("XDG_CONFIG_HOME");
 		if (base && base[0] == '/')

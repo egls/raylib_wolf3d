@@ -9,6 +9,7 @@
 #include "ID_HEADS.H"
 #include "wl_timer.h"
 #include "wl_persist.h"
+#include "wl_asset.h"
 
 _Atomic uint32_t TimeCount;
 struct statestruct *const wl_states[] = {NULL};
@@ -40,6 +41,23 @@ int main(int argc, char **argv) {
     double target, before;
     FILE *file;
     WL_PlatformStartup(argc, argv);
+    /* Use the same resolved read names as CA/PM, rather than testing only
+     * startup existence checks with the placeholder files. */
+    {
+        const char *names[] = {"AUDIOHED.WL1", "AUDIOT.WL1", "GAMEMAPS.WL1",
+            "MAPHEAD.WL1", "VGADICT.WL1", "VGAGRAPH.WL1", "VGAHEAD.WL1", "VSWAP.WL1"};
+        unsigned i;
+        for (i = 0; i < sizeof(names) / sizeof(names[0]); i++) {
+            const char *resolved = WL_AssetName(names[i]);
+#ifdef __APPLE__
+            if (getenv("WOLF_TEST_MIXED_CASE"))
+                assert(strcmp(resolved, names[i]) != 0);
+#endif
+            file = fopen(resolved, "rb");
+            assert(file);
+            assert(fclose(file) == 0);
+        }
+    }
     target = WL_TickClock() + 7;
     WL_SleepUntilTick(target);
     assert(WL_TickClock() >= target);

@@ -251,6 +251,13 @@ static void test_user_file(void) {
     snprintf(dir, sizeof(dir), "%s/raylib_wolf3d", home);
     user_file_case(dir);
     printf("PASS: Windows user directory\n");
+#elif defined(__APPLE__)
+    set_env("HOME", home);
+    set_env("XDG_CONFIG_HOME", xdg);
+    WL_ResetUserFileCache();
+    snprintf(dir, sizeof(dir), "%s/Library/Application Support/raylib_wolf3d", home);
+    user_file_case(dir);
+    printf("PASS: macOS Application Support directory\n");
 #else
     set_env("HOME", home);
     set_env("XDG_CONFIG_HOME", xdg);
