@@ -369,6 +369,11 @@ if(BUILD_TESTING)
     $<TARGET_FILE:raylib_wolf3d> ${WOLF3D_TEST_DATA} ${CMAKE_CURRENT_BINARY_DIR}/persist_check)
   set_tests_properties(persist_check PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED" TIMEOUT 600)
 
+  add_test(NAME silent_config COMMAND Python3::Interpreter -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/silent_config_check.py
+    $<TARGET_FILE:raylib_wolf3d> ${WOLF3D_TEST_DATA})
+  set_tests_properties(silent_config PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED" TIMEOUT 600)
+
   # No-data smoke test: missing data returns 2, empty placeholder files return 1 (VSWAP short read)
   add_test(NAME smoke_nodata COMMAND Python3::Interpreter -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_check.py

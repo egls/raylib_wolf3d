@@ -367,6 +367,11 @@ cycles. SHA-256 verification stays in ``scripts/fetch_shareware.sh``.
 The WOLF-6 Sound Manager drives the Nuked OPL engine and 7042 Hz VSWAP
 samples through a raylib AudioStream. ``-nosound`` / ``WOLF3D_NOSOUND=1``
 disable all audio; ``-nomusic`` / ``WOLF3D_NOMUSIC=1`` disable music only.
+Silent sessions (including unavailable audio devices) preserve the saved
+sound preferences. A fresh silent session saves AdLib effects/music and
+Sound Blaster digitized defaults for the next normal run. ``silent_config``
+checks this with isolated configs and real gameplay/quit under Xvfb; run
+``ctest --preset release -R silent_config -V`` (or ``--preset asan``).
 Audio integration tests and device recordings are described in
 ``audio/README.md``.
 
