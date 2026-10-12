@@ -7,9 +7,8 @@ command-line builds in ``README.rst`` are unaffected.
 
 .. note::
 
-   The solution and project files are added by the "Visual Studio port"
-   series (WOLF-99).  File locations below are written as ``<vs-dir>`` for the
-   directory that holds ``raylib_wolf3d.sln``; use the path your checkout has.
+   The solution lives in ``vs2022\`` (added by the "Visual Studio port"
+   series, WOLF-99).  Paths below are relative to the repository root.
 
 Prerequisites
 -------------
@@ -50,18 +49,18 @@ reuse it.
 Opening and building
 --------------------
 
-1. Open ``<vs-dir>\raylib_wolf3d.sln`` (File > Open > Project/Solution).
+1. Open ``vs2022\raylib_wolf3d.sln`` (File > Open > Project/Solution).
 2. Pick the **x64** platform and **Debug** or **Release** in the toolbar.
    There is no Win32 configuration.
 3. Build > Build Solution (``Ctrl+Shift+B``).
 
 The same from a Developer PowerShell for VS::
 
-    msbuild <vs-dir>\raylib_wolf3d.sln /p:Configuration=Release /p:Platform=x64
+    msbuild vs2022\raylib_wolf3d.sln /p:Configuration=Release /p:Platform=x64
 
 The executable is ``raylib_wolf3d.exe`` in the configuration's output folder
-(``...\x64\Debug`` or ``...\x64\Release``).  The output folders are ignored by
-git.
+(``build-vs\x64\Debug`` or ``build-vs\x64\Release``).  The output folders are
+ignored by git.
 
 Game data
 ---------
@@ -78,16 +77,19 @@ Running from Visual Studio
 --------------------------
 
 Visual Studio starts the debuggee with the *project* directory as the working
-directory, not the folder holding the exe, so a relative data lookup fails
-unless the project overrides it.  The project configures this for you: F5 /
-``Ctrl+F5`` runs the game with the data directory taken from ``WOLF3D_DATA``,
-falling back to ``%USERPROFILE%\wolf3d-data\shareware``.  With the data fetched
-as above nothing else is needed.
+directory, not the folder holding the exe.  The project does not override it,
+and the game's Windows fallback is that same directory, so a plain F5 exits
+with "Data not found".  Point the debugger at the data directory once, per
+project: set Project > Properties > Debugging > **Environment** to
+``WOLF3D_DATA=$(USERPROFILE)\wolf3d-data\shareware``.  MSBuild expands
+``$(USERPROFILE)`` to your profile directory, and Visual Studio saves the
+setting in the per-user ``*.vcxproj.user`` file, which is not committed.
+F5 / ``Ctrl+F5`` then runs the game with the data fetched above.
 
 To use another data directory:
 
-* set the ``WOLF3D_DATA`` environment variable (restart Visual Studio so it
-  sees it), or
+* set the ``WOLF3D_DATA`` environment variable user-wide (``setx WOLF3D_DATA
+  C:\path\to\wl1-data``) and restart Visual Studio so it sees it, or
 * set Project > Properties > Debugging > **Command Arguments** to
   ``-data C:\path\to\wl1-data`` (use your own path; do not commit it), or
 * copy the ``*.WL1`` files next to the exe.
