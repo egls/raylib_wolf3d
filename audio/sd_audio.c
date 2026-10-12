@@ -6,6 +6,13 @@
 #include "sd_audio.h"
 #include "vendor/opl3.h"
 #include <stdlib.h>
+#ifdef SD_WEB_TRACE
+#include <emscripten.h>
+/* Opt-in timing evidence; no tracing or browser dependency in normal builds. */
+#define TRACE_SOUND(event_kind) EM_ASM({ if (Module.wolfAudioTrace) Module.wolfAudioTrace.push({kind: UTF8ToString($0), now: performance.now()}); }, event_kind)
+#else
+#define TRACE_SOUND(event_kind) ((void)0)
+#endif
 #ifdef SD_AUDIO_SPEAR
 #define MUSIC_HZ 560u
 #else
@@ -62,6 +69,7 @@ int sd_audio_music(sd_audio *s, const uint8_t *p, size_t n, int loop) {
     sd_audio_stop_music(s);
     s->music=p; s->music_len=n; s->music_pos=0; s->paused=0;
     s->music_time=0; s->next_event=0; s->loop=loop;
+    TRACE_SOUND("music");
     return 1;
 }
 void sd_audio_stop_effect(sd_audio *s) {
@@ -81,6 +89,7 @@ int sd_audio_adlib(sd_audio *s, const uint8_t *p, size_t n) {
     reg(s,0xc0,0); /* nConn intentionally ignored, as in the original */
     s->priority=le16(p+4); s->block=((p[22]&7)<<2)|0x20;
     s->adlib=p+23; s->adlib_len=le32(p);
+    TRACE_SOUND("adlib");
     return 1;
 }
 int sd_audio_pc(sd_audio *s, const uint8_t *p, size_t n) {
@@ -88,6 +97,7 @@ int sd_audio_pc(sd_audio *s, const uint8_t *p, size_t n) {
     sd_audio_stop_effect(s);
     s->priority=le16(p+4); s->pc=p+6; s->pc_len=le32(p);
     s->pc_clock=s->rate; s->pc_value=256;
+    TRACE_SOUND("pc");
     return 1;
 }
 void sd_audio_stop_pcm(sd_audio *s) { s->pcm=NULL; s->pcm_priority=0; }
@@ -97,6 +107,7 @@ int sd_audio_pcm(sd_audio *s, const uint8_t *p, size_t n, unsigned priority, uns
     size_t dest=(size_t)((float)n*(float)s->rate/7042.0f);
     if (!dest) return 0;
     s->pcm_pc=0; s->pcm=p; s->pcm_len=n; s->pcm_frames=dest; s->pcm_pos=0; s->pcm_priority=priority; s->left=l; s->right=r;
+    TRACE_SOUND("pcm");
     return 1;
 }
 static void music_tick(sd_audio *s) {
@@ -194,5 +205,6 @@ int sd_audio_pc_pcm(sd_audio *s, const uint8_t *p, size_t n) {
     if (!sd_audio_pcm(s,p,n,0,0,0)) return 0;
     s->pcm_pc=1;
     s->pcm_frames=(n*(uint64_t)s->rate+6999)/7000;
+    TRACE_SOUND("pc-pcm");
     return 1;
 }

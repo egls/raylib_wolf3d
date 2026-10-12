@@ -52,6 +52,43 @@ if(WOLF3D_WEB_DATA)
   endif()
 endif()
 
+# raylib 5.5 exposes the stream size but not the device period. Its default
+# WebAudio ScriptProcessor is 2048 frames (two blocks add ~85 ms alone).
+# Compile a generated copy with an explicit period, leaving fetched sources
+# intact. This stays on the main thread: no AudioWorklet/SharedArrayBuffer.
+get_target_property(WOLF3D_RAYLIB_SOURCE_DIR raylib SOURCE_DIR)
+set(WOLF3D_RAUDIO "${WOLF3D_RAYLIB_SOURCE_DIR}/raudio.c")
+file(READ "${WOLF3D_RAUDIO}" WOLF3D_RAUDIO_TEXT)
+set(WOLF3D_PERIOD_MARKER "config.sampleRate = AUDIO_DEVICE_SAMPLE_RATE;")
+string(FIND "${WOLF3D_RAUDIO_TEXT}" "${WOLF3D_PERIOD_MARKER}" WOLF3D_PERIOD_POS)
+if(WOLF3D_PERIOD_POS LESS 0)
+  message(FATAL_ERROR "raylib audio configuration changed; review web period patch")
+endif()
+string(REPLACE "${WOLF3D_PERIOD_MARKER}"
+  "${WOLF3D_PERIOD_MARKER}\n    config.periodSizeInFrames = 256; // WOLF3D_WEB_AUDIO_PERIOD"
+  WOLF3D_RAUDIO_TEXT "${WOLF3D_RAUDIO_TEXT}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/wolf_raudio.c.in" "${WOLF3D_RAUDIO_TEXT}")
+configure_file("${CMAKE_CURRENT_BINARY_DIR}/wolf_raudio.c.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/wolf_raudio.c" COPYONLY)
+get_target_property(WOLF3D_RAYLIB_SOURCES raylib SOURCES)
+set(WOLF3D_WEB_RAYLIB_SOURCES)
+foreach(src IN LISTS WOLF3D_RAYLIB_SOURCES)
+  if(src STREQUAL "raudio.c" OR src STREQUAL "${WOLF3D_RAUDIO}")
+    list(APPEND WOLF3D_WEB_RAYLIB_SOURCES "${CMAKE_CURRENT_BINARY_DIR}/wolf_raudio.c")
+  elseif(IS_ABSOLUTE "${src}" OR src MATCHES "^\\$<")
+    list(APPEND WOLF3D_WEB_RAYLIB_SOURCES "${src}")
+  else()
+    list(APPEND WOLF3D_WEB_RAYLIB_SOURCES "${WOLF3D_RAYLIB_SOURCE_DIR}/${src}")
+  endif()
+endforeach()
+set_property(TARGET raylib PROPERTY SOURCES "${WOLF3D_WEB_RAYLIB_SOURCES}")
+target_include_directories(raylib PRIVATE "${WOLF3D_RAYLIB_SOURCE_DIR}")
+
+option(WOLF3D_WEB_AUDIO_TRACE "Record accepted sound-event times for web_audio.mjs" OFF)
+if(WOLF3D_WEB_AUDIO_TRACE)
+  target_compile_definitions(wolf_audio PRIVATE SD_WEB_TRACE)
+endif()
+
 set(WOLF3D_SHELL ${CMAKE_CURRENT_SOURCE_DIR}/web/shell.html)
 
 # Hosting template: upload the build directory.
@@ -85,12 +122,14 @@ function(wolf3d_configure_web target)
     -sALLOW_MEMORY_GROWTH=1
     -sSTACK_SIZE=1MB
     -sENVIRONMENT=web
-    # The page starts the game from a click (focus, pointer lock and, in a
-    # later stage, the audio context need a user gesture).
+    # The page starts the game from a click (focus, pointer lock and the
+    # audio context need a user gesture).
     -sINVOKE_RUN=0
     # Quit and errors end the program; the page then shows its overlay.
     -sEXIT_RUNTIME=1
-    -sEXPORTED_RUNTIME_METHODS=callMain,FS,ENV,addRunDependency,removeRunDependency
+    # miniaudio's ScriptProcessor reads Module.HEAPF32. Export the view so
+    # modern Emscripten also refreshes it after WebAssembly memory growth.
+    -sEXPORTED_RUNTIME_METHODS=callMain,FS,ENV,addRunDependency,removeRunDependency,HEAPF32
     # Both variants persist configs, saves and user data in IndexedDB.
     -lidbfs.js
     --shell-file ${WOLF3D_SHELL}

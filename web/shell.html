@@ -594,8 +594,7 @@
   }
 
   function gameArgs() {
-    // No web audio yet (WOLF-40 stage 2): the silent path of ID_SD.
-    var args = ['-data', dataset === 'user' ? USERDIR : SHAREDIR, '-nosound'];
+    var args = ['-data', dataset === 'user' ? USERDIR : SHAREDIR];
     (query.get('args') || '').split(/\s+/).filter(Boolean)
       .forEach(function (a) { args.push(a); });
     return args;

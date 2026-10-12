@@ -71,6 +71,73 @@ jobs:
           test "$rc" = 1
           grep -q 'VSWAP: short read' run.txt
 
+  macos-15:
+    # Apple Silicon (arm64), AppleClang; plain char is signed on Apple arm64.
+    # macos-15 instead of macos-14: GitHub retires the macos-14 image on
+    # 2026-11-02 (brownouts underway); keep the 13.0 deployment target below.
+    # No game data in CI: core_wl1_data, demo_sync, persist_check and
+    # sound_manager skip.
+    runs-on: macos-15
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: 1
+      HOMEBREW_NO_INSTALL_CLEANUP: 1
+      RAYLIB_URL: https://github.com/raysan5/raylib/archive/refs/tags/5.5.tar.gz
+      RAYLIB_SHA256: aea98ecf5bc5c5e0b789a76de0083a21a70457050ea4cc2aec7566935f5e258e
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: command -v ninja >/dev/null || brew install ninja
+
+      # The same tarball and SHA-256 as the FetchContent fallback in
+      # CMakeLists.txt, which still checks the hash and applies
+      # cmake/patch_raylib.cmake to the cached copy.
+      - name: Cache raylib 5.5 tarball
+        id: raylib-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/raylib-cache
+          key: raylib-tarball-5.5-${{ env.RAYLIB_SHA256 }}
+
+      - name: Fetch raylib 5.5 tarball
+        if: steps.raylib-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/raylib-cache
+          curl -fsSL --retry 3 -o ~/raylib-cache/raylib-5.5.tar.gz "$RAYLIB_URL"
+          echo "$RAYLIB_SHA256  $HOME/raylib-cache/raylib-5.5.tar.gz" | shasum -a 256 -c -
+
+      - name: Toolchain
+        run: |
+          uname -m
+          sw_vers
+          cc --version | head -1
+          cmake --version | head -1
+          ninja --version
+
+      - name: raylib quarantine
+        run: |
+          # Only port/id_raylib.c may include raylib.h
+          hits=$(grep -rIlE --include='*.[ch]' --include='*.[CH]' '#[[:space:]]*include[[:space:]]*[<"]raylib\.h[">]' WOLFSRC port | grep -v '^port/id_raylib\.c$' || true)
+          if [ -n "$hits" ]; then echo "raylib.h included from: $hits"; exit 1; fi
+
+      - name: Configure
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DWOLF3D_RAYLIB_URL="file://$HOME/raylib-cache/raylib-5.5.tar.gz"
+
+      - name: Build
+        run: |
+          set -o pipefail
+          cmake --build build 2>&1 | tee build.log
+          echo "Game warnings: $(grep -E '/(WOLFSRC|port)/.*warning:' build.log | wc -l)"
+          # With WOLF3D_MACOS_BUNDLE (WOLF-66) the executable lives in the .app
+          bundle="build/raylib_wolf3d"
+          [ -x "$bundle" ] || bundle="build/raylib_wolf3d.app/Contents/MacOS/raylib_wolf3d"
+          lipo -archs "$bundle" | grep -qx arm64
+
+      - name: Core tests (data tests skip without WL1)
+        run: ctest --test-dir build --output-on-failure --no-tests=error
+
   windows:
     # Depends on the Windows port work under WOLF-29 (WOLF-30..34); the
     # raylib quarantine and shell-based smoke tests stay Linux-only.
@@ -129,3 +196,71 @@ jobs:
           # script ends on a false-condition if, even after a passing check.
           if ($LASTEXITCODE -ne 2) { exit 1 }
           exit 0
+
+  # The browser build (WOLF-41/WOLF-98): ASYNCIFY page plus the headless core
+  # tests compiled to wasm32 and run under node.  No game data, no deploy:
+  # core_wl1_data and sound_manager skip.
+  web:
+    runs-on: ubuntu-24.04
+    env:
+      EMSDK_VERSION: 6.0.10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake ninja-build python3
+
+      - name: Cache emsdk
+        id: emsdk-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/emsdk
+          key: emsdk-${{ env.EMSDK_VERSION }}-${{ runner.os }}
+
+      - name: Install emsdk
+        if: steps.emsdk-cache.outputs.cache-hit != 'true'
+        run: |
+          git clone --depth 1 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+          "$HOME/emsdk/emsdk" install "$EMSDK_VERSION"
+          "$HOME/emsdk/emsdk" activate "$EMSDK_VERSION"
+
+      - name: Toolchain
+        run: |
+          source "$HOME/emsdk/emsdk_env.sh" >/dev/null
+          emcc --version | head -1
+          node --version
+          cmake --version | head -1
+
+      - name: raylib quarantine
+        run: |
+          # Only port/id_raylib.c may include raylib.h
+          hits=$(grep -rIlE --include='*.[ch]' --include='*.[CH]' '#[[:space:]]*include[[:space:]]*[<"]raylib\.h[">]' WOLFSRC port | grep -v '^port/id_raylib\.c$' || true)
+          if [ -n "$hits" ]; then echo "raylib.h included from: $hits"; exit 1; fi
+
+      - name: Configure (no game data)
+        run: |
+          source "$HOME/emsdk/emsdk_env.sh" >/dev/null
+          cmake --preset web -DWOLF3D_WEB_DATA=
+
+      - name: Build
+        run: |
+          set -o pipefail
+          source "$HOME/emsdk/emsdk_env.sh" >/dev/null
+          cmake --build --preset web 2>&1 | tee build.log
+          echo "Game warnings: $(grep -E '/(WOLFSRC|port)/.*warning:' build.log | wc -l)"
+
+      - name: Check the output
+        run: |
+          for f in raylib_wolf3d wolf3d-wl6; do
+            ls -l build-web/$f.html build-web/$f.js build-web/$f.wasm
+          done
+          # never bundle game data in CI
+          test ! -e build-web/raylib_wolf3d.data
+          test ! -e build-web/wolf3d-wl6.data
+
+      - name: Core tests under node (data tests skip without WL1)
+        run: |
+          source "$HOME/emsdk/emsdk_env.sh" >/dev/null
+          ctest --preset web

@@ -1,4 +1,8 @@
 cmake_minimum_required(VERSION 3.16)
+# macOS 13 is the oldest supported release; must be set before project().
+if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin" AND NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+  set(CMAKE_OSX_DEPLOYMENT_TARGET 13.0 CACHE STRING "Minimum macOS version")
+endif()
 project(raylib_wolf3d LANGUAGES C)
 
 # The portable sound manager always links the standalone audio engine.
@@ -34,7 +38,8 @@ set(WOLF3D_RAYLIB_VERSION 5.5)
 if(EMSCRIPTEN)
   set(PLATFORM Web CACHE STRING "raylib platform" FORCE)
   set(WOLF3D_USE_SYSTEM_RAYLIB OFF)
-  # The tests need a display, Xvfb or files outside the page.
+  # The native suite needs a display, Xvfb, threads or Python driving the
+  # game; web/web_tests.cmake builds the headless core tests for node instead.
   set(BUILD_TESTING OFF CACHE BOOL "Build the tests" FORCE)
 endif()
 if(WOLF3D_USE_SYSTEM_RAYLIB)
@@ -42,15 +47,20 @@ if(WOLF3D_USE_SYSTEM_RAYLIB)
 endif()
 if(raylib_FOUND)
   message(STATUS "Using system raylib ${raylib_VERSION}")
+  message(STATUS "  (unpatched: see cmake/patch_raylib.cmake, or use -DWOLF3D_USE_SYSTEM_RAYLIB=OFF)")
 else()
   message(STATUS "Fetching raylib ${WOLF3D_RAYLIB_VERSION}")
   include(FetchContent)
   set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
   set(BUILD_GAMES OFF CACHE BOOL "" FORCE)
   set(CUSTOMIZE_BUILD OFF CACHE BOOL "" FORCE)
+  # A local copy of the same tarball (file://...) may be used, e.g. by CI.
+  set(WOLF3D_RAYLIB_URL https://github.com/raysan5/raylib/archive/refs/tags/5.5.tar.gz
+    CACHE STRING "raylib 5.5 source tarball (checked by SHA-256)")
   FetchContent_Declare(raylib
-    URL https://github.com/raysan5/raylib/archive/refs/tags/5.5.tar.gz
-    URL_HASH SHA256=aea98ecf5bc5c5e0b789a76de0083a21a70457050ea4cc2aec7566935f5e258e)
+    URL ${WOLF3D_RAYLIB_URL}
+    URL_HASH SHA256=aea98ecf5bc5c5e0b789a76de0083a21a70457050ea4cc2aec7566935f5e258e
+    PATCH_COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/patch_raylib.cmake)
   FetchContent_MakeAvailable(raylib)
 endif()
 
@@ -135,9 +145,12 @@ else()
   set(WOLF3D_WARNINGS -Wall ${WOLF3D_CHAR_FLAG})
   set(WOLF3D_TEST_WARNINGS -Wall -Wextra ${WOLF3D_CHAR_FLAG})
 endif()
-# Only the GNU ld family understands --gc-sections (not link.exe, not Apple ld).
+# Only the GNU ld family understands --gc-sections (not link.exe); Apple ld
+# has -dead_strip.
 if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang" AND NOT APPLE)
   set(WOLF3D_GC_LINK -Wl,--gc-sections)
+elseif(APPLE)
+  set(WOLF3D_GC_LINK -Wl,-dead_strip)
 endif()
 # libm is a separate library on Unix only (part of the CRT on Windows).
 if(WIN32)
@@ -248,11 +261,52 @@ elseif(MSVC)
   target_compile_options(wolf3d_raylib PRIVATE ${WOLF3D_WARNINGS})
 endif()
 
+# macOS: build the shareware game as build/raylib_wolf3d.app (WOLF-66), ad-hoc
+# signed.  No game data goes into the bundle at build time; see
+# scripts/macos_bundle_data.sh and README.rst, section "macOS".
+if(APPLE)
+  option(WOLF3D_MACOS_BUNDLE "Build raylib_wolf3d as a macOS .app bundle" ON)
+endif()
+if(APPLE AND WOLF3D_MACOS_BUNDLE)
+  set(WOLF3D_BUNDLE_ID "com.raydelto.raylib-wolf3d" CACHE STRING "CFBundleIdentifier of the .app")
+  set(WOLF3D_BUNDLE_VERSION "0.0.0" CACHE STRING "CFBundleShortVersionString of the .app")
+  set(WOLF3D_BUNDLE_EXECUTABLE raylib_wolf3d)
+  configure_file(cmake/macos/Info.plist.in ${CMAKE_CURRENT_BINARY_DIR}/Info.plist @ONLY)
+  set_target_properties(raylib_wolf3d PROPERTIES
+    MACOSX_BUNDLE ON
+    MACOSX_BUNDLE_INFO_PLIST ${CMAKE_CURRENT_BINARY_DIR}/Info.plist)
+  # Sign the whole bundle (Info.plist, resources) so it verifies; ad-hoc
+  # only, no Developer ID or notarization.
+  find_program(WOLF3D_CODESIGN codesign)
+  if(WOLF3D_CODESIGN)
+    # Always run after bundle generation, including Info.plist-only changes
+    # that do not cause the executable to relink.
+    add_custom_target(wolf3d_sign_bundle ALL
+      DEPENDS raylib_wolf3d
+      COMMAND ${WOLF3D_CODESIGN} --force --sign - $<TARGET_FILE_DIR:raylib_wolf3d>/../..
+      COMMENT "Ad-hoc signing raylib_wolf3d.app"
+      VERBATIM)
+  endif()
+endif()
+
 include(CTest)
+if(EMSCRIPTEN)
+  include(web/web_tests.cmake)
+endif()
 if(BUILD_TESTING)
+  if(APPLE)
+    add_test(NAME macos_packaging COMMAND Python3::Interpreter
+      ${CMAKE_CURRENT_SOURCE_DIR}/tests/macos_packaging_test.py)
+    set_tests_properties(macos_packaging PROPERTIES TIMEOUT 60)
+  endif()
+  # AppleClang finds the SDK headers only through -isysroot.
+  set(WOLF3D_GUARD_CFLAGS)
+  if(APPLE AND CMAKE_OSX_SYSROOT)
+    set(WOLF3D_GUARD_CFLAGS -isysroot ${CMAKE_OSX_SYSROOT})
+  endif()
   add_test(NAME registered_stub_guard COMMAND Python3::Interpreter -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/registered_stub_guard.py
-    ${CMAKE_C_COMPILER} ${CMAKE_CURRENT_SOURCE_DIR})
+    ${CMAKE_C_COMPILER} ${CMAKE_CURRENT_SOURCE_DIR} ${WOLF3D_GUARD_CFLAGS})
   set_tests_properties(registered_stub_guard PROPERTIES TIMEOUT 30)
   add_executable(wolf_boss_key_test tests/boss_key_test.c WOLFSRC/WL_MENU.C)
   target_include_directories(wolf_boss_key_test PRIVATE port WOLFSRC)
@@ -318,6 +372,11 @@ if(BUILD_TESTING)
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/persist_check.py
     $<TARGET_FILE:raylib_wolf3d> ${WOLF3D_TEST_DATA} ${CMAKE_CURRENT_BINARY_DIR}/persist_check)
   set_tests_properties(persist_check PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED" TIMEOUT 600)
+
+  add_test(NAME silent_config COMMAND Python3::Interpreter -I
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/silent_config_check.py
+    $<TARGET_FILE:raylib_wolf3d> ${WOLF3D_TEST_DATA})
+  set_tests_properties(silent_config PROPERTIES SKIP_REGULAR_EXPRESSION "SKIPPED" TIMEOUT 600)
 
   # No-data smoke test: missing data returns 2, empty placeholder files return 1 (VSWAP short read)
   add_test(NAME smoke_nodata COMMAND Python3::Interpreter -I
@@ -386,4 +445,18 @@ if(BUILD_TESTING)
     target_link_libraries(wolf_audio_ring_test PRIVATE objc)
   endif()
   add_test(NAME audio_ring COMMAND wolf_audio_ring_test)
+endif()
+
+if(BUILD_TESTING AND NOT EMSCRIPTEN)
+  add_executable(wolf_web_audio_policy_test tests/web_audio_policy_test.c port/id_raylib.c)
+  target_include_directories(wolf_web_audio_policy_test PRIVATE port
+    $<TARGET_PROPERTY:raylib,INTERFACE_INCLUDE_DIRECTORIES>)
+  target_compile_definitions(wolf_web_audio_policy_test PRIVATE
+    WOLF3D_AUDIO_BACKEND RL_EXTERNAL_CLOCK RL_WEB_AUDIO_TEST)
+  target_compile_options(wolf_web_audio_policy_test PRIVATE ${WOLF3D_TEST_WARNINGS} ${WOLF3D_NODEBUG_OFF})
+  target_link_libraries(wolf_web_audio_policy_test PRIVATE ${WOLF3D_LIBM})
+  if(APPLE)
+    target_link_libraries(wolf_web_audio_policy_test PRIVATE objc)
+  endif()
+  add_test(NAME web_audio_policy COMMAND wolf_web_audio_policy_test)
 endif()

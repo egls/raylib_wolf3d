@@ -3687,6 +3687,7 @@ int Confirm(char far *string)
 
 	do
 	{
+		IN_SpinWait();	// let the browser deliver keys and advance the clock
 		if (TimeCount>=10)
 		{
 			switch(tick)
