@@ -36,6 +36,17 @@ with tempfile.TemporaryDirectory(prefix="wolf_smoke_fake_") as tmp:
 
     result = subprocess.run(cmd, capture_output=True, text=True)
     combined = (result.stdout or "") + (result.stderr or "")
+    # GL-less Windows runners (e.g. github windows-latest) have no OpenGL driver,
+    # so raylib's InitWindow fails and the game dies before the VSWAP loader can
+    # reject the placeholders.  The placeholder check needs a display; skip it
+    # there.  Test 1 above (missing data, exit 2) still runs everywhere.
+    if (
+        sys.platform == "win32"
+        and result.returncode == 3221225477  # 0xC0000005 access violation
+        and "does not appear to support OpenGL" in combined
+    ):
+        print("SKIPPED: placeholder smoke needs OpenGL; runner has no GL driver (GLFW WGL error)")
+        sys.exit(0)
     assert result.returncode == 1, (
         f"Empty placeholder files: expected exit code 1, got {result.returncode}.\n"
         f"Output:\n{combined}"

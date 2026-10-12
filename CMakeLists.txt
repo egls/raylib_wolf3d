@@ -319,13 +319,16 @@ if(BUILD_TESTING)
   add_test(NAME smoke_nodata COMMAND Python3::Interpreter -I
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/smoke_check.py
     $<TARGET_FILE:raylib_wolf3d>)
-  set_tests_properties(smoke_nodata PROPERTIES TIMEOUT 30)
+  set_tests_properties(smoke_nodata PROPERTIES TIMEOUT 30 SKIP_REGULAR_EXPRESSION "SKIPPED")
 
-  # The persistence streams and paths on their own: no data, no display (WOLF-18).
-  add_executable(wolf_persist_test tests/persist_test.c port/wl_persist.c)
-  target_include_directories(wolf_persist_test PRIVATE port WOLFSRC)
-  target_compile_options(wolf_persist_test PRIVATE ${WOLF3D_WARNINGS} ${WOLF3D_GAME_FLAGS})
-  add_test(NAME core_persist COMMAND wolf_persist_test)
+  # POSIX-only test (fork, mkdtemp); coverage stays on Linux CI.
+  if(NOT WIN32)
+    # The persistence streams and paths on their own: no data, no display (WOLF-18).
+    add_executable(wolf_persist_test tests/persist_test.c port/wl_persist.c)
+    target_include_directories(wolf_persist_test PRIVATE port WOLFSRC)
+    target_compile_options(wolf_persist_test PRIVATE ${WOLF3D_WARNINGS} ${WOLF3D_GAME_FLAGS})
+    add_test(NAME core_persist COMMAND wolf_persist_test)
+  endif()
 
   # ---------------------------------------------------------------------------
   # Tests (ctest): the raylib keyboard translation against a fake raylib, no display needed.
@@ -344,8 +347,10 @@ if(BUILD_TESTING)
   option(WOLF3D_CORE_SANITIZERS "Use ASan/UBSan on headless core tests" OFF)
   if(WOLF3D_CORE_SANITIZERS AND CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
     foreach(t wolf_core_data_test wolf_codec_test wolf_render_test wolf_persist_test rl_keys_test)
-      target_compile_options(${t} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
-      target_link_options(${t} PRIVATE -fsanitize=address,undefined)
+      if(TARGET ${t})
+        target_compile_options(${t} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+        target_link_options(${t} PRIVATE -fsanitize=address,undefined)
+      endif()
     endforeach()
   endif()
 endif()
