@@ -49,6 +49,9 @@ double GetTime (void)					{ return 0; }
 void UpdateTexture (Texture2D t, const void *p) { (void)t; (void)p; }
 int GetScreenWidth (void)				{ return 640; }
 int GetScreenHeight (void)				{ return 480; }
+int GetRenderWidth (void)				{ return 1280; }
+int GetRenderHeight (void)				{ return 960; }
+void *GetWindowHandle (void)			{ return NULL; }	/* RL_ToggleFullscreen falls back */
 RenderTexture2D LoadRenderTexture (int w, int h) { (void)w; (void)h; return (RenderTexture2D){0}; }
 void BeginTextureMode (RenderTexture2D t) { (void)t; }
 void EndTextureMode (void)				{}
@@ -160,6 +163,51 @@ int main (void)
 	down[KEY_LEFT_ALT] = 0;
 	RL_PumpEvents();
 	Expect(0x38, 0, 0);
+	Empty();
+
+#ifdef __APPLE__
+	/* Command never reaches the game; Cmd+F and Cmd+Return toggle fullscreen */
+	down[KEY_LEFT_SUPER] = 1;
+	RL_PumpEvents();
+	Empty();
+	down[KEY_F] = 1;
+	RL_PumpEvents();
+	CHECK(toggles == 3);
+	Empty();
+	down[KEY_F] = 0;
+	RL_PumpEvents();
+	Empty();					/* F's release was swallowed too */
+	queue[queued++] = KEY_ENTER;	/* Cmd+Return tapped faster than a poll */
+	RL_PumpEvents();
+	CHECK(toggles == 4);
+	Empty();
+
+	/* other Command shortcuts (Cmd+Q, Cmd+H...) belong to the system */
+	down[KEY_Q] = 1;
+	RL_PumpEvents();
+	Empty();
+	down[KEY_LEFT_SUPER] = 0;	/* Command released first: Q's release stays swallowed */
+	RL_PumpEvents();
+	Empty();
+	down[KEY_Q] = 0;
+	RL_PumpEvents();
+	Empty();
+	CHECK(toggles == 4);
+
+	/* a key held before Command keeps working */
+	down[KEY_UP] = 1;
+	RL_PumpEvents();
+	Expect(0x48, 1, 1);
+	down[KEY_RIGHT_SUPER] = 1;
+	RL_PumpEvents();
+	Empty();
+	down[KEY_UP] = 0;
+	RL_PumpEvents();
+	Expect(0x48, 1, 0);
+	down[KEY_RIGHT_SUPER] = 0;
+	RL_PumpEvents();
+	Empty();
+#endif
 
 	if (!failures)
 		printf("rl_keys_test: all checks passed\n");

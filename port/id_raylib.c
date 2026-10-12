@@ -11,6 +11,12 @@
 
 #include "id_raylib.h"
 
+#ifdef __APPLE__
+/* The Objective-C runtime that GLFW's Cocoa backend already links. */
+#include <objc/message.h>
+#include <objc/runtime.h>
+#endif
+
 #ifdef __EMSCRIPTEN__
 #include <emscripten.h>
 
@@ -70,7 +76,7 @@ EM_JS(void, WebMouseWant, (int on), {
 });
 #endif
 
-#define MAX_SCALE		8
+#define MAX_SCALE		12		/* a 2400-pixel-high picture: 4K, and Retina fullscreen */
 #define KEYQ_SIZE		256
 
 static int window_open;
@@ -91,6 +97,7 @@ typedef struct
 	int		ext;
 	int		down;		/* last reported state */
 	int		tapped;		/* seen in the pressed-key queue since the last sync */
+	int		swallowed;	/* the press was a shortcut: its release is not reported */
 } keymap_t;
 
 static keymap_t keymap[] =
@@ -130,7 +137,6 @@ static keymap_t keymap[] =
 typedef struct { short scan; unsigned char ext, down; } keyevent_t;
 static keyevent_t	keyq[KEYQ_SIZE];
 static int			keyq_head, keyq_tail;
-static int			swallow_enter;
 
 static void PushKey (int scan, int ext, int down)
 {
@@ -142,6 +148,33 @@ static void PushKey (int scan, int ext, int down)
 	keyq[keyq_head].ext = (unsigned char)ext;
 	keyq[keyq_head].down = (unsigned char)down;
 	keyq_head = next;
+}
+
+/*
+ * Shortcuts that never reach the game.  Alt+Enter (Option+Return on a Mac)
+ * toggles fullscreen everywhere.  On macOS, Command is the shortcut key: the
+ * game never sees Command, Cmd+F and Cmd+Return toggle fullscreen, and other
+ * keys pressed with Command are left to the system (Cmd+Q, Cmd+H and Cmd+M
+ * are menu shortcuts that GLFW's menu bar handles).  Mac keyboards play like
+ * PC ones: Control fires and Option is Alt (strafe).
+ * Returns 1 if the press of `key` is a shortcut.
+ */
+static int Shortcut (int key)
+{
+#ifdef __APPLE__
+	if (IsKeyDown(KEY_LEFT_SUPER) || IsKeyDown(KEY_RIGHT_SUPER))
+	{
+		if (key == KEY_F || key == KEY_ENTER)
+			RL_ToggleFullscreen();
+		return 1;
+	}
+#endif
+	if (key == KEY_ENTER && (IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT)))
+	{
+		RL_ToggleFullscreen();
+		return 1;
+	}
+	return 0;
 }
 
 /* Compares raylib's key state with what was last reported and posts events. */
@@ -163,9 +196,7 @@ static void SyncKeys (void)
 		if (k->tapped && !k->down && !down)
 		{
 			/* pressed and released between two polls: report both */
-			if (k->key == KEY_ENTER && (IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT)))
-				RL_ToggleFullscreen();		/* a quick Alt+Enter tap still toggles */
-			else
+			if (!Shortcut(k->key))		/* a quick shortcut tap still counts */
 			{
 				PushKey(k->scan, k->ext, 1);
 				PushKey(k->scan, k->ext, 0);
@@ -173,13 +204,10 @@ static void SyncKeys (void)
 		}
 		else if (down != k->down)
 		{
-			if (k->key == KEY_ENTER && down && (IsKeyDown(KEY_LEFT_ALT) || IsKeyDown(KEY_RIGHT_ALT)))
-			{
-				RL_ToggleFullscreen();		/* Alt+Enter never reaches the game */
-				swallow_enter = 1;
-			}
-			else if (k->key == KEY_ENTER && !down && swallow_enter)
-				swallow_enter = 0;
+			if (down && Shortcut(k->key))
+				k->swallowed = 1;		/* neither the press nor the release */
+			else if (!down && k->swallowed)
+				k->swallowed = 0;
 			else
 				PushKey(k->scan, k->ext, down);
 		}
@@ -343,6 +371,22 @@ int RL_QuitRequested (void)
  * Window and presentation
  * ------------------------------------------------------------------------ */
 
+/*
+ * The size of the window's framebuffer in pixels.  On a Mac (Retina) display
+ * raylib's screen size is in points and the framebuffer has two (or more)
+ * pixels per point; drawing still uses points.
+ */
+static void FramebufferSize (int *w, int *h)
+{
+#ifdef __APPLE__
+	*w = GetRenderWidth();
+	*h = GetRenderHeight();
+#else
+	*w = GetScreenWidth();
+	*h = GetScreenHeight();
+#endif
+}
+
 static void EnsureBigTarget (int win_w, int win_h)
 {
 	int s = (win_h + RL_FRAME_H - 1) / RL_FRAME_H;
@@ -371,6 +415,13 @@ int RL_OpenWindow (int width, int height, const char *title)
 		return 1;
 
 	SetTraceLogLevel(LOG_WARNING);
+	/*
+	 * Not FLAG_WINDOW_HIGHDPI: on macOS GLFW already gives the window a
+	 * Retina framebuffer (GLFW_SCALE_FRAMEBUFFER defaults to true) and raylib
+	 * 5.5 draws in points scaled to it.  The flag only adds a content-scale
+	 * callback that scales the drawing a second time once the window moves
+	 * from a 1x display back to a Retina one.
+	 */
 	SetConfigFlags(FLAG_WINDOW_RESIZABLE);
 	InitWindow(width, height, title);
 	if (!IsWindowReady())
@@ -397,7 +448,7 @@ int RL_OpenWindow (int width, int height, const char *title)
 void RL_Present (const unsigned char *rgba)
 {
 	RL_AudioPump();
-	int		w, h;
+	int		w, h, pw, ph;
 	float	s, dw, dh;
 
 	if (!window_open)
@@ -408,7 +459,8 @@ void RL_Present (const unsigned char *rgba)
 	UpdateTexture(frame_tex, rgba);
 	w = GetScreenWidth();
 	h = GetScreenHeight();
-	EnsureBigTarget(w, h);
+	FramebufferSize(&pw, &ph);
+	EnsureBigTarget(pw, ph);
 
 	BeginTextureMode(big_rt);
 	DrawTexturePro(frame_tex,
@@ -437,11 +489,35 @@ void RL_Present (const unsigned char *rgba)
 		quit_requested = 1;
 }
 
+#ifdef __APPLE__
+/*
+ * macOS fullscreen is the window's own Space, the same as the green window
+ * button and View > Enter Full Screen (Ctrl+Cmd+F): -[NSWindow
+ * toggleFullScreen:] keeps the menu bar, the notch and Mission Control
+ * right, where a borderless window would sit under the menu bar.
+ */
+static int MacToggleFullscreen (void)
+{
+	void *window = GetWindowHandle();	/* the NSWindow */
+
+	if (!window)
+		return 0;
+	((void (*)(void *, SEL, void *))objc_msgSend)(window,
+		sel_registerName("toggleFullScreen:"), NULL);
+	return 1;
+}
+#endif
+
 void RL_ToggleFullscreen (void)
 {
 #ifndef __EMSCRIPTEN__		/* the browser wants a user gesture; the page does Alt+Enter */
-	if (window_open)
-		ToggleBorderlessWindowed();
+	if (!window_open)
+		return;
+#ifdef __APPLE__
+	if (MacToggleFullscreen())
+		return;
+#endif
+	ToggleBorderlessWindowed();
 #endif
 }
 
