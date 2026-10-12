@@ -294,6 +294,7 @@ if(BUILD_TESTING)
     add_test(NAME macos_packaging COMMAND Python3::Interpreter
       ${CMAKE_CURRENT_SOURCE_DIR}/tests/macos_packaging_test.py)
     set_tests_properties(macos_packaging PROPERTIES TIMEOUT 60)
+  endif()
   # AppleClang finds the SDK headers only through -isysroot.
   set(WOLF3D_GUARD_CFLAGS)
   if(APPLE AND CMAKE_OSX_SYSROOT)
