@@ -4,27 +4,35 @@
 #
 #   scripts/deploy_web.sh [--ref REF] [--data DIR] [--host USER@HOST]
 #                         [--root DIR] [--name NAME] [--dry-run]
-#   scripts/deploy_web.sh --root-bypass [--host USER@HOST] [--root DIR]
+#   scripts/deploy_web.sh --root-bypass [--dry-run] [--host USER@HOST] [--root DIR]
+#   scripts/deploy_web.sh --rollback [--host USER@HOST] [--root DIR]
 #
 # REF defaults to origin/master and is resolved to a commit SHA.  The build
 # runs in a temporary `git worktree` of that SHA, so local changes never
 # reach the server.  DIR is the shareware v1.4 data (default
 # ~/wolf3d-data/shareware); every file is SHA-256 checked first.
 #
-# On the server (default ddscards@raydelto.org, ~/public_html/raydelto):
-#   1. rsync the release to NAME.staging-<sha> (default NAME is wolf3d);
-#   2. delete the old NAME.prev, rename NAME to NAME.prev, then rename the
-#      staging directory to NAME.  The two renames run in one shell command,
-#      so the site is without NAME for microseconds only.
-# Rollback:  cd ~/public_html/raydelto && mv wolf3d wolf3d.bad && mv wolf3d.prev wolf3d
+# On the server (default ddscards@raydelto.org, ~/public_html/raydelto),
+# through scripts/deploy_web_remote.sh:
+#   1. take the lock NAME.deploy-lock (default NAME is wolf3d) and create a
+#      new NAME.staging-<sha12>-<UTC stamp>; rsync the release into it;
+#   2. swap staging and NAME in one renameat2(RENAME_EXCHANGE) call, so NAME
+#      is never missing and a failed swap changes nothing; the previous
+#      release becomes NAME.prev (the older NAME.prev is deleted).
+# A failed upload removes the staging directory and the lock again.
+#
+# --rollback swaps NAME and NAME.prev atomically; run it again to go
+# forward.  Manual fallback (not atomic):
+#   cd ~/public_html/raydelto && mv wolf3d wolf3d.bad && mv wolf3d.prev wolf3d
 #
 # --dry-run builds and assembles the release locally and prints where;
-# nothing is uploaded.
+# nothing is uploaded and nothing on the server changes.
 #
 # --root-bypass is a one-time step: the site's root .htaccess sends unknown
 # paths to its React index.html.  It copies that file to
 # .htaccess.bak-<UTC stamp> and adds `RewriteRule ^NAME/ - [L]` after the
-# existing bypasses.  It changes nothing if the rule is already there.
+# existing bypasses.  It changes nothing if the rule is already there.  With
+# --dry-run it only prints the diff.
 #
 # Needs: git, emsdk at $EMSDK or ~/emsdk, cmake, ninja, rsync, ssh, curl.
 # Uses the caller's SSH key; the script holds no secrets.
@@ -38,8 +46,9 @@ name=wolf3d
 url=https://www.raydelto.org
 dry_run=0
 root_bypass=0
+rollback=0
 
-usage() { sed -n '2,29p' "$0"; }
+usage() { sed -n '2,39p' "$0"; }
 while [ $# -gt 0 ]; do
   case "$1" in
     --ref) ref="$2"; shift ;;
@@ -49,6 +58,7 @@ while [ $# -gt 0 ]; do
     --name) name="$2"; shift ;;
     --dry-run) dry_run=1 ;;
     --root-bypass) root_bypass=1 ;;
+    --rollback) rollback=1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -59,37 +69,21 @@ case "$name" in
 esac
 
 ssh_opts=(-o BatchMode=yes -o ConnectTimeout=20)
-remote() { ssh "${ssh_opts[@]}" "$host" "$@"; }
+remote_script="$(dirname "$0")/deploy_web_remote.sh"
+# remote COMMAND [ARG]: run deploy_web_remote.sh on the server.  Values are
+# passed as arguments, never through shell quoting.
+remote() {
+  ssh "${ssh_opts[@]}" "$host" bash -s -- "$1" "$root" "$name" "${@:2}" \
+    < "$remote_script"
+}
 
 if [ "$root_bypass" = 1 ]; then
-  # The remote script gets its values as arguments, never through quoting.
-  remote bash -s -- "$root" "$name" <<'EOF'
-set -euo pipefail
-cd "$HOME/$1"
-rule="RewriteRule ^$2/ - [L]"
-if grep -qxF "$rule" .htaccess; then
-  echo "already present: $rule"
+  if [ "$dry_run" = 1 ]; then remote bypass --dry-run; else remote bypass; fi
   exit 0
 fi
-# Insert after the last existing bypass rule (^something/ - [L]).
-last=$(grep -n '^RewriteRule \^[A-Za-z0-9_-]*/ - \[L\]$' .htaccess | tail -1 | cut -d: -f1)
-if [ -z "$last" ]; then
-  echo "no existing bypass rules in .htaccess; not editing it" >&2
-  exit 1
-fi
-backup=".htaccess.bak-$(date -u +%Y%m%dT%H%M%SZ)"
-cp -p .htaccess "$backup"
-tmp=$(mktemp .htaccess.new.XXXXXX)
-{
-  head -n "$last" .htaccess
-  printf '\n# Bypass all root-level rewrites for the /%s/ app\n%s\n' "$2" "$rule"
-  tail -n +"$((last + 1))" .htaccess
-} > "$tmp"
-chmod --reference=.htaccess "$tmp"
-mv "$tmp" .htaccess
-echo "backup: $HOME/$1/$backup"
-diff "$backup" .htaccess || true
-EOF
+if [ "$rollback" = 1 ]; then
+  [ "$dry_run" = 0 ] || { echo "--rollback has no dry run" >&2; exit 2; }
+  remote rollback
   exit 0
 fi
 
@@ -143,23 +137,17 @@ if [ "$dry_run" = 1 ]; then
   exit 0
 fi
 
-staging="$name.staging-$short"
-rsync -rlt --chmod=D755,F644 --delete -e "ssh ${ssh_opts[*]}" \
+staging="$name.staging-$short-$(date -u +%Y%m%dT%H%M%SZ)"
+remote lock "$staging"
+locked=1
+unlock() { [ "$locked" = 0 ] || remote unlock || true; }
+trap 'unlock; cleanup' EXIT
+rsync -rlt --chmod=D755,F644 -e "ssh ${ssh_opts[*]}" \
   "$release/" "$host:$root/$staging/"
-
-remote bash -s -- "$root" "$name" "$staging" <<'EOF'
-set -euo pipefail
-cd "$HOME/$1"
-name=$2 staging=$3
-[ -f "$staging/index.html" ] || { echo "staging upload incomplete" >&2; exit 1; }
-if [ -d "$name.prev" ]; then rm -rf -- "$name.prev"; fi
-if [ -d "$name" ]; then
-  mv -- "$name" "$name.prev" && mv -- "$staging" "$name"
-else
-  mv -- "$staging" "$name"
-fi
-cat "$name/version.txt"
-EOF
+# The lock is released by a successful cutover; after a failed one the
+# server keeps it, so a stale state is never overwritten silently.
+locked=0
+remote cutover "$staging"
 
 echo "Live checks:"
 base="$url/$name"
@@ -180,5 +168,5 @@ if ! curl -fsS --max-time 30 "$base/version.txt" | grep -qx "commit: $sha"; then
   echo "  version.txt does not show $sha" >&2
   fail=1
 fi
-[ "$fail" = 0 ] || { echo "Live checks FAILED; rollback: ssh $host 'cd $root && mv $name $name.bad && mv $name.prev $name'" >&2; exit 1; }
+[ "$fail" = 0 ] || { echo "Live checks FAILED; roll back with: $0 --rollback" >&2; exit 1; }
 echo "Deployed $sha to $base/"

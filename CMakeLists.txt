@@ -250,6 +250,15 @@ if(BUILD_TESTING)
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/registered_stub_guard.py
     ${CMAKE_C_COMPILER} ${CMAKE_CURRENT_SOURCE_DIR})
   set_tests_properties(registered_stub_guard PROPERTIES TIMEOUT 30)
+  # Web deploy cutover, rollback and .htaccess edit, offline (WOLF-46).
+  if(CMAKE_HOST_SYSTEM_NAME STREQUAL "Linux")
+    find_program(WOLF3D_BASH bash)
+    if(WOLF3D_BASH)
+      add_test(NAME deploy_web_check COMMAND ${WOLF3D_BASH}
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/deploy_web_check.sh ${CMAKE_CURRENT_SOURCE_DIR})
+      set_tests_properties(deploy_web_check PROPERTIES TIMEOUT 60)
+    endif()
+  endif()
   add_executable(wolf_boss_key_test tests/boss_key_test.c WOLFSRC/WL_MENU.C)
   target_include_directories(wolf_boss_key_test PRIVATE port WOLFSRC)
   target_compile_definitions(wolf_boss_key_test PRIVATE WOLF3D_REGISTERED)
