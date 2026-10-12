@@ -205,19 +205,17 @@ The data is never part of the build or of a package.  Where the game looks
 for the ``*.WL1`` files:
 
 * ``-data DIR`` and ``WOLF3D_DATA``, as on every platform.
+* The current directory, then the executable's directory (``build/`` for a
+  plain ``-DWOLF3D_MACOS_BUNDLE=OFF`` build).
 * Inside the app, ``raylib_wolf3d.app/Contents/Resources/``.  For your own
   machine, ``scripts/macos_bundle_data.sh [APP] [DATA_DIR]`` checks the
   eight files against the SHA-256 sums in ``fetch_shareware.sh``, copies them
   there and signs the app again.  Never give away an app with the data inside
   (see "Releases").
-* Next to ``raylib_wolf3d.app``, and in
-  ``~/Library/Application Support/raylib_wolf3d/``.
+* ``~/Library/Application Support/raylib_wolf3d/``.
 
-The lookups in the last two items come with the
-macOS platform layer (WOLF-63); until it lands the game only checks
-``-data``, ``WOLF3D_DATA`` and the current directory, and a Finder launch
-starts in ``/``.  Use ``-data``, ``WOLF3D_DATA`` or ``open --env`` as above
-until then.
+See "macOS data and save paths" above for the exact order; a Finder launch
+needs no ``-data`` once the files are in one of the last two places.
 
 Package the app (without data) as
 ``dist/raylib_wolf3d-VERSION-macos-arm64.zip`` with::
