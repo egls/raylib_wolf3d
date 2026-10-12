@@ -63,11 +63,18 @@ resyncs, and running for browser verification. The native web_audio_policy
 harness scripts suspension, callback-before-pump ordering, a minute hidden,
 irregular frames, the racing-sink cap, and a long gap without a browser.
 
-## Remaining integration dependency
+## Silent-run preferences
 
-WOLF-28's silent-run preference fix is PR #12 and is not part of the master
-base used here. Browser suspension preserves device availability and therefore
-avoids that fallback. Explicit `-nosound` and device-failure persistence still
-require PR #12 to merge, followed by a browser config round-trip check; this
-change does not claim that unmerged fix is present. WOLF-45 must also verify
-actual hidden tabs and other browsers before deployment.
+WOLF-28's preference fix is included. Run `scripts/web_silent_config.mjs`
+with the same PLAYWRIGHT and CHROMIUM environment variables as the capture
+script. It starts and quits the real game, checks fresh silent defaults, then
+passes the written CONFIG.WL1 through a silent and a normal audio startup.
+PC speaker, AdLib music and Sound Blaster preferences must remain `[1,1,3]`.
+The quit confirmation calls IN_SpinWait so the browser can deliver input and
+advance its clock.
+
+This checks the file written by WriteConfig, carrying its bytes between
+startups. IndexedDB persistence is separate WOLF-43 work: Chromium reports a
+closing database during the shell's exit flush. This preference check does
+not claim a successful IndexedDB round trip or measure audio latency.
+WOLF-45 must also verify actual hidden tabs and other browsers.
