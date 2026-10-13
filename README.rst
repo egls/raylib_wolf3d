@@ -213,8 +213,9 @@ signature and no notarization).  ``-DWOLF3D_MACOS_BUNDLE=OFF`` builds a plain
     # or through LaunchServices, like a Finder launch:
     open build/raylib_wolf3d.app --env WOLF3D_DATA=$HOME/wolf3d-data/shareware
 
-The data is never part of the build or of a package.  Where the game looks
-for the ``*.WL1`` files:
+The data is never part of the build, and only part of a package when
+``--shareware`` asks for it (below).  Where the game looks for the ``*.WL1``
+files:
 
 * ``-data DIR`` and ``WOLF3D_DATA``, as on every platform.
 * The current directory, then the executable's directory (``build/`` for a
@@ -222,8 +223,8 @@ for the ``*.WL1`` files:
 * Inside the app, ``raylib_wolf3d.app/Contents/Resources/``.  For your own
   machine, ``scripts/macos_bundle_data.sh [APP] [DATA_DIR]`` checks the
   eight files against the SHA-256 sums in ``fetch_shareware.sh``, copies them
-  there and signs the app again.  Never give away an app with the data inside
-  (see "Releases").
+  there and signs the app again.  The ``-shareware`` release zip ships them
+  there already.
 * ``~/Library/Application Support/raylib_wolf3d/``.
 
 See "macOS data and save paths" above for the exact order; a Finder launch
@@ -237,7 +238,17 @@ Package the app (without data) as
 The zip holds ``raylib_wolf3d.app``, ``scripts/fetch_shareware.sh``,
 ``scripts/macos_bundle_data.sh`` and ``doc/`` (README, ``SOURCE.txt``,
 ``licenses/``); its SHA-256 goes to ``dist/SHA256SUMS-macos``.  The script
-refuses an app that has ``*.WL1`` files inside.
+refuses an app that has ``*.WL1`` files inside.  For a release that runs on
+first launch, bundle the verified shareware data::
+
+    scripts/package_macos.sh -B build -o dist --shareware ~/wolf3d-data/shareware 1.0.0
+
+This writes ``dist/raylib_wolf3d-1.0.0-macos-arm64-shareware.zip``: the
+eight ``*.WL1`` files are checked against the SHA-256 sums in
+``fetch_shareware.sh`` and copied into ``raylib_wolf3d.app/Contents/Resources/``
+before the app is ad-hoc signed; ``READ1ST.TXT`` and ``VENDOR.DOC`` from the
+data directory, if there, go to ``doc/shareware/``.  Registered data is
+always refused.
 
 Gatekeeper: an app that is only ad-hoc signed and was downloaded (from a
 release or a CI artifact, through a browser) is quarantined, and macOS says
