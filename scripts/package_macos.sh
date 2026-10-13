@@ -130,8 +130,9 @@ Software Wolfenstein 3D v1.4 shareware data (*.WL1, episode 1), freely
 distributable shareware.  Their SHA-256 checksums are pinned in
 scripts/fetch_shareware.sh; compare them with
   shasum -a 256 raylib_wolf3d.app/Contents/Resources/*.WL1
-No registered or commercial data is included.  Wolfenstein 3D is a trademark of its owner;
-this project is not affiliated with id Software or ZeniMax.
+No registered or commercial data is included.  Wolfenstein 3D is a
+trademark of its owner; this project is not affiliated with id Software or
+ZeniMax.
 EOT
 fi
 cat > "$root/doc/SOURCE.txt" <<EOT
