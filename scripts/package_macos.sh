@@ -99,6 +99,7 @@ ditto "$app" "$root/raylib_wolf3d.app"
 check_no_data "$root"
 if [ -n "$shareware" ]; then
   scripts/fetch_shareware.sh --check-only "$shareware"
+  mkdir -p "$root/raylib_wolf3d.app/Contents/Resources"
   for f in AUDIOHED AUDIOT GAMEMAPS MAPHEAD VGADICT VGAGRAPH VGAHEAD VSWAP; do
     install -m 644 "$shareware/$f.WL1" "$root/raylib_wolf3d.app/Contents/Resources/$f.WL1"
   done
