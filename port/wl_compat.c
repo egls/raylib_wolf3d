@@ -20,6 +20,10 @@ uint16_t	_FLAGS;
  * Portable implementations
  * ------------------------------------------------------------------------ */
 
+#ifndef _MSC_VER
+/* MSVC: the CRT provides all of these (see wl_compat.h); defining them again
+ * contradicts the dllimport declarations (C4273) and would shadow the CRT. */
+
 long filelength (int handle)
 {
 	struct stat st;
@@ -58,14 +62,14 @@ char *itoa (int value, char *string, int radix)
 {
 	// Borland: only radix 10 is signed
 	if (radix == 10 && value < 0)
-		return WL_ToRadix(-(unsigned long)(long)value, 1, string, radix);
+		return WL_ToRadix((unsigned long)0 - (unsigned long)(long)value, 1, string, radix);
 	return WL_ToRadix((unsigned)value, 0, string, radix);
 }
 
 char *ltoa (long value, char *string, int radix)
 {
 	if (radix == 10 && value < 0)
-		return WL_ToRadix(-(unsigned long)value, 1, string, radix);
+		return WL_ToRadix((unsigned long)0 - (unsigned long)value, 1, string, radix);
 	return WL_ToRadix((unsigned long)value, 0, string, radix);
 }
 
@@ -73,6 +77,7 @@ char *ultoa (unsigned long value, char *string, int radix)
 {
 	return WL_ToRadix(value, 0, string, radix);
 }
+#endif
 
 /*
  * findfirst/findnext: DOS wildcard search in the current directory (no path

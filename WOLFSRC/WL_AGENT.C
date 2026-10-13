@@ -1100,7 +1100,7 @@ void Cmd_Use (void)
 void SpawnPlayer (int tilex, int tiley, int dir)
 {
 	player->obclass = playerobj;
-	player->active = true;
+	player->active = ac_yes;
 	player->tilex = tilex;
 	player->tiley = tiley;
 	player->areanumber =

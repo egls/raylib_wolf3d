@@ -556,7 +556,7 @@ IN_Shutdown(void)
 //
 ///////////////////////////////////////////////////////////////////////////
 void
-IN_SetKeyHook(void (*hook)())
+IN_SetKeyHook(void (*hook)(void))
 {
 	INL_KeyHook = hook;
 }

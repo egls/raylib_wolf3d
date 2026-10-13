@@ -197,7 +197,7 @@ int WS_WriteFile (int fd, const wl_stream *s)
 
 	while (done < s->len)
 	{
-		n = write(fd, s->buf + done, s->len - done);
+		n = write(fd, s->buf + done, (unsigned)(s->len - done));
 		if (n <= 0)
 			return 0;
 		done += (size_t)n;

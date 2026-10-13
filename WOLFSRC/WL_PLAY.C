@@ -211,7 +211,7 @@ int songs[]=
  XFUNKIE_MUS,
  XDEATH_MUS,
  XGETYOU_MUS,		// DON'T KNOW
- ULTIMATE_MUS,	// Trans Gr”sse
+ ULTIMATE_MUS,	// Trans Grosse
 
  DUNGEON_MUS,
  GOINGAFT_MUS,
@@ -990,7 +990,7 @@ void GetNewActor (void)
 		lastobj->next = new;
 	new->prev = lastobj;	// new->next is allready NULL from memset
 
-	new->active = false;
+	new->active = ac_no;
 	lastobj = new;
 
 	objcount++;

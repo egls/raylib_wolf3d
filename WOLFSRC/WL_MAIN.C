@@ -196,7 +196,7 @@ void ReadConfig(void)
 		if (sd == sdm_AdLib && !AdLibPresent && !SoundBlasterPresent)
 		{
 			sd = sdm_PC;
-			sd = smm_Off;
+			sm = smm_Off;
 		}
 
 		if ((sds == sds_SoundBlaster && !SoundBlasterPresent) ||
