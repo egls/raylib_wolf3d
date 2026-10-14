@@ -121,6 +121,7 @@ set(WOLF3D_PORT_SOURCES
   port/wl_data.c
   port/wl_raycast.c
   port/wl_demotest.c
+  port/wl_minimap.c
   port/wl_persist.c)
 # Windows: probe for an OpenGL 3.3 driver before raylib opens the window.
 set(WOLF3D_GL_PROBE_SOURCES)

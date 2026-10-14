@@ -102,10 +102,17 @@ F2 / F3                    Save / load game
 F4 / F5 / F6               Sound, view size, control menus
 F7 / F8 / F9 / F10         End game, quick save, quick load, quit
 Alt + Enter                Toggle fullscreen (this port; never reaches the game)
+Tab                        Toggle the minimap (this port)
 =========================  =======================================================
 
 The mouse works as in the original (move/turn and buttons).  The original
 Pause key is not mapped by this port yet.
+
+The minimap (Tab) sits in the top right corner of the 3D view, north up.  It
+shows only what you have seen on the current level, so secret pushwalls stay
+hidden.  Doors are blue, gold-key doors yellow, silver-key doors cyan and the
+exit green.  Whether it is on is saved in the config; the explored area is
+kept in save games (saves from before the minimap still load, unexplored).
 
 macOS data and save paths
 -------------------------

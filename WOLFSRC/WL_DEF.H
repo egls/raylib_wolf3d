@@ -1022,6 +1022,7 @@ void	DrawScaleds (void);
 void	CalcTics (void);
 void	FixOfs (void);
 void	ThreeDRefresh (void);
+extern	void	(*viewoverlay) (void);	// port: drawn over the 3D view each frame (minimap)
 void  FarScalePost (void);
 
 /*

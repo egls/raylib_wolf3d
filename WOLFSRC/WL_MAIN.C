@@ -2,6 +2,7 @@
 
 #include "WL_DEF.H"
 #include "wl_persist.h"	// WOLF-7: config/save file location and format
+#include "wl_minimap.h"	// port: minimap setting and explored tiles
 #pragma hdrstop
 
 
@@ -108,6 +109,7 @@ static boolean ReadConfigFile (SDMode *sd, SMMode *sm, SDSMode *sds)
 	HighScore	scores[MaxScores];
 	char		magic[8];
 	int			file,i,n,ok,v[4+4+NUMBUTTONS+4+4+2];	// 4 flags, then the ints below
+	int			mm;
 
 	if ( (file = open(WL_UserFile(configname),O_BINARY | O_RDONLY)) == -1)
 		return false;
@@ -136,6 +138,7 @@ static boolean ReadConfigFile (SDMode *sd, SMMode *sm, SDSMode *sds)
 	v[3] = WS_R8 (&s);			// joystickprogressive
 	i = WS_RS16 (&s);			// joystickport
 	ReadInts (&s,v+4,4+NUMBUTTONS+4+4+2);
+	mm = s.pos < s.len ? WS_R8 (&s) : 0;	// port: minimap on (absent in older configs)
 
 	ok = ok && !s.bad
 		&& *sd <= sdm_AdLib && *sm <= smm_AdLib && *sds <= sds_SoundBlaster
@@ -164,6 +167,7 @@ static boolean ReadConfigFile (SDMode *sd, SMMode *sm, SDSMode *sds)
 	memcpy (buttonjoy,v+12+NUMBUTTONS,sizeof(buttonjoy));
 	viewsize = v[16+NUMBUTTONS];
 	mouseadjustment = v[17+NUMBUTTONS];
+	minimapon = mm != 0;
 	if (viewsize < 4 || viewsize > 19)
 		viewsize = 15;
 	if (mouseadjustment < 0 || mouseadjustment > 9)
@@ -305,6 +309,7 @@ void WriteConfig(void)
 
 	WriteInts (&s,&viewsize,1);
 	WriteInts (&s,&mouseadjustment,1);
+	WS_W8 (&s,minimapon);	// port: optional trailing byte, older builds ignore it
 
 	file = open(WL_UserFile(configname),O_CREAT | O_TRUNC | O_BINARY | O_WRONLY,0644);
 
@@ -611,6 +616,8 @@ boolean SaveTheGame(int file,int x,int y)
 	WS_W16 (&s,pwalldir);
 	WS_W16 (&s,pwallpos);
 
+	Minimap_Save (&s);			// port (version 2): explored minimap tiles
+
 	//
 	// WRITE OUT CHECKSUM
 	//
@@ -642,6 +649,12 @@ boolean SaveTheGame(int file,int x,int y)
 */
 
 #define RANGE(v,lo,hi)	((v) >= (lo) && (v) <= (hi))
+
+// the format version (1 or 2) of a save body
+static int SaveVersion (const wl_stream *s)
+{
+	return s->buf[8] | s->buf[9]<<8;
+}
 
 //
 // SaveLayoutValid: reads the whole body the way LoadTheGame does, into
@@ -736,6 +749,10 @@ static boolean SaveLayoutValid (wl_stream *s)
 	v = WS_RS16 (s);				ok &= RANGE(v,0,3);
 	v = WS_R16 (s);					ok &= v < 64;
 
+	if (SaveVersion (s) >= 2)
+		for (i=0;i<MINIMAP_SAVEBYTES;i++)
+			WS_R8 (s);						// explored minimap tiles: any value
+
 	ok &= !s->bad && s->pos == s->len - 4;	// exactly the body, then the checksum
 	s->pos = 0;
 	s->bad = 0;
@@ -746,7 +763,7 @@ static boolean CheckSaveStream (wl_stream *s)
 {
 	return s->len >= 8+2+4
 		&& !memcmp(s->buf,WL_SAVE_MAGIC,8)
-		&& (s->buf[8] | s->buf[9]<<8) == WL_SAVE_VERSION
+		&& (SaveVersion (s) == 1 || SaveVersion (s) == WL_SAVE_VERSION)	// 1: no minimap data
 		&& WS_Checksum (s,0,s->len-4) ==
 			(s->buf[s->len-4] | s->buf[s->len-3]<<8 |
 			(longword)s->buf[s->len-2]<<16 | (longword)s->buf[s->len-1]<<24)
@@ -872,6 +889,9 @@ boolean LoadTheGame(int file,int x,int y)
 	pwally = WS_R16 (&s);
 	pwalldir = WS_RS16 (&s);
 	pwallpos = WS_R16 (&s);
+
+	if (SaveVersion (&s) >= 2)
+		Minimap_Load (&s);		// a version 1 save starts unexplored (SetupGameLevel)
 
 	if (s.bad || s.pos != s.len)		// can't happen: SaveLayoutValid walked the same layout
 		Quit ("LoadTheGame: save file doesn't match its own layout");
@@ -1539,6 +1559,7 @@ void InitGame (void)
 
 	LoadLatchMem ();
 	BuildTables ();          // trig tables
+	viewoverlay = Minimap_ViewOverlay;	// port: minimap
 	SetupWalls ();
 
 #if 0

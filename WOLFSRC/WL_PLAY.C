@@ -1,6 +1,7 @@
 // WL_PLAY.C
 
 #include "WL_DEF.H"
+#include "wl_minimap.h"
 #include "wl_timer.h"
 #ifdef __EMSCRIPTEN__
 #include "id_raylib.h"	// WOLF-47: touch controls
@@ -683,6 +684,15 @@ void CheckKeys (void)
 		return;
 
 	scan = LastScan;
+
+	//
+	// port: Tab toggles the minimap (the TAB-? debug keys still see Tab held)
+	//
+	if (scan == sc_Tab)
+	{
+		minimapon ^= 1;
+		LastScan = sc_None;
+	}
 
 
 	#ifdef SPEAR

@@ -39,6 +39,7 @@ unsigned freelatch = FREESTART;
 
 long 	lasttimecount;
 long 	frameon;
+void	(*viewoverlay) (void);	// port: set by InitGame (Minimap_ViewOverlay)
 
 unsigned	wallheight[MAXVIEWWIDTH];
 
@@ -1179,6 +1180,8 @@ memset(spotvis,0,sizeof spotvis);
 //
 	DrawScaleds();			// draw scaled stuff
 	DrawPlayerWeapon ();	// draw player's hands
+	if (viewoverlay)
+		viewoverlay ();		// port: the minimap (port/wl_minimap.c)
 
 //
 // show screen and time last cycle

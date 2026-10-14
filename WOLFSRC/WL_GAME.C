@@ -1,6 +1,7 @@
 // WL_GAME.C
 
 #include "WL_DEF.H"
+#include "wl_minimap.h"
 #pragma hdrstop
 
 #ifdef MYPROFILE
@@ -638,6 +639,8 @@ void SetupGameLevel (void)
 	 gamestate.killcount=
 	 gamestate.treasurecount=0;
 	}
+
+	Minimap_ResetSeen ();		// port: the minimap starts unexplored
 
 	if (demoplayback || demorecord)
 		US_InitRndT (false);

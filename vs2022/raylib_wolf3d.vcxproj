@@ -113,6 +113,7 @@
     <ClCompile Include="..\port\wl_data.c" />
     <ClCompile Include="..\port\wl_raycast.c" />
     <ClCompile Include="..\port\wl_demotest.c" />
+    <ClCompile Include="..\port\wl_minimap.c" />
     <ClCompile Include="..\port\wl_persist.c" />
     <ClCompile Include="..\port\id_raylib.c">
       <PreprocessorDefinitions>WOLF3D_AUDIO_BACKEND;%(PreprocessorDefinitions)</PreprocessorDefinitions>

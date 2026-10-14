@@ -30,6 +30,7 @@
 #endif
 #include "WL_DEF.H"
 #include "wl_persist.h"
+#include "wl_minimap.h"
 
 boolean	demotest;
 
@@ -204,6 +205,7 @@ static void SaveTest (void)
 		{"actorat entry 0x7000", 0},
 		{"map number 42", 0},
 		{"health 1000", 0},
+		{"version 1 save (no minimap data)", 1},
 	};
 
 	// a level in progress: the end of demo 0
@@ -232,6 +234,8 @@ static void SaveTest (void)
 				bad.buf[10+27*4+8*4*4+MAPSIZE*MAPSIZE+1] = 0x70; break;
 		case 7: bad.buf[10+4] = 42; break;
 		case 8: bad.buf[10+6*4] = 1000 & 0xff; bad.buf[10+6*4+1] = 1000 >> 8; break;
+		case 9: memmove(bad.buf + bad.len - 4 - MINIMAP_SAVEBYTES, bad.buf + bad.len - 4, 4);
+				bad.len -= MINIMAP_SAVEBYTES; bad.buf[8] = 1; bad.buf[9] = 0; break;
 		}
 		if (Accepted(&bad) != c->expect)
 		{

@@ -70,6 +70,6 @@ struct statestruct	*WL_StateFromIndex (int index);					// NULL if out of range
 #define WL_CONFIG_MAGIC		"RLW3DCFG"
 #define WL_CONFIG_VERSION	1
 #define WL_SAVE_MAGIC		"RLW3DSAV"
-#define WL_SAVE_VERSION		1
+#define WL_SAVE_VERSION		2	// 2: + explored minimap tiles; 1 still loads
 
 #endif

@@ -62,7 +62,7 @@ shutil.rmtree(work, ignore_errors=True)
 
 rc, out = run("-savetest")
 print(out)
-if rc != 0 or "FAIL" in out or out.count("savetest: ok") != 9 or "round trip" not in out:
+if rc != 0 or "FAIL" in out or out.count("savetest: ok") != 10 or "round trip" not in out:
     print("persist_check: -savetest failed (exit %d)" % rc)
     failed = True
 
